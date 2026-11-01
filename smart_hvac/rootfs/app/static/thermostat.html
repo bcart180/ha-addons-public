@@ -165,19 +165,19 @@ async function refresh(){try{S=await api("api/state");render();S.zones.forEach(z
 /* ---------- mock (screenshots / design review only: ?mock=1; never writes) ---------- */
 function mockApi(p,b){const now=Math.floor(Date.now()/1000);
  if(p.includes("/history")){const z=p.split("/")[2],rng=p.endsWith("7d")?"7d":"24h",span=rng==="7d"?7*86400:86400,n=rng==="7d"?168:96;
-  const base=z==="zone_c"?70:69,set=z==="zone_c"?72:71;const o={zone:z,range:rng,start:now-span,end:now,indoor:[],setpoint:[],heating:[],outdoor:[]};
-  for(let i=0;i<=n;i++){const t=now-span+i*span/n,hr=new Date(t*1000).getHours(),sl=hr>=22||hr<6,sp=sl?(z==="zone_c"?66:68):set;
+  const base=z==="bath_floor"?70:69,set=z==="bath_floor"?72:71;const o={zone:z,range:rng,start:now-span,end:now,indoor:[],setpoint:[],heating:[],outdoor:[]};
+  for(let i=0;i<=n;i++){const t=now-span+i*span/n,hr=new Date(t*1000).getHours(),sl=hr>=22||hr<6,sp=sl?(z==="bath_floor"?66:68):set;
    const ph=Math.sin(i/3+z.length);const ind=sp-0.6+ph*0.7+(sl?0.3:0);o.indoor.push([t,+ind.toFixed(1)]);o.setpoint.push([t,sp]);
-   o.heating.push([t,z!=='zone_c'||i<n*0.8?(ind<sp-1.0?1:0):0]);o.outdoor.push([t,+(44+9*Math.sin((hr-9)/24*2*Math.PI)+3*Math.sin(i/20)).toFixed(1)]);}
+   o.heating.push([t,z!=='bath_floor'||i<n*0.8?(ind<sp-1.0?1:0):0]);o.outdoor.push([t,+(44+9*Math.sin((hr-9)/24*2*Math.PI)+3*Math.sin(i/20)).toFixed(1)]);}
   return o;}
  return S||MOCK_STATE;}
 const MOCK_STATE={enabled:true,dry_run:false,profile:"auto",override_hours:2,radiant_room_cap:85,radiant_setpoint_max:85,radiant_air_shutoff:80,radiant_floor_cap:85,
- zones:[{name:"living_room",label:"Living room",heat_only:false,override_until:null},
-  {name:"zone_b",label:"Bedroom",heat_only:false,override_until:Date.now()/1000+5400},
-  {name:"zone_c",label:"Bath floor",heat_only:true,override_until:null}],
+ zones:[{name:"room_a",label:"Room A",heat_only:false,override_until:null},
+  {name:"room_b",label:"Room B",heat_only:false,override_until:Date.now()/1000+5400},
+  {name:"bath_floor",label:"Bath floor",heat_only:true,override_until:null}],
  last:{ts:Date.now()/1000,presence_home:true,outdoor:47,weather:"partlycloudy",radiant_timeout:"on",zones:{
-  living_room:{action:"hold",reason:"no_change",profile:"home",setpoint:71,live:{mode:"heat",setpoint:71,indoor:70.4,humidity:41,hvac_action:"heating",fan_mode:"auto",fan_modes:["auto","low","medium","high"],hvac_modes:["off","heat","cool","fan_only","dry"]}},
-  zone_b:{action:"hold",reason:"manual_override",profile:"home",setpoint:72,live:{mode:"heat",setpoint:72,indoor:71.2,humidity:44,hvac_action:"idle",fan_mode:"low",fan_modes:["auto","low","medium","high"],hvac_modes:["off","heat","cool"]}},
-  zone_c:{action:"hold",reason:"unit_off",profile:"home",setpoint:72,live:{mode:"off",setpoint:72,indoor:68.6,humidity:52,hvac_action:"off",hvac_modes:["off","heat"]}}}}};
+  room_a:{action:"hold",reason:"no_change",profile:"home",setpoint:71,live:{mode:"heat",setpoint:71,indoor:70.4,humidity:41,hvac_action:"heating",fan_mode:"auto",fan_modes:["auto","low","medium","high"],hvac_modes:["off","heat","cool","fan_only","dry"]}},
+  room_b:{action:"hold",reason:"manual_override",profile:"home",setpoint:72,live:{mode:"heat",setpoint:72,indoor:71.2,humidity:44,hvac_action:"idle",fan_mode:"low",fan_modes:["auto","low","medium","high"],hvac_modes:["off","heat","cool"]}},
+  bath_floor:{action:"hold",reason:"unit_off",profile:"home",setpoint:72,live:{mode:"off",setpoint:72,indoor:68.6,humidity:52,hvac_action:"off",hvac_modes:["off","heat"]}}}}};
 refresh();if(!MOCK)setInterval(refresh,30000);
 </script></body></html>

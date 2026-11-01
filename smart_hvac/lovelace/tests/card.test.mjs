@@ -29,8 +29,8 @@ test("M1: the card never calls HA services directly", () => {
 });
 
 test("routing: requests target add-on endpoints by zone name only", () => {
-  assert.deepEqual(buildRequest(LR, "setpoint", 72), { path: "api/zone/living_room/setpoint", body: { temperature: 72 } });
-  assert.deepEqual(buildRequest(LR, "fan", "low"), { path: "api/zone/living_room/fan", body: { fan_mode: "low" } });
+  assert.deepEqual(buildRequest(LR, "setpoint", 72), { path: "api/zone/room_a/setpoint", body: { temperature: 72 } });
+  assert.deepEqual(buildRequest(LR, "fan", "low"), { path: "api/zone/room_a/fan", body: { fan_mode: "low" } });
   assert.equal(buildRequest(BATH, "setpoint", 95).body.temperature, 85);
   assert.equal(buildRequest(BATH, "mode", "heat", { vacation: true }), null);
   assert.equal(buildRequest(BATH, "fan", "low"), null);
@@ -42,7 +42,7 @@ test("admin: write goes POST through ingress with a session cookie (dedicated WS
   const hass = fakeHass(), f = fakeFetch([200]), doc = { cookie: "", location: { protocol: "https:" } };
   const st = { slug: ADDON_SLUG, base: null };
   await postWrite(st, hass, buildRequest(LR, "setpoint", 72), { fetch: f, doc });
-  assert.equal(f.calls[0].url, "/api/hassio_ingress/TOK/api/zone/living_room/setpoint");
+  assert.equal(f.calls[0].url, "/api/hassio_ingress/TOK/api/zone/room_a/setpoint");
   assert.equal(f.calls[0].method, "POST");
   assert.equal(JSON.parse(f.calls[0].body).temperature, 72);
   assert.match(doc.cookie, /^ingress_session=S1;path=\/api\/hassio_ingress\/;SameSite=Strict;Secure$/);
@@ -195,7 +195,7 @@ test("0.6.0 shared mode: split heat / cool buttons say they switch both splits; 
 test("0.6.5 glance: one shared split mode, radiant never included, off/heat/cool only", async () => {
   const { sharedModeRequests, sharedSplitMode } = await import("../smart-hvac-card.js");
   const reqs = sharedModeRequests(DEFAULT_ZONES, "cool");
-  assert.deepEqual(reqs.map((r) => r.path), ["api/zone/living_room/mode", "api/zone/zone_b/mode"]);
+  assert.deepEqual(reqs.map((r) => r.path), ["api/zone/room_a/mode", "api/zone/room_b/mode"]);
   assert.ok(reqs.every((r) => r.body.hvac_mode === "cool"));
   assert.deepEqual(sharedModeRequests(DEFAULT_ZONES, "dry"), []);
   assert.deepEqual(sharedModeRequests(DEFAULT_ZONES, "fan_only"), []);
