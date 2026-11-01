@@ -367,9 +367,25 @@ def test_health_access_filtered():
 
 def test_other_access_kept():
     filt = _NoHealthAccess()
-    for msg in ('"GET /api/state HTTP/1.1"', '"POST /api/zone/living_room/mode HTTP/1.1"'):
+    for msg in ('"GET /api/state HTTP/1.1"', '"POST /api/zone/room_a/mode HTTP/1.1"'):
         record = logging.LogRecord("aiohttp.access", logging.INFO, "", 0, msg, None, None)
         assert filt.filter(record) is True
+
+
+def test_health_filter_is_anchored():
+    filt = _NoHealthAccess()
+
+    def keep(msg):
+        return filt.filter(logging.LogRecord("aiohttp.access", logging.INFO, "", 0, msg, None, None))
+    assert keep('172.30.32.2 [..] "GET /api/health HTTP/1.1" 204 0 "-" "x"') is False
+    for msg in ('127.0.0.1 [..] "GET /api/health HTTP/1.1" 500 10 "-" "x"',
+                '127.0.0.1 [..] "GET /api/health HTTP/1.1" 404 10 "-" "x"',
+                '127.0.0.1 [..] "GET /api/healthz?x HTTP/1.1" 200 3 "-" "x"',
+                '127.0.0.1 [..] "GET /api/health?x=1 HTTP/1.1" 200 3 "-" "x"',
+                '127.0.0.1 [..] "POST /api/health HTTP/1.1" 200 3 "-" "x"',
+                '127.0.0.1 [..] "GET /api/state?health HTTP/1.1" 200 3 "-" "x"',
+                'health check failed: timeout'):
+        assert keep(msg) is True, msg
 
 
 async def test_state_live_reflects_app_write(mkc):
