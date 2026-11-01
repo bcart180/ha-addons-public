@@ -9,4 +9,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 # No CMD: S6 runs /etc/services.d/smart_hvac/run under with-contenv (SUPERVISOR_TOKEN visible).
 LABEL io.hass.type="addon" \
     org.opencontainers.image.title="Home Assistant Add-on: Smart HVAC" \
-    org.opencontainers.image.source="https://github.com/bcart180/smart-hvac"
+    org.opencontainers.image.source="https://github.com/bcart180/ha-addons-public"

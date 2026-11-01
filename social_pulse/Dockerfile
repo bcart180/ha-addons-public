@@ -14,4 +14,4 @@ LABEL \
     io.hass.type="addon" \
     org.opencontainers.image.title="Home Assistant Add-on: Social Pulse" \
     org.opencontainers.image.description="Read-only X + Cloudflare analytics dashboard" \
-    org.opencontainers.image.source="https://github.com/bcart180/ha-addon-social-pulse"
+    org.opencontainers.image.source="https://github.com/bcart180/ha-addons-public"
