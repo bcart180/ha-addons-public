@@ -1,3 +1,7 @@
+## 0.7.5 — 2026-11-01
+
+- New test: with `learned_preheat: true` and `away_delay_min: 15` both on, a fuzz over random start modes, temperatures, overrides, presence flaps and clock steps never requests or leaves the two splits in opposite modes. No control-logic change; both features are option-only and stay off by default.
+
 ## 0.7.4 — 2026-11-01
 
 - Public-repo privacy: the Lovelace card's built-in default zones, the card mock page and the thermostat page's offline mock data now use generic placeholders (Room A / Room B / Bath floor, `climate.room_a_mini_split` …) instead of real entity IDs and room names. Set `zones` in the card config to your own entities. Tests, comments and the internal presence key (`owner_home`) no longer name people. No control-logic change; split same-mode tests unchanged.
