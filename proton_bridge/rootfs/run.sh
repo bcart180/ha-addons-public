@@ -66,19 +66,21 @@ chmod 700 "$HOME" "$GNUPGHOME"
 # (cmd/launcher), which is what applies downloaded updates. The image ships only `bridge`.
 BRIDGE=/usr/lib/protonmail/bridge/bridge
 
-# IMAP source allow-list (imap-gate): HA internal network + optional LAN CIDR option.
+# IMAP source allow-list (imap-gate): loopback + lan_cidr + optional internal_allow_cidr.
+# The HA internal network 172.30.32.0/23 is no longer allowed by default (3.27.1-22).
 LAN_CIDR=$(jq -r '.lan_cidr // ""' "$OPTS" 2>/dev/null || true)
+INTERNAL_CIDR=$(jq -r '.internal_allow_cidr // ""' "$OPTS" 2>/dev/null || true)
 if [ -z "$LAN_CIDR" ]; then
-  echo "[proton-bridge] INFO: lan_cidr is empty -> LAN access to IMAP is DISABLED (only HA internal 172.30.32.0/23 and loopback are allowed). Set lan_cidr (e.g. your Mac as a.b.c.d/32) to allow one LAN client."
+  echo "[proton-bridge] INFO: lan_cidr is empty -> LAN access to IMAP is DISABLED (only loopback is allowed). Set lan_cidr (e.g. your Mac as a.b.c.d/32) to allow one LAN client."
 fi
 case "$LAN_CIDR" in */0) echo "[proton-bridge] WARN: lan_cidr \"$(sanitize_val "$LAN_CIDR")\" allows EVERY IPv4 address (incl. WireGuard/VPN peers)";; esac
-# Optional gateway deny (M3 prep), OFF by default. Only enable if a Pi test shows the
-# Docker gateway rewrites LAN/WG source IPs to 172.30.32.1 (userland proxy).
-export IMAP_DENY=""
-[ "$(jq -r '.deny_docker_gateway // false' "$OPTS" 2>/dev/null)" = "true" ] && IMAP_DENY="172.30.32.1/32"
-export IMAP_ALLOW="172.30.32.0/23 127.0.0.0/8 $LAN_CIDR"
-# Log only: LAN_CIDR is shown sanitized; IMAP_ALLOW itself (used by imap-gate) is unchanged.
-echo "[proton-bridge] IMAP allow-list: 172.30.32.0/23 127.0.0.0/8 $(sanitize_val "$LAN_CIDR")${IMAP_DENY:+ (deny first: $IMAP_DENY)}"
+case "$INTERNAL_CIDR" in */0) echo "[proton-bridge] WARN: internal_allow_cidr \"$(sanitize_val "$INTERNAL_CIDR")\" allows EVERY IPv4 address";; esac
+LISTS=$(/usr/local/bin/imap-allowlist "$OPTS")
+IMAP_ALLOW=$(printf '%s\n' "$LISTS" | sed -n 's/^ALLOW=//p')
+IMAP_DENY=$(printf '%s\n' "$LISTS" | sed -n 's/^DENY=//p')
+export IMAP_ALLOW IMAP_DENY
+# Log only: user values are shown sanitized; IMAP_ALLOW itself (used by imap-gate) is unchanged.
+echo "[proton-bridge] IMAP allow-list: 127.0.0.1/32 $(sanitize_val "$LAN_CIDR") $(sanitize_val "$INTERNAL_CIDR")${IMAP_DENY:+ (deny first: $IMAP_DENY)}"
 # All 8143 listeners are explicit IPv4 (TCP4-LISTEN): the allow-list is IPv4-only and
 # IPv6 is not served (Pi test 2026-10-30: ::1/ULA got no banner). Each allowed connection
 # runs through starttls-guard: no LOGIN/AUTHENTICATE before STARTTLS (or implicit SSL).
