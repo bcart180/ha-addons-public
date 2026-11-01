@@ -1,5 +1,5 @@
 name: Proton Mail Bridge (new)
-version: "3.27.1-21"
+version: "3.27.1-22"
 slug: proton_bridge
 description: Proton Mail Bridge (built from Proton's official source, v3.27.1) exposing IMAP only on the LAN
 url: https://github.com/bcart180/ha-addons-public/tree/main/proton_bridge
@@ -37,7 +37,9 @@ options:
   login_mode: false
   log_level: info
   lan_cidr: ""
-  deny_docker_gateway: false
+  deny_docker_gateway: true
+  # Extra source allowed on IMAP, e.g. one HA add-on IP as a.b.c.d/32. Empty = none.
+  internal_allow_cidr: ""
   # Seconds between cleartext IMAP greeting probes of 127.0.0.1:1143. Minimum 15.
   health_interval: 60
   # Consecutive missed greetings (after startup grace) before socat on 8143 is
@@ -53,6 +55,7 @@ schema:
   log_level: list(debug|info|warn|error)
   lan_cidr: 'match(^$|^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}/(3[0-2]|[12]?[0-9])$)?'
   deny_docker_gateway: bool
+  internal_allow_cidr: 'match(^$|^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}/(3[0-2]|[12]?[0-9])$)?'
   health_interval: "int(15,3600)"
   health_failures: "int(3,30)"
   health_startup_grace: "int(60,7200)"
