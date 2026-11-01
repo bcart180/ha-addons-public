@@ -10,7 +10,7 @@ from engine import Engine  # noqa: E402
 
 NOW = 1_800_000_000
 ZONES = [
-    {"name": "lr", "label": "Living", "climate": "climate.lr", "indoor": "sensor.lr_t", "humidity": "sensor.lr_h",
+    {"name": "lr", "label": "Room A", "climate": "climate.lr", "indoor": "sensor.lr_t", "humidity": "sensor.lr_h",
      "facing_az": 225, "solar_factor": 0.8, "heat_only": False, "enabled": True},
     {"name": "bath", "label": "Bath", "climate": "climate.bath", "indoor": "sensor.bath_t",
      "facing_az": 90, "solar_factor": 0, "heat_only": True, "enabled": True, "comfort": 72, "sleep": 66, "away": 60},
@@ -64,7 +64,7 @@ def eng(o=None, s=None, tmp=None, clock=lambda: NOW):
     return Engine(o or opts(), ha, tmp, clock=clock, localtime=lt14), ha
 
 
-def test_home_heats_living_to_71_and_bath_to_comfort():
+def test_home_heats_room_a_to_71_and_bath_to_comfort():
     e, ha = eng()
     r = e.evaluate()
     assert r["lr"]["setpoint"] == 71.0 and r["lr"]["applied"]

@@ -48,7 +48,7 @@ def test_summary():
 
 
 def test_forecast_high_lifts_the_season_guard_only_when_given():
-    base = {"enabled": True, "manual_profile": "home", "person_home": True, "minute_of_day": 840, "now_ts": NOW,
+    base = {"enabled": True, "manual_profile": "home", "owner_home": True, "minute_of_day": 840, "now_ts": NOW,
             "outdoor_temp": 70, "indoor_temp": 76, "unit_available": True, "last_mode": "heat",
             "last_setpoint": 71, "last_mode_change_ts": 0}
     assert core.decide(base, {}, None)["mode"] == "heat"            # 70 out < 75 lockout -> coast in heat
