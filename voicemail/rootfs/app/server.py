@@ -34,7 +34,7 @@ import share_import
 APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC = APP_DIR / "static"
 EXAMPLE = APP_DIR / "example_voicemails.json"
-VERSION = "0.3.8"
+VERSION = "0.4.0"
 AUDIO_LIMIT = 25 * 1024 * 1024
 SENSOR_RE = re.compile(r"sensor\.[a-z0-9_]+")
 RT = web.AppKey("rt", dict)
