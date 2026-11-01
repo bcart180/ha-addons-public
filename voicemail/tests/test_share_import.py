@@ -351,3 +351,14 @@ def test_l4_marker_failure_rolls_back_imports(tmp_path, monkeypatch):
     assert run(root, data)["status"] == "error"
     assert [p for p in data.rglob("*") if p.is_file()] == []
     assert src.exists()
+
+
+def test_hardlinked_staged_file_refused(tmp_path):
+    root, src, data = stage(tmp_path, {"index.json": INDEX})
+    outside = tmp_path / "outside.json"
+    outside.write_bytes(json.dumps(TRUST).encode())
+    os.link(outside, src / "trust_lists.json")
+    res = run(root, data)
+    assert res["status"] == "refused" and res["reason"] == "hardlinked"
+    assert list(data.iterdir()) == []
+    assert outside.exists() and sorted(p.name for p in src.iterdir()) == ["index.json", "trust_lists.json"]
