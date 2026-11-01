@@ -7,10 +7,10 @@
  *
  *   type: custom:smart-hvac-card
  *   zones:            # optional; defaults below
- *     - entity: climate.living_room_mini_split_proxy
- *       label: Living room
- *       indoor: sensor.living_room_temperature_air_temperature
- *       humidity: sensor.living_room_temperature_humidity
+ *     - entity: climate.room_a_mini_split
+ *       label: Room A
+ *       indoor: sensor.room_a_temperature
+ *       humidity: sensor.room_a_humidity
  *   weather: weather.home
  *   hours: 24
  *   layout: glance    # 0.6.5: one compact card (rows + one shared split mode); default = full cards
@@ -19,12 +19,12 @@ export const ADDON_SLUG = "47b3c4e5_smart_hvac";
 export const RADIANT_CAP = 85;
 export const VACATION_ENTITY = "input_boolean.vacation_mode";
 export const DEFAULT_ZONES = [
-  { zone: "living_room", entity: "climate.living_room_mini_split_proxy", label: "Living room",
-    indoor: "sensor.living_room_temperature_air_temperature", humidity: "sensor.living_room_temperature_humidity" },
-  { zone: "master_bedroom", entity: "climate.master_bedroom_mini_split_proxy", label: "Bedroom",
-    indoor: "sensor.bedroom_temperature_air_temperature", humidity: "sensor.bedroom_temperature_humidity" },
-  { zone: "bathroom_radiant", entity: "climate.bathroom_radiant", label: "Bath floor", heat_only: true,
-    indoor: "sensor.master_bathroom_temperature", humidity: "sensor.master_bathroom_humidity" },
+  { zone: "room_a", entity: "climate.room_a_mini_split", label: "Room A",
+    indoor: "sensor.room_a_temperature", humidity: "sensor.room_a_humidity" },
+  { zone: "room_b", entity: "climate.room_b_mini_split", label: "Room B",
+    indoor: "sensor.room_b_temperature", humidity: "sensor.room_b_humidity" },
+  { zone: "bath_floor", entity: "climate.bath_floor", label: "Bath floor", heat_only: true,
+    indoor: "sensor.bath_temperature", humidity: "sensor.bath_humidity" },
 ];
 
 export const PRESETS = [["home", "Home"], ["sleep", "Sleep"], ["away", "Away"], ["eco", "Eco"]];

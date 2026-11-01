@@ -367,9 +367,25 @@ def test_health_access_filtered():
 
 def test_other_access_kept():
     filt = _NoHealthAccess()
-    for msg in ('"GET /api/state HTTP/1.1"', '"POST /api/zone/living_room/mode HTTP/1.1"'):
+    for msg in ('"GET /api/state HTTP/1.1"', '"POST /api/zone/room_a/mode HTTP/1.1"'):
         record = logging.LogRecord("aiohttp.access", logging.INFO, "", 0, msg, None, None)
         assert filt.filter(record) is True
+
+
+def test_health_filter_is_anchored():
+    filt = _NoHealthAccess()
+
+    def keep(msg):
+        return filt.filter(logging.LogRecord("aiohttp.access", logging.INFO, "", 0, msg, None, None))
+    assert keep('172.30.32.2 [..] "GET /api/health HTTP/1.1" 204 0 "-" "x"') is False
+    for msg in ('127.0.0.1 [..] "GET /api/health HTTP/1.1" 500 10 "-" "x"',
+                '127.0.0.1 [..] "GET /api/health HTTP/1.1" 404 10 "-" "x"',
+                '127.0.0.1 [..] "GET /api/healthz?x HTTP/1.1" 200 3 "-" "x"',
+                '127.0.0.1 [..] "GET /api/health?x=1 HTTP/1.1" 200 3 "-" "x"',
+                '127.0.0.1 [..] "POST /api/health HTTP/1.1" 200 3 "-" "x"',
+                '127.0.0.1 [..] "GET /api/state?health HTTP/1.1" 200 3 "-" "x"',
+                'health check failed: timeout'):
+        assert keep(msg) is True, msg
 
 
 async def test_state_live_reflects_app_write(mkc):
@@ -382,3 +398,15 @@ async def test_state_live_reflects_app_write(mkc):
     lr = j["last"]["zones"]["lr"]
     assert lr["applied"], lr
     assert lr["live"]["setpoint"] == lr["setpoint"] == ha.s["climate.lr"][1]["temperature"]
+
+
+def test_health_filter_ignores_spoofed_ua_and_referer():
+    """A 403 whose User-Agent or Referer carries the health request line must still log."""
+    filt = _NoHealthAccess()
+    spoof = '"GET /api/health HTTP/1.1" 200 '
+    pre = '203.0.113.9 [01/Nov/2026:16:00:00 +0000] '
+    for msg in (pre + '"GET /api/admin HTTP/1.1" 403 14 "-" "' + spoof + '"',
+                pre + '"POST /api/zone/room_a/mode HTTP/1.1" 403 14 "' + spoof + '" "x"'):
+        assert filt.filter(logging.LogRecord("aiohttp.access", logging.INFO, "", 0, msg, None, None)) is True, msg
+    ok = '172.30.32.2 [01/Nov/2026:16:00:00 +0000] "GET /api/health HTTP/1.1" 200 11 "-" "Supervisor"'
+    assert filt.filter(logging.LogRecord("aiohttp.access", logging.INFO, "", 0, ok, None, None)) is False

@@ -90,7 +90,7 @@ The add-on cannot register a dashboard resource itself: that needs write access 
 websocket token, which this add-on deliberately does not have. One-time manual setup:
 1. Copy `smart_hvac/lovelace/smart-hvac-card.js` from the repo to `/config/www/smart-hvac-card.js`.
 2. Settings → Dashboards → ⋮ → Resources → Add: URL `/local/smart-hvac-card.js`, type **JavaScript module**.
-3. Add a card: `type: custom:smart-hvac-card` (zones default to the two `_proxy` splits + bath radiant).
+3. Add a card: `type: custom:smart-hvac-card` (set `zones` to your own entities; the built-in defaults are generic placeholders, see the example above).
 
 Card writes never call HA services from the browser. Each write is a POST to this add-on's API
 (`api/zone/<zone>/setpoint|mode|fan`) through Supervisor ingress, so every add-on rule applies: app off / dry run

@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 
 from aiohttp import web
 
@@ -332,10 +333,16 @@ def make_app(engine, interval=300):
     return app
 
 
+# Exact request line + 2xx status only (0.7.4). Errors, other methods, /api/healthz and query strings still log.
+# aiohttp default access format: %a %t "%r" %s ... -> match from line start so a UA/Referer
+# containing the health request line cannot hide another request.
+_HEALTH_OK = re.compile(r'^\S+ \[[^\]]*\] "GET /api/health HTTP/1\.[01]" 2\d\d ')
+
+
 class _NoHealthAccess(logging.Filter):
-    """Drop aiohttp access lines for GET /api/health (Docker HEALTHCHECK every 30 s)."""
+    """Drop only successful aiohttp access lines for exactly GET /api/health (watchdog / HEALTHCHECK)."""
     def filter(self, record: logging.LogRecord) -> bool:
-        return '"GET /api/health ' not in record.getMessage()
+        return _HEALTH_OK.match(record.getMessage()) is None
 
 
 def main():
