@@ -46,11 +46,9 @@ jobs:
         with:
           node-version: "22"
       - name: Install test dependencies
-        run: python -m pip install aiohttp pytest pytest-asyncio
-      - name: test_normalize.py
-        run: python voicemail/tests/test_normalize.py
-      - name: test_mutation_trust.py
-        run: python -m pytest voicemail/tests/test_mutation_trust.py -q
+        run: python -m pip install aiohttp pytest pytest-asyncio pyyaml jinja2
+      - name: pytest
+        run: pytest -q voicemail/tests
       - name: test_transcript_polish.js
         run: node voicemail/tests/test_transcript_polish.js
 

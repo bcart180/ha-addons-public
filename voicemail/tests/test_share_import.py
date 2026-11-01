@@ -93,7 +93,6 @@ def test_no_staging_is_a_noop(tmp_path):
         ({"trust_lists.json": b"{not json"}, "invalid_json"),
         ({"trust_lists.json": b"\"just a string\""}, "invalid_json"),
         ({"trust_lists.json": b"\xff\xfe"}, "invalid_json"),
-        ({}, "staging_empty"),
     ],
 )
 def test_refusals_write_nothing(tmp_path, caplog, files, reason):
@@ -104,6 +103,19 @@ def test_refusals_write_nothing(tmp_path, caplog, files, reason):
     assert list(data.iterdir()) == []
     assert src.exists()  # left for the owner to inspect
     assert "options.json" not in caplog.text and "secrets.json" not in caplog.text
+
+
+def test_empty_staging_is_info(tmp_path, caplog):
+    root, src, data = stage(tmp_path, {})
+    with caplog.at_level(logging.DEBUG):
+        res = run(root, data)
+    assert res == {"status": "staging_empty"}
+    assert list(data.iterdir()) == []
+    assert not (data / share_import.MARKER_NAME).exists()
+    assert src.exists()
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+    infos = [r for r in caplog.records if r.levelno == logging.INFO and "staging folder is empty" in r.getMessage()]
+    assert len(infos) == 1
 
 
 def test_refuses_symlink_file(tmp_path):
@@ -165,7 +177,7 @@ def test_server_hook_allow_list_and_diag_fields(tmp_path, monkeypatch):
     monkeypatch.setenv("VM_MOCK", "1")
     import server  # noqa: PLC0415
 
-    assert server.VERSION == "0.4.0"
+    assert server.VERSION == "0.4.1"
     assert set(server.SHARE_IMPORT_ALLOW) == {"inbox.json", "legacy_import.json", "drive_queue.json"}
     assert "options.json" not in server.SHARE_IMPORT_ALLOW
     root = tmp_path / "stage"
