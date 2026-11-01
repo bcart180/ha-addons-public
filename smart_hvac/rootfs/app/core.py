@@ -61,13 +61,13 @@ def in_sleep_window(minute_of_day, cfg):
     return s <= minute_of_day < w
 
 
-def pick_profile(manual_profile, person_home, minute_of_day, cfg):
-    """manual_profile: 'auto' or one of PROFILES. Presence = owner's phone / zone.home only."""
+def pick_profile(manual_profile, owner_home, minute_of_day, cfg):
+    """manual_profile: 'auto' or one of PROFILES. Presence = the configured occupant trackers / zone.home only."""
     if manual_profile in PROFILES:
         return manual_profile
-    if person_home is None:
+    if owner_home is None:
         return None
-    if not person_home:
+    if not owner_home:
         return "away"
     adv = int(_num(cfg.get("sleep_advance_min")) or 0)
     if adv > 0 and 0 < (_hm(cfg["sleep_start"]) - minute_of_day) % 1440 <= adv:
@@ -153,7 +153,7 @@ def window_target(action, last_mode, last_setpoint, unit_modes, cfg):
 def decide(inp, unit, cfg=None):
     """Return dict(action='set'|'hold', mode, setpoint, reason, profile).
 
-    inp keys: enabled, override_active, manual_profile, person_home, minute_of_day, now_ts,
+    inp keys: enabled, override_active, manual_profile, owner_home, minute_of_day, now_ts,
       outdoor_temp, forecast_temp (next-hours mean, optional), cloud_pct, sun_elev, sun_az,
       indoor_temp, humidity, window_open (None if no sensor), unit_available,
       last_mode, last_setpoint, last_mode_change_ts,
@@ -180,7 +180,7 @@ def decide(inp, unit, cfg=None):
             return hold("missing:indoor_temp")
         if outdoor is None:
             return hold("missing:outdoor_temp")
-        prof = pick_profile(inp.get("manual_profile", "auto"), inp.get("person_home"),
+        prof = pick_profile(inp.get("manual_profile", "auto"), inp.get("owner_home"),
                             int(inp.get("minute_of_day", 0)), c)
         if prof is None:
             return hold("missing:presence")
@@ -298,7 +298,7 @@ def resolve_shared_mode(entries):
 # 0.6.1 learned warm-up (option learned_preheat, off by default). Each zone learns how fast it actually heats
 # (or cools) from its own completed recovery runs, as °F per hour against the outdoor temp at the start, and the
 # pre-heat lead before wake is sized from that instead of the fixed preheat_lead_min. Evidence (31 Oct, 53°F out):
-# the fixed 45 min lead started 5:45 AM and the living room reached 71 only around 8:30 AM.
+# the fixed 45 min lead started 5:45 AM and the first room reached 71 only around 8:30 AM.
 LEAD_MIN, LEAD_MAX, LEAD_FALLBACK = 15, 180, 45
 RATE_MIN, RATE_MAX = 0.3, 8.0
 MIN_SAMPLES = 3

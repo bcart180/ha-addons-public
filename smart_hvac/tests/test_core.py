@@ -9,7 +9,7 @@ NOW = 1_800_000_000
 
 
 def base(**kw):
-    d = dict(enabled=True, override_active=False, manual_profile="auto", person_home=True,
+    d = dict(enabled=True, override_active=False, manual_profile="auto", owner_home=True,
              minute_of_day=14 * 60, now_ts=NOW, outdoor_temp=50, forecast_temp=None, cloud_pct=100,
              sun_elev=-10, sun_az=0, indoor_temp=66, humidity=45, window_open=None,
              unit_available=True, last_mode="heat", last_setpoint=65, last_mode_change_ts=NOW - 7200)
@@ -29,15 +29,15 @@ def test_home_hot_cools():
     assert r["mode"] == "cool" and r["setpoint"] == 71.0
 
 def test_away_heat_setback():
-    r = decide(base(person_home=False), LR)
+    r = decide(base(owner_home=False), LR)
     assert r["profile"] == "away" and r["mode"] == "heat" and r["setpoint"] == 65.0
 
 def test_away_cool_setback():
-    r = decide(base(person_home=False, indoor_temp=80, outdoor_temp=90, last_mode="cool"), LR)
+    r = decide(base(owner_home=False, indoor_temp=80, outdoor_temp=90, last_mode="cool"), LR)
     assert r["mode"] == "cool" and r["setpoint"] == 78.0
 
 def test_guest_profile_overrides_absent_owner():
-    r = decide(base(person_home=False, manual_profile="guest"), LR)
+    r = decide(base(owner_home=False, manual_profile="guest"), LR)
     assert r["profile"] == "guest" and r["setpoint"] == 71.0
 
 def test_sleep_window():
@@ -79,7 +79,7 @@ def test_missing_outdoor_holds():
     assert decide(base(outdoor_temp=None), LR)["reason"] == "missing:outdoor_temp"
 
 def test_missing_presence_holds():
-    assert decide(base(person_home=None), LR)["reason"] == "missing:presence"
+    assert decide(base(owner_home=None), LR)["reason"] == "missing:presence"
 
 def test_unit_unavailable_holds():
     assert decide(base(unit_available=False), LR)["reason"] == "missing:unit"
@@ -118,7 +118,7 @@ def test_radiant_comfort_home():
     assert (r["mode"], r["setpoint"]) == ("heat", 72.0)
 
 def test_radiant_away_setback():
-    r = decide(base(person_home=False, indoor_temp=68), RAD, RAD_CFG)
+    r = decide(base(owner_home=False, indoor_temp=68), RAD, RAD_CFG)
     assert (r["mode"], r["setpoint"], r["profile"]) == ("heat", 60.0, "away")
 
 def test_radiant_sleep_night():
@@ -126,7 +126,7 @@ def test_radiant_sleep_night():
     assert r["profile"] == "sleep" and r["setpoint"] == 66.0
 
 def test_radiant_missing_presence_holds():
-    assert decide(base(person_home=None), RAD, RAD_CFG)["action"] == "hold"
+    assert decide(base(owner_home=None), RAD, RAD_CFG)["action"] == "hold"
 
 # MA M1: never turn a unit back on from an off the app did not command
 def test_physical_off_is_respected():
