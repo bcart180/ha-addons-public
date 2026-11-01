@@ -135,3 +135,11 @@ jobs:
           gitleaks version
       - name: Secret scan
         run: gitleaks detect --source . --redact --verbose --no-banner
+
+  proton-gate-tests:
+    name: Proton Bridge IMAP allow-list tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: test_imap_allowlist.sh
+        run: bash proton_bridge/tests/test_imap_allowlist.sh

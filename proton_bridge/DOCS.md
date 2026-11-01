@@ -37,19 +37,25 @@ Pi test 2026-10-30 (check b): Bridge v3.27.1 in its default STARTTLS mode advert
 - **IPv4 only.** The container listener is `TCP4-LISTEN` and the allow-list is IPv4. On the
   Pi test, `::1` and the IPv6 ULA got no banner and no gate log, i.e. IPv6 is not served.
   Use the host's IPv4 address in clients. If a future test shows IPv6 clients arriving as
-  `172.30.32.1`, enable `deny_docker_gateway`.
+  `172.30.32.1`, keep `deny_docker_gateway` on (default).
 - Host port 1143 binds on all host interfaces (including WireGuard). The add-on therefore
-  filters by source IP (`imap-gate`): allowed = HA internal network `172.30.32.0/23`,
-  loopback, and the optional `lan_cidr` option (one IPv4 CIDR, e.g. `192.168.1.0/24`).
-  Refused connections are logged and closed. Leave `lan_cidr` empty if only add-ons /
-  the Cloudflare tunnel on HA need IMAP.
-- `lan_cidr` is validated (IPv4/prefix). `/0` logs a warning: it allows every address,
-  including VPN/WireGuard peers.
+  filters by source IP (`imap-gate`, lists built by `imap-allowlist`). Allowed by default:
+  loopback `127.0.0.1/32` only, plus the optional `lan_cidr` (one IPv4 CIDR, e.g. your Mac
+  as `a.b.c.d/32`). Since 3.27.1-22 the HA internal network `172.30.32.0/23` is **not**
+  allowed by default (before, every add-on on the HA network could reach IMAP).
+  Refused connections are logged and closed.
+- `internal_allow_cidr` (default empty): one extra IPv4 CIDR, for an HA-internal source that
+  truly needs IMAP (e.g. one add-on as `172.30.33.x/32`). Keep it a single /32.
+- `lan_cidr` / `internal_allow_cidr` are validated (IPv4/prefix); invalid values are ignored
+  (never widened). `/0` logs a warning: it allows every address, including VPN peers.
 - Refused connections are logged at most once per 60 s (with a count of the rest).
-- `deny_docker_gateway` (default `false`): rejects 172.30.32.1 before the 172.30.32.0/23
-  allow. Enable ONLY if a test on the Pi shows LAN/WG clients arriving as 172.30.32.1
-  (Docker userland-proxy source rewrite); otherwise it could block legitimate clients that
-  reach the add-on via the host/gateway path.
+- `deny_docker_gateway` (default `true`): `172.30.32.1/32` (Docker/HA gateway) is checked
+  **before** the allow list and refused, even if `lan_cidr` or `internal_allow_cidr` covers
+  it. This stops LAN/WG clients that arrive source-rewritten as the gateway. Set it to
+  `false` only if a Pi test shows a legitimate client that can only arrive via the gateway,
+  and then also name it in `internal_allow_cidr`.
+- The Supervisor watchdog only needs a TCP accept on 8143, which still happens before the
+  gate refuses, so the watchdog is unaffected (it may show up in the refusal log).
 - Never port-forward 1143 on the router.
 
 ## Login mode (`login_mode: true`)
@@ -62,7 +68,7 @@ Pi test 2026-10-30 (check b): Bridge v3.27.1 in its default STARTTLS mode advert
 
 ## Options
 - `log_level`: default `info`. `debug` is for short troubleshooting only (verbose logs).
-- `lan_cidr`: see above.
+- `lan_cidr`, `internal_allow_cidr`, `deny_docker_gateway`: see above.
 - `health_interval`: seconds between probes of Bridge's own IMAP greeting (default 60,
   range 15–3600).
 - `health_failures`: consecutive missed greetings, after startup grace, before the
