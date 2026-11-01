@@ -192,7 +192,7 @@ async def test_card_cannot_turn_radiant_on_in_vacation(mk):
 def test_vacation_options_in_config():
     raw = open(os.path.join(os.path.dirname(__file__), "..", "config.yaml")).read()
     assert "\n  vacation_heat: 60\n" in raw and "\n  vacation_cool: 82\n" in raw
-    assert "vacation_heat: float(50,68)?" in raw and 'version: "0.7.3"' in raw
+    assert "vacation_heat: float(50,68)?" in raw and 'version: "0.7.4"' in raw
 
 
 # ---------- 3) native Lovelace card ships with the add-on ----------
@@ -213,7 +213,7 @@ async def test_card_routed_write_hits_addon_gates(mk):
     # The card POSTs these exact endpoints through ingress; the add-on's gates apply to them.
     c, ha, _ = await mk(s=vstates(bath="off"))
     ha.calls.clear()
-    assert (await c.post("/api/zone/zone_c/setpoint", json={"temperature": 72})).status == 404
+    assert (await c.post("/api/zone/bath_floor/setpoint", json={"temperature": 72})).status == 404
     assert (await c.post("/api/zone/bath/mode", json={"hvac_mode": "heat"})).status == 409
     assert (await c.post("/api/zone/bath/setpoint", json={"temperature": 95})).status == 400
     assert ha.calls == []
