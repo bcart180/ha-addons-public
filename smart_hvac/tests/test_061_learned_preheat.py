@@ -20,7 +20,7 @@ def test_fallback_until_three_samples():
     assert core.learned_lead([[50, 1.0], [52, 1.2]], 50, 3) == 45
 
 
-def test_31_oct_living_room_needs_a_much_earlier_start():
+def test_31_oct_room_a_needs_a_much_earlier_start():
     # observed ~0.5 F/h at 52-53 F outside (69.8 -> 71 took ~140 min); gap 68 -> 71 = 3 F
     lead = core.learned_lead([[53, 0.5], [52, 0.5], [53, 0.6]], 53, 3)
     assert lead == 180  # clamped at the 3 h ceiling (unclamped ~380 min)
