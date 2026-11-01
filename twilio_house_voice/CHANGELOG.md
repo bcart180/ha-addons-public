@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.7
+
+- **One-shot `import_from_share` for moving stores.** On start, before the bridge opens `/data`, CallCatch Voice imports allow-listed files that the owner staged in `/share/.migrate-2026-11-01/twilio_house_voice/`: `trust_lists.json` (into `/data/`) and `index.json` (into `/data/voicemail/`). No new option, privilege, route or mapping.
+  - Trust lists move file to file: the staged bytes are written as-is and never printed or logged. Logs carry entry counts only.
+  - The staging root and folder must be real directories owned by root with mode 700. Symlinks, files not on the allow-list, files over 8 MB and invalid JSON are refused, and a refusal imports nothing.
+  - Success writes `/data/.import_from_share.json` and then deletes the staged files and folder. With the marker present it never imports again.
+- Tests: `tests/test_share_import.py`. Fixtures use 555-01xx numbers only.
+
 ## 0.2.6
 
 Delivery hardening, part 1 of the HA-ack design (add-on only). No new privileges: no Supervisor or Core API, no new option, no new route. dry_run, push_owner and the pyscript are untouched.

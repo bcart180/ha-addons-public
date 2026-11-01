@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.8 — 2026-11-01
+
+- **One-shot `import_from_share` for moving stores.** On start, before the inbox opens, CallCatch imports allow-listed `/data` files that the owner staged in `/share/.migrate-2026-11-01/voicemail/`: `inbox.json`, `legacy_import.json` and `drive_queue.json` (into `/data/callcatch/`). No new option, privilege or mapping (`share:rw` was already mapped).
+  - The staging root and folder must be real directories owned by root with mode 700. Symlinks, any file not on the allow-list (including `options.json`), files over 8 MB and invalid JSON are refused, and a refusal imports nothing.
+  - Files are copied byte-for-byte (temp file, fsync, rename). Contents are never logged; logs and `/api/diag` carry only file names, sizes, entry counts and reason codes.
+  - Success writes `/data/callcatch/.import_from_share.json` and then deletes the staged files and folder. With the marker present it never imports again; a staging folder that reappears is flagged, not imported.
+  - `/api/diag` adds `import_from_share` (status) and `import_marker` (true/false).
+- Tests: `tests/test_share_import.py` (allow-list, symlink, size, JSON, permission and owner refusals, one-shot, staging deleted, no unmasked number in import output). Fixtures use 555-01xx numbers only.
+
 ## 0.3.7 — 2026-11-01
 
 - **Post-call structured summary.** Every call and voicemail now carries `summary`: caller name (if stated), reason, callback number and urgency (`low`, `normal` or `urgent`).

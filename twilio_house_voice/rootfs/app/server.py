@@ -46,9 +46,10 @@ import aiohttp
 from aiohttp import web
 
 import audio
+import share_import
 import trust
 
-VERSION = "0.2.6"
+VERSION = "0.2.7"
 PORT = int(os.environ.get("THV_PORT", "8787"))
 XAI_DEFAULT_URL = "wss://api.x.ai/v1/realtime"
 INGRESS_PEERS = {"172.30.32.2", "127.0.0.1", "::1"}
@@ -2506,7 +2507,27 @@ def create_app(options=None, data_dir=None):
     return app
 
 
+# Store migration (plan C3): allow-listed /data files staged in
+# /share/.migrate-2026-11-01/twilio_house_voice/ by the owner. Trust lists
+# move file-to-file (C6). Destinations are relative to /data.
+SHARE_IMPORT_ALLOW = {
+    "trust_lists.json": "trust_lists.json",
+    "index.json": "voicemail/index.json",
+}
+
+
+def run_share_import(data_dir=None) -> dict:
+    """One-shot import before the app opens /data. Never raises."""
+    root = pathlib.Path(data_dir or os.environ.get("THV_DATA", "/data"))
+    try:
+        return share_import.import_from_share("twilio_house_voice", root, SHARE_IMPORT_ALLOW)
+    except Exception as exc:  # noqa: BLE001 - import must never stop the bridge
+        log.error("import_from_share failed: %s", type(exc).__name__)
+        return {"status": "error"}
+
+
 def main():
+    run_share_import()
     app = create_app()
     opts = app["opts"]
     problem = startup_config_error(opts)

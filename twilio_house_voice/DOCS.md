@@ -128,3 +128,7 @@ Each call leaves a sidecar `{CallSid}.json` (full caller and callee numbers, STI
 - `/data` is part of every Home Assistant backup that includes this add-on, so those numbers, transcripts and recordings are in your backups. Treat backups as sensitive, and keep them encrypted.
 - Retention: about once an hour the watchdog deletes sidecars (and their WAVs in `/data`) that are final, acknowledged by HA (or had no webhook configured) and older than 30 days. Calls still waiting on delivery and open journals are never deleted. `index.json` is kept.
 - Copies the add-on mirrors to `/share`, `/media` or `/config` for playback, and anything HA itself stores (CallCatch, notifications, history), are not pruned by this add-on.
+
+## Moving stores: import_from_share
+
+When this add-on is moved to another add-on store, its `/data` does not move with it. The new install imports allow-listed files once, on its first start, from `/share/.migrate-2026-11-01/<slug>/` (`voicemail` or `twilio_house_voice`). The folder must be owned by root with mode 700 (`chmod 700`). Anything unexpected (a symlink, a file not on the allow-list, a file over 8 MB, invalid JSON) stops the import with nothing written, and the log names only the reason. After a successful import the add-on writes an import marker in `/data` and deletes the staged files. It never imports twice.
