@@ -334,13 +334,15 @@ def make_app(engine, interval=300):
 
 
 # Exact request line + 2xx status only (0.7.4). Errors, other methods, /api/healthz and query strings still log.
-_HEALTH_OK = re.compile(r'"GET /api/health HTTP/\d(?:\.\d)?" 2\d\d ')
+# aiohttp default access format: %a %t "%r" %s ... -> match from line start so a UA/Referer
+# containing the health request line cannot hide another request.
+_HEALTH_OK = re.compile(r'^\S+ \[[^\]]*\] "GET /api/health HTTP/1\.[01]" 2\d\d ')
 
 
 class _NoHealthAccess(logging.Filter):
     """Drop only successful aiohttp access lines for exactly GET /api/health (watchdog / HEALTHCHECK)."""
     def filter(self, record: logging.LogRecord) -> bool:
-        return _HEALTH_OK.search(record.getMessage()) is None
+        return _HEALTH_OK.match(record.getMessage()) is None
 
 
 def main():
