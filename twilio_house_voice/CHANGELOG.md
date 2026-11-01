@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0 — 2026-11-01
+
+- Public store marker: name suffix (new); no functional change.
+
 ## 0.2.7
 
 - **One-shot `import_from_share` for moving stores.** On start, before the bridge opens `/data`, CallCatch Voice imports allow-listed files that the owner staged in `/share/.migrate-2026-11-01/twilio_house_voice/`: `trust_lists.json` (into `/data/`) and `index.json` (into `/data/voicemail/`). No new option, privilege, route or mapping.

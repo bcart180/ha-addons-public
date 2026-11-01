@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.0 — 2026-11-01
+
+- Public store marker: name suffix (new); no functional change.
+
 ## 0.3.8 — 2026-11-01
 
 - **One-shot `import_from_share` for moving stores.** On start, before the inbox opens, CallCatch imports allow-listed `/data` files that the owner staged in `/share/.migrate-2026-11-01/voicemail/`: `inbox.json`, `legacy_import.json` and `drive_queue.json` (into `/data/callcatch/`). No new option, privilege or mapping (`share:rw` was already mapped).

@@ -328,10 +328,10 @@ def test_instructions_path_and_redact_and_b64_cap():
 
 def test_config_version_and_readme():
     config = (ROOT / "twilio_house_voice" / "config.yaml").read_text()
-    assert re.search(r'(?m)^version:\s*"0\.2\.7"\s*$', config)
+    assert re.search(r'(?m)^version:\s*"0\.3\.0"\s*$', config)
     assert re.search(r"(?m)^slug:\s*twilio_house_voice\s*$", config)
     assert "8787" in config
-    assert server.VERSION == "0.2.7"
+    assert server.VERSION == "0.3.0"
     readme = (ROOT / "README.md").read_text()
     addon = (ROOT / "twilio_house_voice" / "README.md").read_text()
     assert "twilio_house_voice" in readme
@@ -440,7 +440,7 @@ def test_stub_hangup_writes_wav_and_webhook_is_idempotent():
                 assert await health.json() == {"ok": True}
                 status = await client.get("/api/status")
                 payload = await status.json()
-                assert payload["version"] == "0.2.7"
+                assert payload["version"] == "0.3.0"
                 assert payload["mix_recording"] is True
                 assert payload["bridge"] == "stub"
                 dumped = json.dumps(payload)

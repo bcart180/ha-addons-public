@@ -1,5 +1,5 @@
-name: Proton Mail Bridge
-version: "3.27.1-10"
+name: Proton Mail Bridge (new)
+version: "3.27.1-20"
 slug: proton_bridge
 description: Proton Mail Bridge (built from Proton's official source, v3.27.1) exposing IMAP only on the LAN
 url: https://github.com/bcart180/ha-addons-public/tree/main/proton_bridge

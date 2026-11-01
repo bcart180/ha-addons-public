@@ -1,3 +1,7 @@
+## 0.7.0 — 2026-11-01
+
+- Public store marker: name suffix (new); no functional change.
+
 ## 0.6.6
 - Public-safe defaults: `presence_entities` ships empty (`[]`), `presence_entity` is no longer a default and is now optional in the schema, and `weather_entity` defaults to `""` (schema `str?`). Set them in the Configuration tab. No engine change: blank presence/weather were already ignored. Existing installs keep their saved options.
 - Lovelace card: `weather` has no house default (set it in the card config). Docs, changelog and tests use generic names (person_a, person_b, person_c).
