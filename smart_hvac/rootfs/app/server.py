@@ -332,9 +332,16 @@ def make_app(engine, interval=300):
     return app
 
 
+class _NoHealthAccess(logging.Filter):
+    """Drop aiohttp access lines for GET /api/health (Docker HEALTHCHECK every 30 s)."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        return '"GET /api/health ' not in record.getMessage()
+
+
 def main():
     opts = load_options()
     logging.basicConfig(level=opts.get("log_level", "info").upper())
+    logging.getLogger("aiohttp.access").addFilter(_NoHealthAccess())
     eng = Engine(opts, HAClient(), STATE)
     log.info("Smart HVAC start: enabled=%s dry_run=%s zones=%d", eng.enabled, eng.dry_run,
              len(opts.get("zones", [])))

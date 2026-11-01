@@ -192,7 +192,7 @@ async def test_card_cannot_turn_radiant_on_in_vacation(mk):
 def test_vacation_options_in_config():
     raw = open(os.path.join(os.path.dirname(__file__), "..", "config.yaml")).read()
     assert "\n  vacation_heat: 60\n" in raw and "\n  vacation_cool: 82\n" in raw
-    assert "vacation_heat: float(50,68)?" in raw and 'version: "0.7.0"' in raw
+    assert "vacation_heat: float(50,68)?" in raw and 'version: "0.7.1"' in raw
 
 
 # ---------- 3) native Lovelace card ships with the add-on ----------
