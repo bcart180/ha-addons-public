@@ -71,5 +71,5 @@ COPY --from=builder /src/bridge /usr/lib/protonmail/bridge/bridge
 COPY --from=guard /starttls-guard /usr/local/bin/starttls-guard
 COPY --from=ttyd /ttyd /usr/local/bin/ttyd
 COPY rootfs/ /
-RUN chmod +x /run.sh /usr/local/bin/imap-gate /usr/local/bin/imap-greeting-ok /usr/local/bin/starttls-guard
+RUN chmod +x /run.sh /usr/local/bin/imap-gate /usr/local/bin/imap-allowlist /usr/local/bin/imap-greeting-ok /usr/local/bin/starttls-guard
 CMD ["/run.sh"]

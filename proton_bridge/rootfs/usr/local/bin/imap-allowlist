@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Builds the imap-gate source lists from add-on options. Prints two lines:
+#   ALLOW=<space-separated CIDRs>
+#   DENY=<space-separated CIDRs>
+# Usage: imap-allowlist <options.json>
+# Default allow is loopback only (127.0.0.1/32) plus lan_cidr. The HA internal network
+# (172.30.32.0/23) is NOT allowed unless named in internal_allow_cidr (empty by default).
+# The Docker gateway 172.30.32.1 is denied first when deny_docker_gateway is true (default),
+# so it is refused even if lan_cidr or internal_allow_cidr would cover it.
+set -u
+OPTS=${1:-/data/options.json}
+CIDR_RE='^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}/(3[0-2]|[12]?[0-9])$'
+GATEWAY=172.30.32.1/32
+allow="127.0.0.1/32"
+deny=""
+lan=$(jq -r '.lan_cidr // ""' "$OPTS" 2>/dev/null || true)
+if [ -n "$lan" ]; then
+  if [[ $lan =~ $CIDR_RE ]]; then allow="$allow $lan"; else echo "[proton-bridge] WARN: lan_cidr is not a valid IPv4 CIDR; ignoring it" >&2; fi
+fi
+internal=$(jq -r '.internal_allow_cidr // ""' "$OPTS" 2>/dev/null || true)
+if [ -n "$internal" ]; then
+  if [[ $internal =~ $CIDR_RE ]]; then allow="$allow $internal"; else echo "[proton-bridge] WARN: internal_allow_cidr is not a valid IPv4 CIDR; ignoring it" >&2; fi
+fi
+# Missing key means the default (true); only an explicit false turns the deny off.
+gw=$(jq -r 'if has("deny_docker_gateway") then .deny_docker_gateway else true end' "$OPTS" 2>/dev/null || echo true)
+[ "$gw" = "false" ] || deny="$GATEWAY"
+echo "ALLOW=$allow"
+echo "DENY=$deny"
