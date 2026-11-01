@@ -6,6 +6,15 @@ set -euo pipefail
 # Fatal exit: pause first so Supervisor/watchdog restarts cannot hammer Proton (rate limits).
 die() { echo "[proton-bridge] ERROR: $*"; sleep 30; exit 1; }
 
+# Log-safe copy of a user-supplied option value: options.json can be hand-edited, so
+# strip control characters (newlines could forge log lines) and cap at 32 chars.
+sanitize_val() {
+  local shown
+  shown=$(printf '%s' "$1" | LC_ALL=C tr -d '\000-\037\177' | cut -c1-32)
+  if [ "${#1}" -gt 32 ]; then shown="${shown}..."; fi
+  printf '%s' "$shown"
+}
+
 # $1 raw, $2 min, $3 max, $4 default, $5 option name. Prints the chosen integer.
 # Empty means "use the default". Rejects 0, leading zeros, and non-integers.
 read_health_int() {
@@ -18,10 +27,15 @@ read_health_int() {
     echo "$raw"
     return 0
   fi
-  echo "[proton-bridge] WARN: ${name} must be an integer ${min}-${max}; using ${def}" >&2
+  echo "[proton-bridge] WARN: ${name}=\"$(sanitize_val "$raw")\" is outside ${min}-${max}; refusing it and using ${def}" >&2
   echo "$def"
   return 0
 }
+
+# Monotonic seconds since boot (/proc/uptime). Unlike `date +%s` it does not jump
+# when NTP or the HA host corrects the wall clock, so the startup grace window
+# cannot be stretched or cut short by a clock step.
+mono_now() { local up; read -r up _ < /proc/uptime; echo "${up%%.*}"; }
 
 OPTS=/data/options.json
 LOGIN_MODE=$(jq -r '.login_mode // false' "$OPTS" 2>/dev/null || echo false)
@@ -31,8 +45,12 @@ if [ "$LOG_LEVEL" = "debug" ]; then
 fi
 raw_interval=$(jq -r '.health_interval // empty' "$OPTS" 2>/dev/null || true)
 raw_failures=$(jq -r '.health_failures // empty' "$OPTS" 2>/dev/null || true)
-HEALTH_INTERVAL=$(read_health_int "$raw_interval" 1 3600 60 health_interval)
-HEALTH_FAILURES=$(read_health_int "$raw_failures" 1 30 5 health_failures)
+raw_grace=$(jq -r '.health_startup_grace // empty' "$OPTS" 2>/dev/null || true)
+# Minimums are enforced here, not only in the schema: a hand-edited options.json
+# below the floor is refused and the default is used.
+HEALTH_INTERVAL=$(read_health_int "$raw_interval" 15 3600 60 health_interval)
+HEALTH_FAILURES=$(read_health_int "$raw_failures" 3 30 5 health_failures)
+HEALTH_STARTUP_GRACE=$(read_health_int "$raw_grace" 60 7200 900 health_startup_grace)
 
 export HOME=/data/home
 export XDG_CONFIG_HOME=/data/home/.config
@@ -50,13 +68,17 @@ BRIDGE=/usr/lib/protonmail/bridge/bridge
 
 # IMAP source allow-list (imap-gate): HA internal network + optional LAN CIDR option.
 LAN_CIDR=$(jq -r '.lan_cidr // ""' "$OPTS" 2>/dev/null || true)
-case "$LAN_CIDR" in */0) echo "[proton-bridge] WARN: lan_cidr $LAN_CIDR allows EVERY IPv4 address (incl. WireGuard/VPN peers)";; esac
+if [ -z "$LAN_CIDR" ]; then
+  echo "[proton-bridge] INFO: lan_cidr is empty -> LAN access to IMAP is DISABLED (only HA internal 172.30.32.0/23 and loopback are allowed). Set lan_cidr (e.g. your Mac as a.b.c.d/32) to allow one LAN client."
+fi
+case "$LAN_CIDR" in */0) echo "[proton-bridge] WARN: lan_cidr \"$(sanitize_val "$LAN_CIDR")\" allows EVERY IPv4 address (incl. WireGuard/VPN peers)";; esac
 # Optional gateway deny (M3 prep), OFF by default. Only enable if a Pi test shows the
 # Docker gateway rewrites LAN/WG source IPs to 172.30.32.1 (userland proxy).
 export IMAP_DENY=""
 [ "$(jq -r '.deny_docker_gateway // false' "$OPTS" 2>/dev/null)" = "true" ] && IMAP_DENY="172.30.32.1/32"
 export IMAP_ALLOW="172.30.32.0/23 127.0.0.0/8 $LAN_CIDR"
-echo "[proton-bridge] IMAP allow-list: $IMAP_ALLOW${IMAP_DENY:+ (deny first: $IMAP_DENY)}"
+# Log only: LAN_CIDR is shown sanitized; IMAP_ALLOW itself (used by imap-gate) is unchanged.
+echo "[proton-bridge] IMAP allow-list: 172.30.32.0/23 127.0.0.0/8 $(sanitize_val "$LAN_CIDR")${IMAP_DENY:+ (deny first: $IMAP_DENY)}"
 # All 8143 listeners are explicit IPv4 (TCP4-LISTEN): the allow-list is IPv4-only and
 # IPv6 is not served (Pi test 2026-10-30: ::1/ULA got no banner). Each allowed connection
 # runs through starttls-guard: no LOGIN/AUTHENTICATE before STARTTLS (or implicit SSL).
@@ -75,7 +97,10 @@ if [ ! -f "$PASSWORD_STORE_DIR/.gpg-id" ]; then
   pass init "$FPR" >/dev/null
 fi
 
-# Keychain sanity: Bridge needs pass+gpg (secret-service/dbus warnings are expected).
+# Keychain sanity: Bridge needs pass+gpg. Bridge probes Secret Service over D-Bus first;
+# there is no D-Bus session in the container, so a dbus/secret-service WARN is expected.
+# When `pass` is usable Bridge picks it as the default keychain (pkg/keychain/helper_linux.go).
+echo "[proton-bridge] INFO: keychain backend is pass (GPG, /data). Any Bridge WARN about dbus / Secret Service / dbus-launch is expected in this container and harmless."
 GPG_ID=$(cat "$PASSWORD_STORE_DIR/.gpg-id" 2>/dev/null || true)
 if [ -z "$GPG_ID" ] || ! gpg --list-secret-keys "$GPG_ID" >/dev/null 2>&1; then
   die "pass store has no usable GPG secret key ($PASSWORD_STORE_DIR). /data keychain is broken; restore a backup or wipe /data/home and log in again."
@@ -176,19 +201,15 @@ BRIDGE_PID=$!
 # loses Proton, and a TCP accept on 8143 would stay green while mail is dead.
 socat -T 1800 "$IMAP_LISTEN" SYSTEM:"/usr/local/bin/imap-gate" &
 SOCAT_PID=$!
-ready=0
-for _ in $(seq 1 120); do
-  if /usr/local/bin/imap-greeting-ok; then ready=1; break; fi
-  if ! kill -0 "$BRIDGE_PID" 2>/dev/null; then break; fi
-  sleep 2
-done
-if [ "$ready" != 1 ]; then
-  kill "$BRIDGE_PID" "$SOCAT_PID" 2>/dev/null || true
-  die "Bridge did not send an IMAP greeting on 127.0.0.1:1143 after start"
-fi
 
-echo "[proton-bridge] IMAP health: reading 127.0.0.1:1143 greeting every ${HEALTH_INTERVAL}s; stopping 8143 after ${HEALTH_FAILURES} consecutive misses"
+# No hard ~4 min startup deadline. A slow first sync/unlock after login can
+# take longer than that to bind 1143; dying there restart-loops the add-on.
+# For health_startup_grace seconds, missed greetings are logged and not
+# counted. Process death still stops socat immediately.
+grace_until=$(( $(mono_now) + HEALTH_STARTUP_GRACE ))
+echo "[proton-bridge] IMAP health: reading 127.0.0.1:1143 greeting every ${HEALTH_INTERVAL}s; startup grace ${HEALTH_STARTUP_GRACE}s (misses logged, not counted); stopping 8143 after ${HEALTH_FAILURES} consecutive misses"
 fails=0
+grace_done=0
 while true; do
   if ! kill -0 "$BRIDGE_PID" 2>/dev/null; then
     health_fail "Bridge process exited. Stopping the socat listener on 8143 and exiting so the Supervisor watchdog restarts the add-on."
@@ -196,8 +217,15 @@ while true; do
   if ! kill -0 "$SOCAT_PID" 2>/dev/null; then
     health_fail "socat on 8143 exited. Exiting so the Supervisor watchdog restarts the add-on."
   fi
+  now=$(mono_now)
+  if [ "$grace_done" -eq 0 ] && [ "$now" -ge "$grace_until" ]; then
+    echo "[proton-bridge] IMAP health: startup grace ended; missed greetings now count toward restart"
+    grace_done=1
+  fi
   if /usr/local/bin/imap-greeting-ok; then
     fails=0
+  elif [ "$now" -lt "$grace_until" ]; then
+    echo "[proton-bridge] WARN: no IMAP greeting on 127.0.0.1:1143 during startup grace ($((grace_until - now))s left); not counting toward restart"
   else
     fails=$((fails + 1))
     echo "[proton-bridge] WARN: no IMAP greeting on 127.0.0.1:1143 (${fails}/${HEALTH_FAILURES})"
