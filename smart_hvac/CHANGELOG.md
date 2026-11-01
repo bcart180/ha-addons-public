@@ -1,3 +1,7 @@
+## 0.7.3 — 2026-11-01
+
+- Supervisor watchdog URL: `watchdog: http://[HOST]:[PORT:8099]/api/health`. With the Watchdog toggle on, the Supervisor restarts the add-on if it stops answering. `/api/health` does not touch the engine or the HA API, so it stays up during startup, a control cycle or an HA outage (new tests). The watchdog check comes from the Supervisor (172.30.32.2), already allowed by the ingress-only filter. No control-logic change.
+
 ## 0.7.2 — 2026-11-01
 
 - Public-safe defaults: `zones` ships empty (`[]`); no real entity IDs in `config.yaml`. A generic example is in DOCS. Existing installs keep their saved zones. No engine change.
