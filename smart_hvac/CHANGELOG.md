@@ -1,3 +1,8 @@
+## 0.7.4 — 2026-11-01
+
+- Public-repo privacy: the Lovelace card's built-in default zones, the card mock page and the thermostat page's offline mock data now use generic placeholders (Room A / Room B / Bath floor, `climate.room_a_mini_split` …) instead of real entity IDs and room names. Set `zones` in the card config to your own entities. Tests, comments and the internal presence key (`owner_home`) no longer name people. No control-logic change; split same-mode tests unchanged.
+- Health access-log filter anchored: only a successful (2xx) `GET /api/health` request line is dropped. Errors, other methods, query strings and paths like `/api/healthz` still log (new test).
+
 ## 0.7.3 — 2026-11-01
 
 - Supervisor watchdog URL: `watchdog: http://[HOST]:[PORT:8099]/api/health`. With the Watchdog toggle on, the Supervisor restarts the add-on if it stops answering. `/api/health` does not touch the engine or the HA API, so it stays up during startup, a control cycle or an HA outage (new tests). The watchdog check comes from the Supervisor (172.30.32.2), already allowed by the ingress-only filter. No control-logic change.
