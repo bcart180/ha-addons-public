@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2 — 2026-11-01
+
+- Quieter logs: successful `GET /api/health` access lines (watchdog / health checks) are no longer logged. The filter is anchored on the exact request line and a 2xx status, so health errors, other methods, query strings and paths like `/api/healthz` still log (new tests). No other change; dry_run handling unchanged.
+
 ## 0.4.1 — 2026-11-01
 
 - An empty share-import staging folder is now logged at info and reported as status `staging_empty` (was an error "refused: staging_empty"). Nothing is imported or deleted; other refusals are unchanged. dry_run handling unchanged.
