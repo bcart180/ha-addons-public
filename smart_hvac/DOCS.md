@@ -15,6 +15,32 @@ Do not Start until the go-live checklist below is done; Start alone is still dry
 - `zones[]`: `climate`, `indoor`, `humidity`, optional `floor` (radiant probe) and `window` (contact sensor),
   `window_action` (`off` default / `fan_only` / `eco`), `window_open_delay_s` / `window_close_delay_s` (0.5.0, default 0),
   `facing_az`/`solar_factor` (sun gain), `heat_only`, and per-zone `comfort`/`sleep`/`away` (radiant).
+- Example `zones` (generic names; replace with your own entities):
+  ```yaml
+  zones:
+    - name: room_a
+      label: Room A
+      climate: climate.room_a_mini_split
+      indoor: sensor.room_a_temperature
+      humidity: sensor.room_a_humidity
+      facing_az: 180
+      solar_factor: 0.5
+      heat_only: false
+      enabled: true
+    - name: bath_floor
+      label: Bath floor
+      climate: climate.bath_floor
+      indoor: sensor.bath_temperature
+      facing_az: 90
+      solar_factor: 0
+      heat_only: true
+      enabled: true
+      comfort: 72
+      sleep: 66
+      away: 60
+  ```
+  `zones` ships empty (0.7.2): with no zones the add-on starts, shows nothing to control and sends nothing.
+  Existing installs keep their saved zones.
 - `profiles`: home/guest 71, sleep 68, away 65/78, sleep 22:30–06:30.
 - `min_cycle_min` (anti-short-cycle), `override_hours` (auto-resume), `radiant_setpoint_max` (highest bath floor setpoint a card / panel may set, default 85), `radiant_air_shutoff` (bath air above this turns the radiant off, default 80), both capped at 85; `radiant_floor_cap`. `cool_lockout` (0.4.1, default 75): while the outdoor temp or forecast high is below this the splits never switch to cool, a warm room just coasts in heat. The old `radiant_room_cap` option is still accepted but ignored; if it is set lower than `radiant_setpoint_max` (0.3.2 saved 80) the add-on logs a warning at start saying so. In `/api/state`, `radiant_room_cap` is a **deprecated alias** of `radiant_air_shutoff` kept for 0.3.x clients; the panel and card read `radiant_setpoint_max` / `radiant_air_shutoff`.
 
