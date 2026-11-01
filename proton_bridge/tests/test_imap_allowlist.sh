@@ -10,7 +10,7 @@ printf '#!/bin/sh\necho ALLOWED\n' > "$T/guard"; chmod +x "$T/guard"
 sed "s#/usr/local/bin/starttls-guard#$T/guard#" "$BIN/imap-gate" > "$T/gate"; chmod +x "$T/gate"
 sed -i "s#/tmp/imap-gate#$T/imap-gate#g" "$T/gate"
 fail=0; n=0
-lists() { printf '%s' "$1" > "$T/o.json"; L=$("$BIN/imap-allowlist" "$T/o.json" 2>/dev/null)
+lists() { printf '%s' "$1" > "$T/o.json"; L=$(bash "$BIN/imap-allowlist" "$T/o.json" 2>/dev/null)
   ALLOW=$(sed -n 's/^ALLOW=//p' <<<"$L"); DENY=$(sed -n 's/^DENY=//p' <<<"$L"); }
 expect() { # $1 opts json, $2 peer, $3 allow|deny
   lists "$1"; n=$((n+1))
@@ -56,7 +56,7 @@ expect "$W" "" deny
 expect "$W" 999.1.1.1 deny
 expect "$W" ::1 deny
 # Missing options file: loopback only, gateway denied.
-L=$("$BIN/imap-allowlist" "$T/missing.json" 2>/dev/null); n=$((n+1))
+L=$(bash "$BIN/imap-allowlist" "$T/missing.json" 2>/dev/null); n=$((n+1))
 [ "$L" = $'ALLOW=127.0.0.1/32\nDENY=172.30.32.1/32' ] || { echo "FAIL: missing opts -> $L"; fail=1; }
 # No default allow entry for the HA network anywhere in the shipped sources.
 n=$((n+1)); if grep -q '172.30.32.0/23 127' rootfs/run.sh; then echo "FAIL: run.sh still hard-codes 172.30.32.0/23"; fail=1; fi
