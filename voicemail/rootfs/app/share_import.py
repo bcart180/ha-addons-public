@@ -263,7 +263,8 @@ def import_from_share(
             staged: list[tuple[str, bytes, int]] = []
             names = sorted(os.listdir(src_fd))
             if not names:
-                raise ImportRefused("staging_empty")
+                log.info("import_from_share: staging folder is empty; nothing to import")
+                return _summary("staging_empty")
             for name in names:
                 if name not in allow:
                     raise ImportRefused("not_allow_listed")
