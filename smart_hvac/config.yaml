@@ -1,5 +1,5 @@
 name: Smart HVAC (new)
-version: "0.7.1"
+version: "0.7.2"
 slug: smart_hvac
 description: Presence-, weather- and sun-aware climate control for mini splits and radiant floor (Ingress panel)
 url: https://github.com/bcart180/ha-addons-public/tree/main/smart_hvac
@@ -42,37 +42,9 @@ options:
     away_cool: 78
     sleep_start: "22:00"
     wake: "07:00"
-  zones:
-    - name: living_room
-      label: Living room
-      climate: example.zone_entity
-      indoor: example.zone_entity
-      humidity: example.zone_entity
-      facing_az: 225
-      solar_factor: 0.8
-      heat_only: false
-      enabled: true
-    - name: zone_b
-      label: Bedroom
-      climate: example.zone_entity
-      indoor: example.zone_entity
-      humidity: example.zone_entity
-      facing_az: 135
-      solar_factor: 0.6
-      heat_only: false
-      enabled: true
-    - name: zone_c
-      label: Bath floor
-      climate: example.zone_entity
-      indoor: example.zone_entity
-      humidity: example.zone_entity
-      facing_az: 90
-      solar_factor: 0
-      heat_only: true
-      enabled: true
-      comfort: 72
-      sleep: 66
-      away: 60
+  # No house entities ship as defaults: add your zones in the Configuration tab (example in DOCS.md).
+  # With no zones the add-on runs and controls nothing.
+  zones: []
 schema:
   enabled: bool
   dry_run: bool

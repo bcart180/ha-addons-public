@@ -1,3 +1,7 @@
+## 0.7.2 — 2026-11-01
+
+- Public-safe defaults: `zones` ships empty (`[]`); no real entity IDs in `config.yaml`. A generic example is in DOCS. Existing installs keep their saved zones. No engine change.
+
 ## 0.7.1 — 2026-11-01
 
 - Logs: the 30-second health check no longer writes an access line (about 2,880 lines a day); all other requests still log. No behaviour change.
