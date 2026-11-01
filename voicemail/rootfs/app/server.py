@@ -138,12 +138,14 @@ log = logging.getLogger("voicemail")
 
 # 0.4.2: drop only successful (2xx) access lines for exactly GET /api/health (Supervisor watchdog / HEALTHCHECK).
 # Anchored on the full request line + status, so errors, other methods, query strings and /api/healthz still log.
-_HEALTH_OK = re.compile(r'"GET /api/health HTTP/\d(?:\.\d)?" 2\d\d ')
+# aiohttp default access format: %a %t "%r" %s ... -> match from line start so a UA/Referer
+# containing the health request line cannot hide another request.
+_HEALTH_OK = re.compile(r'^\S+ \[[^\]]*\] "GET /api/health HTTP/1\.[01]" 2\d\d ')
 
 
 class NoHealthAccess(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
-        return _HEALTH_OK.search(record.getMessage()) is None
+        return _HEALTH_OK.match(record.getMessage()) is None
 
 PHONE_RE = re.compile(r"(?<!\d)(\+?1?[\s\-.]?\(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4})(?!\d)")
 
