@@ -29,11 +29,12 @@ import call_summary
 import drive_backend
 import inbox_store
 import legacy_import
+import share_import
 
 APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC = APP_DIR / "static"
 EXAMPLE = APP_DIR / "example_voicemails.json"
-VERSION = "0.3.7"
+VERSION = "0.3.8"
 AUDIO_LIMIT = 25 * 1024 * 1024
 SENSOR_RE = re.compile(r"sensor\.[a-z0-9_]+")
 RT = web.AppKey("rt", dict)
@@ -772,6 +773,8 @@ async def api_diag(request: web.Request) -> web.Response:
             "audio_root": str(audio_root()),
             "queue_depth": len(queue.jobs()) if queue is not None else 0,
             "migration": migration.get("status"),
+            "import_from_share": SHARE_IMPORT.get("status") or "not_run",
+            "import_marker": (data_dir() / share_import.MARKER_NAME).exists(),
             "dry_run": await dry_run_status(request.app),
         }
     )
@@ -1423,7 +1426,31 @@ def make_app() -> web.Application:
     return app
 
 
+# Store migration (plan C3): allow-listed /data files staged in
+# /share/.migrate-2026-11-01/voicemail/ by the owner. Destinations are
+# relative to data_dir() (/data/callcatch).
+SHARE_IMPORT_ALLOW = {
+    "inbox.json": "inbox.json",
+    "legacy_import.json": "legacy_import.json",
+    "drive_queue.json": "drive_queue.json",
+}
+SHARE_IMPORT: dict = {}
+
+
+def run_share_import() -> dict:
+    """One-shot import before the store opens. Never raises."""
+    try:
+        result = share_import.import_from_share("voicemail", data_dir(), SHARE_IMPORT_ALLOW)
+    except Exception as exc:  # noqa: BLE001 - import must never stop the inbox
+        log.error("import_from_share failed: %s", type(exc).__name__)
+        result = {"status": "error"}
+    SHARE_IMPORT.clear()
+    SHARE_IMPORT.update(result)
+    return result
+
+
 def main() -> None:
+    run_share_import()
     web.run_app(make_app(), host="0.0.0.0", port=PORT, print=lambda *_: None)
 
 

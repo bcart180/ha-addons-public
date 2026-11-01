@@ -265,3 +265,7 @@ Each voicemail gets a short structured summary: **caller name** (only if the cal
 - A callback number is shown only if it is the caller's own number or a number spoken in the call. A model or rule cannot add a number nobody said.
 - The panel (admin-only) shows full numbers with tap-to-call. The shared sensor and push only carry masked numbers (`•••1234`).
 - Urgent means words such as "urgent", "emergency", "asap", "right away", "leak" or "locked out". Low means phrases such as "no rush" or "just checking in". Everything else is normal. Always check the transcript; the summary is a convenience.
+
+## Moving stores: import_from_share
+
+When this add-on is moved to another add-on store, its `/data` does not move with it. The new install imports allow-listed files once, on its first start, from `/share/.migrate-2026-11-01/<slug>/` (`voicemail` or `twilio_house_voice`). The folder must be owned by root with mode 700 (`chmod 700`). Anything unexpected (a symlink, a file not on the allow-list, a file over 8 MB, invalid JSON) stops the import with nothing written, and the log names only the reason. After a successful import the add-on writes an import marker in `/data` and deletes the staged files. It never imports twice.
