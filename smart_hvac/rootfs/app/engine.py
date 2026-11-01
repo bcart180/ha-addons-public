@@ -22,7 +22,7 @@ import core
 from ha_client import excluded
 
 RADIANT_ROOM_CAP_MAX = 85.0  # hard ceiling for both radiant caps, whatever the options say (MA L2)
-RADIANT_SETPOINT_MAX_DEFAULT = 85.0  # floor setpoint cap (Bryson, 30 Oct)
+RADIANT_SETPOINT_MAX_DEFAULT = 85.0  # floor setpoint cap (owner request, 30 Oct)
 RADIANT_AIR_SHUTOFF_DEFAULT = 80.0  # bath air shutoff stays 80
 RADIANT_TIMEOUT_ENTITY = "automation.radiant_heat_timeout_90_min"
 # a unit may round what the app wrote (60 -> 61 on a Celsius-native split); a reported setpoint within this
@@ -663,7 +663,7 @@ class Engine:
                 "enabled": self.enabled or self.dry_run,
                 "override_active": self._override_active(name, now),
                 "manual_profile": "away" if vac else self.st.get("profile", "auto"),
-                "bryson_home": home,
+                "owner_home": home,
                 "minute_of_day": lt.tm_hour * 60 + lt.tm_min,
                 "now_ts": now,
                 "outdoor_temp": outdoor,
