@@ -1,0 +1,11 @@
+configuration:
+  enabled: {name: Enabled (master), description: Off = never changes any thermostat.}
+  dry_run: {name: Practice mode, description: On = show decisions only, change nothing.}
+  presence_entity: {name: Presence entity, description: Bryson's phone only.}
+  away_delay_min: {name: Away delay, description: "0 (default) = away as soon as every phone is away. 15 = everyone must be away 15 min without a break first; coming home always counts at once."}
+  defrost_aware: {name: Defrost aware, description: "Off (default) = 0.5.0 behaviour. On = bounded defrost windows (15 min, 4 per hour) and defrost inference on heat_pump zones when it is cold outside."}
+  learned_preheat: {name: Learned warm-up, description: "Off (default) = fixed 45 min pre-heat before wake. On = each room learns how fast it really heats or cools and starts that much earlier (15 to 180 min)."}
+  sleep_coast_max_min: {name: Sleep coast, description: "0 (default) = sleep target starts at sleep_start. Up to this many minutes earlier, so the room has drifted down to the sleep target by bedtime (learned per room)."}
+  forecast_anticipation: {name: Forecast, description: "Off (default) = current outdoor temp only. On = reads the hourly forecast (read-only) to blend the next 6 h, guard the season with the 12 h high, and size the learned warm-up for the temperature at wake time."}
+  zones: {name: Zones}
+  profiles: {name: Profiles}

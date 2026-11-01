@@ -1,0 +1,76 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Smart HVAC</title>
+<style>
+/* Soft Slate tokens, dark "Tesla" variant (same accent/status colors as house-soft-slate-theme). */
+:root{--bg:#0e1318;--elev:#151c23;--card:#1a222b;--text:#e8eef4;--dim:#8a9bac;--line:#2a3540;
+--accent:#2a9d8f;--accent-h:#21867a;--good:#2f9e6b;--bad:#c94c4c;--warn:#c9892b;--r:14px;--rc:10px}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);
+font:18px "Segoe UI",system-ui,sans-serif}
+.shell{max-width:960px;margin:0 auto;padding:20px}
+.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.header h1{font-size:28px;font-weight:500;margin:0}.dim{color:var(--dim);font-size:15px}
+.notice{background:var(--elev);border-left:4px solid var(--warn);border-radius:var(--rc);padding:10px 14px;margin-bottom:14px;font-size:15px}
+.modes{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+.btn{background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:var(--rc);
+padding:14px 20px;font-size:17px;cursor:pointer;min-width:84px}
+.btn.primary{background:var(--accent);border-color:var(--accent)}.btn:hover{border-color:var(--accent)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.card{background:var(--card);border-radius:var(--r);padding:18px;box-shadow:0 2px 10px rgba(0,0,0,.35);text-align:center}
+.card h2{font-size:18px;font-weight:500;margin:0 0 6px;color:var(--dim)}
+.dial{width:220px;height:220px}.big{font-size:54px;font-weight:300}.ctrl{display:flex;justify-content:center;gap:16px;margin-top:6px}
+.ctrl .btn{min-width:64px;font-size:26px;padding:6px 0}
+.tag{display:inline-block;padding:3px 10px;border-radius:20px;font-size:14px;background:var(--elev);color:var(--dim);margin-top:8px}
+.tag.heat{color:var(--warn)}.tag.cool{color:var(--accent)}
+canvas{width:100%;height:90px;margin-top:10px}
+.footer{color:var(--dim);font-size:14px;margin-top:18px;text-align:center}
+</style></head><body><div class="shell">
+<div class="header"><h1>Climate</h1><span class="dim" id="sub"></span><a href="thermostat" style="color:var(--accent);font-size:15px;text-decoration:none">Thermostat cards →</a></div>
+<div class="notice" id="notice" hidden></div>
+<div class="modes" id="modes"></div>
+<div class="grid" id="zones"></div>
+<div class="footer">Graph: <span style="color:#e8eef4">inside</span> · <span style="color:#8a9bac">outside</span> · <span style="color:#2a9d8f">target</span></div>
+</div><script>
+const MODES=[["auto","Auto"],["home","Home"],["away","Away"],["sleep","Sleep"],["guest","Guest"]];
+let S=null;
+const esc=t=>String(t).replace(/[&<>"']/g,c=>"&#"+c.charCodeAt(0)+";");
+const $=id=>document.getElementById(id);
+async function api(p,b){const r=await fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{});
+ const j=await r.json(); if(!r.ok) throw new Error(j.error||r.status); return j;}
+function arc(v){const lo=55,hi=84,a=Math.max(0,Math.min(1,(v-lo)/(hi-lo)))*270-135,rad=(a-90)*Math.PI/180;
+ return [110+90*Math.cos(rad),110+90*Math.sin(rad),a>45?1:0];}
+function dial(t,mode){const col=mode==="cool"?"#2a9d8f":mode==="heat"?"#c9892b":"#5a6b7c";
+ const [x,y,l]=arc(t??55);
+ return `<svg class="dial" viewBox="0 0 220 220"><path d="M46.4 173.6 A90 90 0 1 1 173.6 173.6" fill="none" stroke="#2a3540" stroke-width="14" stroke-linecap="round"/>
+ ${t!=null?`<path d="M46.4 173.6 A90 90 0 ${l} 1 ${x.toFixed(1)} ${y.toFixed(1)}" fill="none" stroke="${col}" stroke-width="14" stroke-linecap="round"/>`:""}
+ <text x="110" y="122" text-anchor="middle" fill="#e8eef4" font-size="54" font-weight="300">${t!=null?Math.round(t):"--"}°</text></svg>`;}
+function graph(c,h){const ctx=c.getContext("2d"),W=c.width=c.clientWidth*2,H=c.height=180;ctx.clearRect(0,0,W,H);
+ if(h.length<2)return;const vals=h.flatMap(r=>[r[1],r[2],r[3]]).filter(v=>v!=null);
+ const lo=Math.min(...vals)-1,hi=Math.max(...vals)+1;
+ [[2,"#8a9bac"],[3,"#2a9d8f"],[1,"#e8eef4"]].forEach(([i,col])=>{ctx.strokeStyle=col;ctx.lineWidth=3;ctx.beginPath();let s=false;
+  h.forEach((r,k)=>{if(r[i]==null)return;const x=k/(h.length-1)*W,y=H-(r[i]-lo)/(hi-lo)*H;s?ctx.lineTo(x,y):ctx.moveTo(x,y);s=true;});ctx.stroke();});}
+const REASONS={vacation_setback:"Vacation — setting back",vacation_at_setback:"Vacation — holding the setback",
+ vacation_radiant_off:"Vacation — radiant floor stays off"};
+function render(){
+ $("sub").textContent=S.last&&S.last.outdoor!=null?`Outside ${Math.round(S.last.outdoor)}°`:"";
+ const n=$("notice");n.hidden=S.enabled&&!S.dry_run;
+ n.textContent=!S.enabled?"Smart HVAC is off. It is only watching; nothing changes.":"Practice mode: shows what it would do, changes nothing.";
+ $("modes").innerHTML=MODES.map(([k,l])=>`<button class="btn ${S.profile===k?"primary":""}" onclick="setMode('${k}')">${l}</button>`).join("");
+ $("zones").innerHTML=S.zones.map(z=>{const r=(S.last.zones||{})[z.name]||{},h=z.history,last=h[h.length-1]||[];
+  const ov=z.override_until&&z.override_until*1000>Date.now();
+  const word={heat:"Heating",cool:"Cooling",off:"Off"}[r.mode]||"Holding";
+  return `<div class="card"><h2>${esc(z.label)}</h2>${dial(r.setpoint??last[3],r.mode)}
+  <div class="dim">Inside ${last[1]!=null?Math.round(last[1])+"°":"--"}</div>
+  <div class="ctrl"><button class="btn" onclick="bump('${z.name}',-1)">−</button><button class="btn" onclick="bump('${z.name}',1)">+</button></div>
+  <span class="tag ${esc(r.mode||"")}">${word}${ov?" · manual":""}</span>
+  ${REASONS[r.reason]?`<div class="dim">${esc(REASONS[r.reason])}</div>`:""}
+  ${ov?`<div><button class="btn" style="margin-top:8px" onclick="resume('${z.name}')">Back to auto</button></div>`:""}
+  <canvas id="g_${z.name}"></canvas></div>`}).join("");
+ S.zones.forEach(z=>graph($("g_"+z.name),z.history));}
+async function refresh(){try{S=await api("api/state");render();}catch(e){}}
+async function setMode(p){S=await api("api/profile",{profile:p});render();}
+async function bump(z,d){const r=(S.last.zones||{})[z]||{};const t=(r.setpoint||71)+d;
+ try{S=await api(`api/zone/${z}/setpoint`,{temperature:t});render();}catch(e){const n=$("notice");n.hidden=false;n.textContent="Can't change it now: "+e.message;}}
+async function resume(z){S=await api(`api/zone/${z}/resume`,{});render();}
+refresh();setInterval(refresh,30000);
+</script></body></html>

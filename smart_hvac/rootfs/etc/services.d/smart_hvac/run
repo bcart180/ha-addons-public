@@ -1,0 +1,3 @@
+#!/command/with-contenv bash
+# with-contenv so SUPERVISOR_TOKEN is visible (same as CallCatch).
+exec python3 -u /app/server.py

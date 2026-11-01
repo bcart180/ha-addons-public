@@ -1,0 +1,696 @@
+{
+ "generated_at": "2026-11-01T15:20:00Z",
+ "errors": [],
+ "source": "real sample pulled 2026-11-01 via read-only X + Cloudflare connectors",
+ "x": [
+  {
+   "handle": "winchesterstays",
+   "name": "Winchester Getaways",
+   "id": "2115520262351323136",
+   "profile_image_url": null,
+   "followers": {
+    "value": 3,
+    "available": true
+   },
+   "following": {
+    "value": 2,
+    "available": true
+   },
+   "posts_total": {
+    "value": 1,
+    "available": true
+   },
+   "posts_7d": {
+    "value": 1,
+    "available": true
+   },
+   "post_impressions_7d": {
+    "value": 11,
+    "available": true
+   },
+   "engagements_7d": {
+    "value": 0,
+    "available": true
+   },
+   "engagement_rate_7d": {
+    "value": 0.0,
+    "available": true
+   },
+   "account_impressions": {
+    "value": null,
+    "available": false,
+    "reason": "X has no account-level impressions or profile-visit endpoint for app tokens; only per-post public impressions are summed here"
+   },
+   "profile_visits": {
+    "value": null,
+    "available": false,
+    "reason": "X only returns this to the account owner's own user-context login; an app bearer token can't read it"
+   },
+   "link_clicks": {
+    "value": null,
+    "available": false,
+    "reason": "X only returns this to the account owner's own user-context login; an app bearer token can't read it"
+   },
+   "recent_posts": [
+    {
+     "id": "2116556125827170614",
+     "created_at": "2026-10-31T15:41:18.000Z",
+     "text": "Prairie House is open Sun Nov 1 and Mon Nov 2. A reclaimed barn-wood shouse near Winchester Lake with a fire pit, a pool table game room and",
+     "url": "https://x.com/winchesterstays/status/2116556125827170614",
+     "impressions": 11,
+     "likes": 0,
+     "reposts": 0,
+     "replies": 0,
+     "quotes": 0,
+     "bookmarks": 0
+    }
+   ]
+  },
+  {
+   "handle": "HideAWayLCV",
+   "name": "Hide-A-Way Tavern",
+   "id": "2115547473775083520",
+   "profile_image_url": null,
+   "followers": {
+    "value": 3,
+    "available": true
+   },
+   "following": {
+    "value": 2,
+    "available": true
+   },
+   "posts_total": {
+    "value": 1,
+    "available": true
+   },
+   "posts_7d": {
+    "value": 1,
+    "available": true
+   },
+   "post_impressions_7d": {
+    "value": 8,
+    "available": true
+   },
+   "engagements_7d": {
+    "value": 0,
+    "available": true
+   },
+   "engagement_rate_7d": {
+    "value": 0.0,
+    "available": true
+   },
+   "account_impressions": {
+    "value": null,
+    "available": false,
+    "reason": "X has no account-level impressions or profile-visit endpoint for app tokens; only per-post public impressions are summed here"
+   },
+   "profile_visits": {
+    "value": null,
+    "available": false,
+    "reason": "X only returns this to the account owner's own user-context login; an app bearer token can't read it"
+   },
+   "link_clicks": {
+    "value": null,
+    "available": false,
+    "reason": "X only returns this to the account owner's own user-context login; an app bearer token can't read it"
+   },
+   "recent_posts": [
+    {
+     "id": "2116882852251861375",
+     "created_at": "2026-11-01T13:19:36.000Z",
+     "text": "A local tavern, not a chain, where everyone knows your name. Warm lights, a cold pint, and a stool waiting for you.",
+     "url": "https://x.com/HideAWayLCV/status/2116882852251861375",
+     "impressions": 8,
+     "likes": 0,
+     "reposts": 0,
+     "replies": 0,
+     "quotes": 0,
+     "bookmarks": 0
+    }
+   ]
+  },
+  {
+   "handle": "AmbienceHours",
+   "name": "Ambience Hours",
+   "id": "2116206223842304000",
+   "profile_image_url": null,
+   "followers": {
+    "value": 2,
+    "available": true
+   },
+   "following": {
+    "value": 3,
+    "available": true
+   },
+   "posts_total": {
+    "value": 14,
+    "available": true
+   },
+   "posts_7d": {
+    "value": 14,
+    "available": true
+   },
+   "post_impressions_7d": {
+    "value": 39,
+    "available": true
+   },
+   "engagements_7d": {
+    "value": 0,
+    "available": true
+   },
+   "engagement_rate_7d": {
+    "value": 0.0,
+    "available": true
+   },
+   "account_impressions": {
+    "value": null,
+    "available": false,
+    "reason": "X has no account-level impressions or profile-visit endpoint for app tokens; only per-post public impressions are summed here"
+   },
+   "profile_visits": {
+    "value": null,
+    "available": false,
+    "reason": "X only returns this to the account owner's own user-context login; an app bearer token can't read it"
+   },
+   "link_clicks": {
+    "value": null,
+    "available": false,
+    "reason": "X only returns this to the account owner's own user-context login; an app bearer token can't read it"
+   },
+   "recent_posts": [
+    {
+     "id": "2116547180940951965",
+     "created_at": "2026-10-31T15:05:46.000Z",
+     "text": "Snow falling, wind outside, one warm window. Full 3-hour winter cabin on YouTube",
+     "url": "https://x.com/AmbienceHours/status/2116547180940951965",
+     "impressions": 6,
+     "likes": 0,
+     "reposts": 0,
+     "replies": 0,
+     "quotes": 0,
+     "bookmarks": 0
+    },
+    {
+     "id": "2116546115365675036",
+     "created_at": "2026-10-31T15:01:32.000Z",
+     "text": "Drift off with a slow-turning galaxy and a soft 963 Hz tone.",
+     "url": "https://x.com/AmbienceHours/status/2116546115365675036",
+     "impressions": 5,
+     "likes": 0,
+     "reposts": 0,
+     "replies": 0,
+     "quotes": 0,
+     "bookmarks": 0
+    },
+    {
+     "id": "2116545252156698630",
+     "created_at": "2026-10-31T14:58:06.000Z",
+     "text": "Crackling fire, warm glow, nowhere to be.",
+     "url": "https://x.com/AmbienceHours/status/2116545252156698630",
+     "impressions": 3,
+     "likes": 0,
+     "reposts": 0,
+     "replies": 0,
+     "quotes": 0,
+     "bookmarks": 0
+    },
+    {
+     "id": "2116543637937164631",
+     "created_at": "2026-10-31T14:51:41.000Z",
+     "text": "Deep brown noise + a dark screen. Shut the world off.",
+     "url": "https://x.com/AmbienceHours/status/2116543637937164631",
+     "impressions": 3,
+     "likes": 0,
+     "reposts": 0,
+     "replies": 0,
+     "quotes": 0,
+     "bookmarks": 0
+    },
+    {
+     "id": "2116542598135337189",
+     "created_at": "2026-10-31T14:47:33.000Z",
+     "text": "Close your eyes. Neon sunset, warm 80s synth pads, zero beats.",
+     "url": "https://x.com/AmbienceHours/status/2116542598135337189",
+     "impressions": 3,
+     "likes": 0,
+     "reposts": 0,
+     "replies": 0,
+     "quotes": 0,
+     "bookmarks": 0
+    },
+    {
+     "id": "2116261206159995021",
+     "created_at": "2026-10-30T20:09:24.000Z",
+     "text": "432 Hz under the stars",
+     "url": "https://x.com/AmbienceHours/status/2116261206159995021",
+     "impressions": 4,
+     "likes": 0,
+     "reposts": 0,
+     "replies": 0,
+     "quotes": 0,
+     "bookmarks": 0
+    },
+    {
+     "id": "2116260120539607207",
+     "created_at": "2026-10-30T20:05:05.000Z",
+     "text": "Waves rolling in, all night long",
+     "url": "https://x.com/AmbienceHours/status/2116260120539607207",
+     "impressions": 3,
+     "likes": 0,
+     "reposts": 0,
+     "replies": 0,
+     "quotes": 0,
+     "bookmarks": 0
+    },
+    {
+     "id": "2116259665587925059",
+     "created_at": "2026-10-30T20:03:17.000Z",
+     "text": "Close your eyes. Let the rain do the rest",
+     "url": "https://x.com/AmbienceHours/status/2116259665587925059",
+     "impressions": 2,
+     "likes": 0,
+     "reposts": 0,
+     "replies": 0,
+     "quotes": 0,
+     "bookmarks": 0
+    },
+    {
+     "id": "2116259123054424375",
+     "created_at": "2026-10-30T20:01:07.000Z",
+     "text": "Delta waves for deep sleep. Headphones on.",
+     "url": "https://x.com/AmbienceHours/status/2116259123054424375",
+     "impressions": 1,
+     "likes": 0,
+     "reposts": 0,
+     "replies": 0,
+     "quotes": 0,
+     "bookmarks": 0
+    },
+    {
+     "id": "2116258814110441966",
+     "created_at": "2026-10-30T19:59:54.000Z",
+     "text": "174 Hz under the northern lights",
+     "url": "https://x.com/AmbienceHours/status/2116258814110441966",
+     "impressions": 2,
+     "likes": 0,
+     "reposts": 0,
+     "replies": 0,
+     "quotes": 0,
+     "bookmarks": 0
+    }
+   ]
+  }
+ ],
+ "sites": [
+  {
+   "name": "site-a.example",
+   "daily": [
+    {
+     "date": "2026-10-25",
+     "requests": 1677,
+     "page_views": 359,
+     "uniques": 183,
+     "bytes": 109461676,
+     "threats": 13
+    },
+    {
+     "date": "2026-10-26",
+     "requests": 1918,
+     "page_views": 312,
+     "uniques": 215,
+     "bytes": 70465654,
+     "threats": 19
+    },
+    {
+     "date": "2026-10-27",
+     "requests": 2354,
+     "page_views": 361,
+     "uniques": 276,
+     "bytes": 46690889,
+     "threats": 44
+    },
+    {
+     "date": "2026-10-28",
+     "requests": 1668,
+     "page_views": 310,
+     "uniques": 289,
+     "bytes": 78901597,
+     "threats": 10
+    },
+    {
+     "date": "2026-10-29",
+     "requests": 1681,
+     "page_views": 232,
+     "uniques": 315,
+     "bytes": 129147001,
+     "threats": 7
+    },
+    {
+     "date": "2026-10-30",
+     "requests": 1039,
+     "page_views": 162,
+     "uniques": 237,
+     "bytes": 66827444,
+     "threats": 16
+    },
+    {
+     "date": "2026-10-31",
+     "requests": 2689,
+     "page_views": 400,
+     "uniques": 733,
+     "bytes": 753403653,
+     "threats": 0
+    },
+    {
+     "date": "2026-11-01",
+     "requests": 760,
+     "page_views": 90,
+     "uniques": 293,
+     "bytes": 275429440,
+     "threats": 2
+    }
+   ],
+   "data_since": "2026-10-25",
+   "requests_7d": {
+    "value": 12109,
+    "available": true
+   },
+   "page_views_7d": {
+    "value": 1867,
+    "available": true
+   },
+   "bandwidth_bytes_7d": {
+    "value": 1420865678,
+    "available": true
+   },
+   "threats_7d": {
+    "value": 98,
+    "available": true
+   },
+   "uniques_7d": {
+    "value": 2358,
+    "available": true
+   },
+   "requests_30d": {
+    "value": 13786,
+    "available": true
+   },
+   "page_views_30d": {
+    "value": 2226,
+    "available": true
+   },
+   "bandwidth_bytes_30d": {
+    "value": 1530327354,
+    "available": true
+   },
+   "threats_30d": {
+    "value": 111,
+    "available": true
+   },
+   "uniques_30d": {
+    "value": 2541,
+    "available": true
+   },
+   "countries_7d": {
+    "value": [
+     [
+      "US",
+      7332
+     ],
+     [
+      "NL",
+      1070
+     ],
+     [
+      "SG",
+      926
+     ],
+     [
+      "PL",
+      758
+     ],
+     [
+      "CA",
+      492
+     ],
+     [
+      "JP",
+      448
+     ],
+     [
+      "GB",
+      393
+     ],
+     [
+      "DE",
+      206
+     ]
+    ],
+    "available": true
+   },
+   "top_paths_7d": {
+    "value": [
+     [
+      "/",
+      1432
+     ],
+     [
+      "/room-310",
+      294
+     ]
+    ],
+    "available": true
+   },
+   "bot_probe_requests_7d": {
+    "value": 345,
+    "available": true
+   },
+   "rum_pageloads_30d": {
+    "value": 20,
+    "available": true
+   },
+   "rum_visits_30d": {
+    "value": 20,
+    "available": true
+   },
+   "rum_last_day": "2026-10-26",
+   "rum_top_pages": {
+    "value": [
+     [
+      "/",
+      20
+     ]
+    ],
+    "available": true
+   },
+   "rum_referrers": {
+    "value": [
+     [
+      "(direct)",
+      20
+     ]
+    ],
+    "available": true
+   }
+  },
+  {
+   "name": "site-b.example",
+   "daily": [
+    {
+     "date": "2026-10-24",
+     "requests": 1,
+     "page_views": 0,
+     "uniques": 1,
+     "bytes": 8677,
+     "threats": 0
+    },
+    {
+     "date": "2026-10-25",
+     "requests": 2964,
+     "page_views": 534,
+     "uniques": 327,
+     "bytes": 36251061,
+     "threats": 32
+    },
+    {
+     "date": "2026-10-26",
+     "requests": 3199,
+     "page_views": 275,
+     "uniques": 210,
+     "bytes": 6911200,
+     "threats": 43
+    },
+    {
+     "date": "2026-10-27",
+     "requests": 2022,
+     "page_views": 252,
+     "uniques": 301,
+     "bytes": 12160871,
+     "threats": 35
+    },
+    {
+     "date": "2026-10-28",
+     "requests": 492,
+     "page_views": 127,
+     "uniques": 151,
+     "bytes": 3839872,
+     "threats": 1
+    },
+    {
+     "date": "2026-10-29",
+     "requests": 934,
+     "page_views": 101,
+     "uniques": 100,
+     "bytes": 4364391,
+     "threats": 10
+    },
+    {
+     "date": "2026-10-30",
+     "requests": 956,
+     "page_views": 87,
+     "uniques": 89,
+     "bytes": 1879410,
+     "threats": 9
+    },
+    {
+     "date": "2026-10-31",
+     "requests": 646,
+     "page_views": 102,
+     "uniques": 82,
+     "bytes": 3462707,
+     "threats": 3
+    },
+    {
+     "date": "2026-11-01",
+     "requests": 436,
+     "page_views": 108,
+     "uniques": 136,
+     "bytes": 5968398,
+     "threats": 3
+    }
+   ],
+   "data_since": "2026-10-24",
+   "requests_7d": {
+    "value": 8685,
+    "available": true
+   },
+   "page_views_7d": {
+    "value": 1052,
+    "available": true
+   },
+   "bandwidth_bytes_7d": {
+    "value": 38586849,
+    "available": true
+   },
+   "threats_7d": {
+    "value": 104,
+    "available": true
+   },
+   "uniques_7d": {
+    "value": 1069,
+    "available": true
+   },
+   "requests_30d": {
+    "value": 11650,
+    "available": true
+   },
+   "page_views_30d": {
+    "value": 1586,
+    "available": true
+   },
+   "bandwidth_bytes_30d": {
+    "value": 74846587,
+    "available": true
+   },
+   "threats_30d": {
+    "value": 136,
+    "available": true
+   },
+   "uniques_30d": {
+    "value": 1397,
+    "available": true
+   },
+   "countries_7d": {
+    "value": [
+     [
+      "US",
+      2013
+     ],
+     [
+      "NL",
+      1554
+     ],
+     [
+      "SG",
+      1335
+     ],
+     [
+      "PL",
+      754
+     ],
+     [
+      "CL",
+      449
+     ],
+     [
+      "DE",
+      395
+     ],
+     [
+      "BR",
+      366
+     ],
+     [
+      "FR",
+      350
+     ]
+    ],
+    "available": true
+   },
+   "top_paths_7d": {
+    "value": [
+     [
+      "/",
+      1588
+     ]
+    ],
+    "available": true
+   },
+   "bot_probe_requests_7d": {
+    "value": 1020,
+    "available": true
+   },
+   "rum_pageloads_30d": {
+    "value": 40,
+    "available": true
+   },
+   "rum_visits_30d": {
+    "value": 40,
+    "available": true
+   },
+   "rum_last_day": "2026-10-27",
+   "rum_top_pages": {
+    "value": [
+     [
+      "/",
+      40
+     ]
+    ],
+    "available": true
+   },
+   "rum_referrers": {
+    "value": [
+     [
+      "(direct)",
+      20
+     ],
+     [
+      "com.google.android.gm",
+      20
+     ]
+    ],
+    "available": true
+   }
+  }
+ ]
+}

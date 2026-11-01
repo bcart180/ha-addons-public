@@ -1,0 +1,44 @@
+/* Main tab (0.2.0): House Soft Slate theme, big plain-English labels. Scoped to body.slate / #mainview. */
+body.slate{--ss-bg:#e8eef4;--ss-elev:#f4f7fa;--ss-panel:#eef3f8;--ss-fg:#1e2a36;--ss-dim:#5a6b7c;--ss-line:#c5d0dc;
+  --ss-acc:#2a9d8f;--ss-acc-h:#21867a;--ss-acc-soft:#d5f0ec;--ss-good:#2f9e6b;--ss-bad:#c94c4c;--ss-warn:#c9892b;
+  background:var(--ss-bg);color:var(--ss-fg);font:18px/1.45 "Segoe UI",system-ui,-apple-system,sans-serif}
+body.slate header{background:var(--ss-elev);border-bottom:1px solid var(--ss-line);color:var(--ss-fg)}
+body.slate .health,body.slate #readonly,body.slate #env{display:none}
+body.slate .clock{color:var(--ss-dim)}
+body.slate .tabs button{background:#fff;color:var(--ss-dim);border:1px solid var(--ss-line);border-radius:10px;padding:10px 18px;font-family:inherit;font-weight:600;font-size:16px;line-height:1}
+body.slate .tabs button.on{background:var(--ss-acc);color:#fff;border-color:var(--ss-acc)}
+body.slate footer{color:var(--ss-dim)}
+#mainview{max-width:960px;margin:0 auto;padding:16px 14px 60px}
+#mainview .mv-card{background:#fff;border:1px solid var(--ss-line);border-radius:14px;box-shadow:0 2px 10px rgba(30,42,54,.06);padding:18px 20px;margin-bottom:14px}
+#mainview h2{margin:0 0 6px;font-size:20px;font-weight:600;color:var(--ss-dim)}
+#mainview .mv-total{font-size:52px;font-weight:700;letter-spacing:-.01em;font-variant-numeric:tabular-nums;line-height:1.1}
+#mainview .mv-asof{color:var(--ss-dim);font-size:15px;margin-top:4px}
+#mainview .mv-ranges{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px}
+#mainview .mv-ranges button{flex:1;min-width:64px;min-height:48px;background:var(--ss-elev);color:var(--ss-fg);border:1px solid var(--ss-line);border-radius:10px;font-family:inherit;font-weight:600;font-size:18px;line-height:1;cursor:pointer}
+#mainview .mv-ranges button.na{opacity:.55;border-style:dashed}
+#mainview .mv-ranges button.on{background:var(--ss-acc);border-color:var(--ss-acc);color:#fff}
+#mainview .mv-ranges button.limited::after{content:" *";}
+#mainview .mv-gain{font-size:34px;font-weight:700;font-variant-numeric:tabular-nums}
+#mainview .mv-gain small{font-size:22px;font-weight:600}
+#mainview .good{color:var(--ss-good)}#mainview .bad{color:var(--ss-bad)}#mainview .flat{color:var(--ss-dim)}
+#mainview .mv-note{background:var(--ss-panel);border-left:4px solid var(--ss-warn);border-radius:10px;padding:10px 12px;margin-top:10px;font-size:16px;color:var(--ss-fg)}
+#mainview .mv-split{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+#mainview .mv-split div{background:var(--ss-elev);border-radius:10px;padding:10px 12px}
+#mainview .mv-split b{display:block;font-size:22px;font-variant-numeric:tabular-nums}
+#mainview .mv-split span{font-size:15px;color:var(--ss-dim)}
+#mainview .mv-bar{display:flex;height:22px;border-radius:11px;overflow:hidden;margin-top:12px;background:var(--ss-panel)}
+#mainview .mv-bar i{display:block;height:100%}
+#mainview .mv-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:15px;color:var(--ss-dim)}
+#mainview .mv-legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+#mainview .mv-chart{width:100%;height:240px}
+#mainview .mv-chart .u-legend{display:none}
+#mainview table{width:100%;border-collapse:collapse;font-size:18px;font-variant-numeric:tabular-nums}
+#mainview thead,#mainview thead tr,#mainview th{background:#fff!important;position:static}
+#mainview th{text-align:right;font-size:15px;font-weight:600;color:var(--ss-dim);padding:8px 6px;border-bottom:1px solid var(--ss-line)}
+#mainview th:first-child,#mainview td:first-child{text-align:left}
+#mainview tbody tr:hover td{background:var(--ss-elev)}
+#mainview td{background:#fff;color:var(--ss-fg);text-align:right;padding:12px 6px;border-bottom:1px solid var(--ss-panel)}
+#mainview td .nm{display:block;font-size:14px;color:var(--ss-dim)}
+#mainview .mv-empty{color:var(--ss-dim);padding:20px 0;text-align:center}
+@media (max-width:600px){#mainview .mv-total{font-size:40px}#mainview .mv-split{grid-template-columns:1fr}
+  #mainview table{font-size:15px}#mainview td,#mainview th{padding:10px 3px}#mainview td .nm{display:none}#mainview .mv-card{padding:14px 12px}#mainview .hide-sm{display:none}}

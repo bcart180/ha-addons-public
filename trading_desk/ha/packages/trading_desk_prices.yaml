@@ -1,0 +1,87 @@
+# Trading Desk 0.2.0: keyless price sensors + Trezor helper (replaces the Life HQ price routine).
+# Source: Yahoo Finance public chart endpoint (no key, unofficial: may rate-limit/change) and
+# Coinbase public spot (no key). No secrets in this file. Read-only GETs only.
+# Stocks poll every 5 min on weekdays 09:25-16:05 ET via the automation below (scan_interval is
+# long so nothing polls overnight); BTC polls every 5 min, 24/7.
+# SPY and QQQ are examples: replace them with your own symbols.
+# Add a newly held symbol by copying one block (update the automation's entity list too).
+
+input_number:
+  trezor_btc:   # no 'initial': HA restores the last value; set the amount once in the UI after install
+    name: Trezor Bitcoin
+    icon: mdi:bitcoin
+    min: 0
+    max: 21
+    step: 0.00001
+    mode: box
+    unit_of_measurement: BTC
+
+rest:
+  - resource: https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=1d&range=1d
+    headers:
+      User-Agent: Mozilla/5.0 (HomeAssistant)
+    scan_interval: 86400
+    timeout: 15
+    sensor:
+      - name: "Price SPY"
+        unique_id: td_price_spy
+        unit_of_measurement: USD
+        device_class: monetary
+        value_template: "{{ value_json.chart.result[0].meta.regularMarketPrice | float(none) }}"
+        availability: "{{ value_json is defined and value_json.chart.result is not none }}"
+        json_attributes_path: "$.chart.result[0].meta"
+        json_attributes: [previousClose, chartPreviousClose, regularMarketTime, regularMarketChangePercent, exchangeName]
+  - resource: https://query1.finance.yahoo.com/v8/finance/chart/QQQ?interval=1d&range=1d
+    headers:
+      User-Agent: Mozilla/5.0 (HomeAssistant)
+    scan_interval: 86400
+    timeout: 15
+    sensor:
+      - name: "Price QQQ"
+        unique_id: td_price_qqq
+        unit_of_measurement: USD
+        device_class: monetary
+        value_template: "{{ value_json.chart.result[0].meta.regularMarketPrice | float(none) }}"
+        availability: "{{ value_json is defined and value_json.chart.result is not none }}"
+        json_attributes_path: "$.chart.result[0].meta"
+        json_attributes: [previousClose, chartPreviousClose, regularMarketTime, regularMarketChangePercent, exchangeName]
+  - resource: https://api.coinbase.com/v2/prices/BTC-USD/spot
+    scan_interval: 300
+    timeout: 15
+    sensor:
+      - name: "Price BTC-USD"
+        unique_id: td_price_btc_usd
+        unit_of_measurement: USD
+        device_class: monetary
+        value_template: "{{ value_json.data.amount | float(none) }}"
+
+template:
+  - sensor:
+      - name: "Trezor Bitcoin value"
+        unique_id: td_trezor_btc_value
+        unit_of_measurement: USD
+        device_class: monetary
+        state: >-
+          {% set q = states('input_number.trezor_btc') | float(none) %}
+          {% set p = states('sensor.price_btc_usd') | float(none) %}
+          {{ (q * p) | round(2) if q is not none and p is not none else none }}
+        availability: "{{ has_value('input_number.trezor_btc') and has_value('sensor.price_btc_usd') }}"
+
+automation:
+  - id: td_price_poll_market_hours
+    alias: "Trading Desk: refresh stock prices (market hours)"
+    mode: single
+    triggers:
+      - trigger: time_pattern
+        minutes: "/5"
+    conditions:
+      - condition: time
+        after: "09:25:00"
+        before: "16:05:00"
+        weekday: [mon, tue, wed, thu, fri]
+    actions:
+      - action: homeassistant.update_entity
+        target:
+          entity_id:
+            - sensor.price_spy
+            - sensor.price_qqq

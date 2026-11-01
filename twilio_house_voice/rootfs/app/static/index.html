@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Voice</title>
+<link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+<header class="top">
+  <h1>Voice</h1>
+  <p class="sub" id="version">…</p>
+</header>
+<main class="split">
+  <section class="pane list-pane" aria-label="Calls">
+    <ul class="checks" id="checks" aria-label="Readiness"></ul>
+    <h2>Live</h2>
+    <ul class="rows" id="active"><li class="empty">No active calls</li></ul>
+    <h2>Recent</h2>
+    <ul class="rows" id="recent"><li class="empty">No calls yet</li></ul>
+  </section>
+  <section class="pane detail-pane" id="detail" aria-live="polite">
+    <p class="placeholder" id="placeholder">Select a call</p>
+    <div id="detail-body" hidden>
+      <button type="button" class="back" id="back">Back</button>
+      <div class="hero">
+        <p class="hero-from" id="d-from"></p>
+        <p class="hero-when" id="d-when"></p>
+      </div>
+      <dl class="facts" id="d-facts"></dl>
+      <p class="note">The transcript and recording open in the voicemail inbox. Full numbers and secrets are never shown here.</p>
+    </div>
+  </section>
+</main>
+<script src="static/app.js"></script>
+</body>
+</html>

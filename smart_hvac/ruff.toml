@@ -1,0 +1,8 @@
+line-length = 120
+target-version = "py312"
+[lint]
+select = ["E", "F", "W", "B"]
+ignore = ["E731"]
+[lint.per-file-ignores]
+# MA's adversarial suite for PR #43, kept byte-for-byte as audited
+"tests/test_060_ma_adversarial.py" = ["E401", "E501", "E701", "E702", "F401", "F403", "B023"]

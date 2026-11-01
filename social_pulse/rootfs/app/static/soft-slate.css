@@ -1,0 +1,90 @@
+/* House Soft Slate — default theme for household pages
+   Exclude: business and rental sites (they keep their own brands).
+   Use: link this file or paste :root into the page <style>. */
+:root {
+  --bg: #e8eef4;
+  --bg-elevated: #f4f7fa;
+  --panel: #ffffff;
+  --panel2: #eef3f8;
+  --line: #c5d0dc;
+  --line-strong: #9aadc0;
+  --text: #1e2a36;
+  --dim: #5a6b7c;
+  --accent: #2a9d8f;
+  --accent-hover: #21867a;
+  --accent-soft: #d5f0ec;
+  --good: #2f9e6b;
+  --bad: #c94c4c;
+  --warn: #c9892b;
+  --focus: #2a9d8f;
+  --radius: 14px;
+  --radius-sm: 10px;
+  --shadow: 0 8px 24px rgba(30, 42, 54, 0.08);
+  --font: "Segoe UI", "Segoe UI Variable", system-ui, -apple-system, sans-serif;
+  --mono: Consolas, "Cascadia Mono", ui-monospace, monospace;
+  --space: 16px;
+  --space-lg: 24px;
+  --type-body: 18px;
+  --type-title: 28px;
+  --type-display: 40px;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--type-body);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); }
+a:hover { color: var(--accent-hover); }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.shell { max-width: 960px; margin: 0 auto; padding: var(--space-lg); }
+.header {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 14px 0; margin-bottom: var(--space);
+  border-bottom: 1px solid var(--line);
+}
+.header h1 { margin: 0; font-size: var(--type-title); font-weight: 700; letter-spacing: 0.2px; }
+.header .tag { color: var(--dim); font-size: 15px; }
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: var(--space-lg);
+  margin-bottom: var(--space);
+}
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  background: var(--panel2); color: var(--text);
+  border: 2px solid var(--line); border-radius: var(--radius-sm);
+  padding: 10px 18px; cursor: pointer; font: inherit;
+}
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn.danger { border-color: #e0a0a0; color: var(--bad); }
+input, select, textarea {
+  background: var(--bg-elevated); color: var(--text);
+  border: 2px solid var(--line); border-radius: var(--radius-sm);
+  padding: 10px 14px; font: inherit;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--accent); outline: none; }
+.dim { color: var(--dim); }
+.good { color: var(--good); }
+.bad { color: var(--bad); }
+.warn { color: var(--warn); }
+.notice {
+  border-left: 4px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px; margin-bottom: var(--space);
+}
+.footer { margin-top: var(--space-lg); padding-top: var(--space); border-top: 1px solid var(--line); color: var(--dim); font-size: 14px; }
+@media (max-width: 640px) {
+  :root { --type-body: 17px; --type-title: 24px; }
+  .shell { padding: var(--space); }
+}

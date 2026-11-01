@@ -1,0 +1,80 @@
+configuration:
+  sensor_entity:
+    name: Voicemail sensor
+    description: >-
+      Entity CallCatch publishes for dashboards and notifications.
+      State is the message count. Attributes voicemails and recent_items
+      hold the latest messages. Default sensor.inbound_voicemails.
+  media_player:
+    name: Speaker
+    description: >-
+      Optional media_player entity for the speaker button. Leave blank to
+      play only inside CallCatch. There is no default player.
+  audio_dir:
+    name: Legacy audio directory
+    description: >-
+      Optional read-only folder for recordings already on disk.
+      New recordings are stored under Media or Share (callcatch/), never /local.
+  mock:
+    name: Mock inbox
+    description: Show the built-in sample inbox when CallCatch is not running inside Home Assistant.
+  log_level:
+    name: Log level
+    description: How much CallCatch writes to the App log. Tokens and keys are never written.
+  ingest_token:
+    name: Ingest token
+    description: >-
+      Bearer token for POST /api/ingest, sent only as Authorization: Bearer.
+      Set the same value as CallCatch Voice ha_webhook_token. Leave empty to
+      refuse ingest. Stored as a password and never written to the log.
+  legacy_pyscript:
+    name: Legacy pyscript mode
+    description: >-
+      auto uses the pyscript inbox services when
+      /homeassistant/pyscript/.inbound_voicemails.json or
+      /config/pyscript/.inbound_voicemails.json exists. on keeps that path.
+      off uses CallCatch's own store and imports the legacy file once, read-only.
+  storage_backend:
+    name: Storage backend
+    description: >-
+      local keeps audio under /media/callcatch or /share/callcatch.
+      google_drive uploads each recording and its transcript JSON to a
+      Drive folder with the drive.file scope only.
+  keep_local_copy:
+    name: Keep local copy
+    description: >-
+      When storage is google_drive, also keep the audio file on disk.
+      Playback can stream from Drive through CallCatch when this is off.
+      Ignored for local storage.
+  google_drive_folder_id:
+    name: Google Drive folder ID
+    description: >-
+      Drive folder that receives each voicemail's audio and transcript JSON.
+      CallCatch does not create public sharing links.
+  google_service_account_json:
+    name: Google service account JSON
+    description: >-
+      Full JSON key for a service account. Password field. Prefer this or the
+      OAuth refresh token, not both. The private key is never logged.
+      Scope used is https://www.googleapis.com/auth/drive.file only.
+  google_oauth_client_id:
+    name: Google OAuth client ID
+    description: OAuth client id used with the refresh token. Not required when a service account JSON is set.
+  google_oauth_client_secret:
+    name: Google OAuth client secret
+    description: OAuth client secret. Password field. Never logged. Not required when a service account JSON is set.
+  google_oauth_refresh_token:
+    name: Google OAuth refresh token
+    description: >-
+      Refresh token minted with scope https://www.googleapis.com/auth/drive.file
+      only. Password field. Never logged. Not required when a service account JSON is set.
+  voice_trust_url:
+    name: CallCatch Voice address (allow / block lists)
+    description: >-
+      Internal address of the CallCatch Voice App, for example
+      http://<repohash>-twilio-house-voice:8787. Only http://hostname:port on the
+      Supervisor network is accepted. Leave blank to hide list editing.
+  voice_trust_token:
+    name: CallCatch Voice trust token
+    description: >-
+      The same secret as trust_api_token in CallCatch Voice. Password field. Never logged.

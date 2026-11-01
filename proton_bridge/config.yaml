@@ -1,0 +1,54 @@
+name: Proton Mail Bridge
+version: "3.27.1-10"
+slug: proton_bridge
+description: Proton Mail Bridge (built from Proton's official source, v3.27.1) exposing IMAP only on the LAN
+url: https://github.com/bcart180/ha-addon-proton-bridge
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: services
+boot: auto
+# Keychain (GnuPG + pass), Bridge vault and message cache all live in /data.
+# /data is in HA backups -> backups MUST be encrypted (see README).
+# Cold backup: add-on is stopped while backed up (consistent vault/cache).
+backup: cold
+backup_exclude:
+  - home/.cache/*
+# LAN-only. Do NOT port-forward these on the router. Off-LAN access is via Cloudflare (README).
+# IMAP only. SMTP stays on container localhost (127.0.0.1:1025) and is NOT published.
+# IPv4 only: the container listener is TCP4 and the allow-list is IPv4 (see DOCS.md).
+ports:
+  8143/tcp: 1143
+ports_description:
+  8143/tcp: IMAP, IPv4 only (STARTTLS required before login, Bridge self-signed cert)
+# Ingress is only used for the one-time login terminal (login_mode: true).
+# Admin-only sidebar panel; ttyd runs ONLY when login_mode is true.
+ingress: true
+ingress_port: 7681
+ingress_panel: true
+panel_title: Proton Bridge
+panel_admin: true
+panel_icon: mdi:email-lock
+# Probes the published port, which is socat. run.sh closes that listener when
+# Bridge's own IMAP greeting on 127.0.0.1:1143 fails, so this tracks Bridge.
+watchdog: tcp://[HOST]:[PORT:8143]
+options:
+  login_mode: false
+  log_level: info
+  lan_cidr: ""
+  deny_docker_gateway: false
+  # Seconds between cleartext IMAP greeting probes of 127.0.0.1:1143.
+  health_interval: 60
+  # Consecutive missed greetings before socat on 8143 is stopped and the add-on exits.
+  # 5 probes * 60s is about 5 minutes.
+  health_failures: 5
+# No secret options on purpose: the Proton password / 2FA are typed once into the
+# login terminal and never stored in add-on options.
+schema:
+  login_mode: bool
+  log_level: list(debug|info|warn|error)
+  lan_cidr: 'match(^$|^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}/(3[0-2]|[12]?[0-9])$)?'
+  deny_docker_gateway: bool
+  health_interval: "int(1,3600)"
+  health_failures: "int(1,30)"

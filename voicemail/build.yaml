@@ -1,0 +1,5 @@
+# armv7 is omitted: ghcr.io/home-assistant/armv7-base:3.23 is not published,
+# and Home Assistant dropped armv7 in 2025.12.
+build_from:
+  aarch64: ghcr.io/home-assistant/aarch64-base:3.23
+  amd64: ghcr.io/home-assistant/amd64-base:3.23

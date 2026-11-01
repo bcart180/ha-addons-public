@@ -1,0 +1,183 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Thermostats</title>
+<style>
+/* Soft Slate dark variant (house-soft-slate-theme accent/status tokens on the add-on's dark base). */
+:root{--bg:#0e1318;--elev:#151c23;--card:#1a222b;--text:#e8eef4;--dim:#8a9bac;--line:#2a3540;
+--accent:#2a9d8f;--accent-h:#21867a;--soft:#d5f0ec;--good:#2f9e6b;--bad:#c94c4c;--warn:#c9892b;--r:14px;--rc:10px;--face:#050607}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:18px "Segoe UI",system-ui,sans-serif}
+.shell{max-width:1180px;margin:0 auto;padding:20px}
+.header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.header h1{font-size:28px;font-weight:500;margin:0}.dim{color:var(--dim);font-size:15px}
+.header a{color:var(--accent);text-decoration:none;font-size:15px}
+.notice{background:var(--elev);border-left:4px solid var(--warn);border-radius:var(--rc);padding:10px 14px;margin-bottom:14px;font-size:15px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px}
+.card{background:var(--card);border-radius:var(--r);padding:16px;box-shadow:0 2px 10px rgba(0,0,0,.35)}
+.zhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.zhead h2{font-size:19px;font-weight:500;margin:0}
+/* thermostat face */
+.face{position:relative;aspect-ratio:1/1;max-width:330px;margin:0 auto;border-radius:24%;
+background:radial-gradient(120% 90% at 30% 10%,#1b1f24 0%,var(--face) 55%);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 10px 30px rgba(0,0,0,.6);
+display:flex;flex-direction:column;align-items:center;justify-content:center;user-select:none}
+.face.off .big{color:#5c6873}
+.top{position:absolute;top:13%;left:15%;right:15%;display:flex;justify-content:space-between;align-items:center}
+.ico{width:26px;height:26px;stroke:#e8eef4;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.ico.heat{stroke:var(--warn)}.ico.cool{stroke:#6fb3ff}.ico.offi{stroke:#5c6873}
+.menu{background:none;border:0;padding:6px;cursor:pointer;border-radius:8px}.menu:focus-visible{outline:2px solid var(--accent)}
+.status{position:absolute;top:27%;font-size:14px;color:#b9c4cf;display:flex;gap:10px;align-items:center}
+.status .sep{width:1px;height:14px;background:#3a4550}
+.big{font-size:min(92px,24vw);font-weight:200;line-height:1;letter-spacing:-2px;margin-top:4%}
+.sp{position:absolute;bottom:13%;display:flex;align-items:center;gap:14px}
+.pill{min-width:62px;padding:6px 14px;border:2px solid var(--accent);border-radius:20px;color:var(--soft);font-weight:600;font-size:17px;text-align:center}
+.pill.heat{border-color:var(--warn);color:#f1d3a6}.pill.off{border-color:#3a4550;color:#5c6873}
+.step{width:44px;height:44px;border-radius:50%;border:1px solid #2b333c;background:#0d1114;color:#e8eef4;font-size:24px;cursor:pointer;line-height:1}
+.step:hover{border-color:var(--accent)}.step:disabled{opacity:.35;cursor:default}
+/* smart hvac strip */
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0 8px}
+.chip{padding:4px 10px;border-radius:20px;font-size:13.5px;background:var(--elev);color:var(--dim);border:1px solid var(--line)}
+.chip.auto{color:var(--soft);border-color:var(--accent)}.chip.hold{color:#f1d3a6;border-color:var(--warn)}
+.chip.ok{color:#bfe8d3;border-color:var(--good)}.chip.bad{color:#f2c2c2;border-color:var(--bad)}
+.why{font-size:14.5px;color:var(--dim);margin:2px 0 10px;min-height:20px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.btn{background:var(--elev);color:var(--text);border:1px solid var(--line);border-radius:var(--rc);padding:10px 14px;font-size:15px;cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent)}.btn:hover{border-color:var(--accent)}
+.btn.sel{border-color:var(--accent);color:var(--soft)}
+/* menu sheet */
+.sheet{position:absolute;inset:0;border-radius:24%;background:rgba(5,6,7,.96);display:none;flex-direction:column;justify-content:center;align-items:center;gap:10px;padding:14%}
+.sheet.open{display:flex}.sheet h3{margin:0;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);font-weight:500}
+.sheet .row{justify-content:center}.sheet .btn{padding:8px 12px;font-size:14px}
+.close{position:absolute;top:10%;right:13%;background:none;border:0;color:var(--dim);font-size:22px;cursor:pointer}
+/* graph */
+.gwrap{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+.gbar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:var(--rc);overflow:hidden}
+.seg button{background:none;border:0;color:var(--dim);padding:5px 11px;font-size:13px;cursor:pointer}
+.seg button.on{background:var(--accent);color:#fff}
+.tog{font-size:13px;color:var(--dim);display:flex;align-items:center;gap:5px;cursor:pointer}
+svg.g{width:100%;height:150px;display:block}
+.leg{display:flex;gap:12px;flex-wrap:wrap;font-size:12.5px;color:var(--dim);margin-top:4px}
+.leg i{display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:4px;border-radius:2px}
+.footer{color:var(--dim);font-size:13.5px;margin-top:18px;text-align:center}
+@media (max-width:420px){.shell{padding:12px}.grid{grid-template-columns:1fr}.face{max-width:300px}}
+</style></head><body><div class="shell">
+<div class="header"><h1>Thermostats</h1><span class="dim" id="sub"></span><a href="./">Smart HVAC panel →</a></div>
+<div class="notice" id="notice" hidden></div>
+<div class="grid" id="cards"></div>
+<div class="footer">Card changes start a manual hold the app respects. “Resume auto” hands the zone back. Schedules live in the app, not here.</div>
+</div><script>
+const MOCK=new URLSearchParams(location.search).has("mock");
+const $=id=>document.getElementById(id), esc=t=>String(t??"").replace(/[&<>"']/g,c=>"&#"+c.charCodeAt(0)+";");
+let S=null; const UI={}; const H={}; const pend={};
+const REASONS={ok:"Target set by the active profile",defrosting:"Defrosting — the app waits",preheating:"Pre-heating coil — the app waits",no_change:"At target — nothing to change",manual_override:"Manual hold — app is waiting",
+ unit_off:"Turned off by a person — app won't turn it back on",disabled:"App is off",short_cycle_guard:"Short-cycle guard (protecting the compressor)",
+ overtemp_shutoff:"Safety cap reached — radiant shut off",window_open:"Window open — paused","missing:indoor_temp":"Indoor sensor offline — holding",
+ "missing:outdoor_temp":"Outdoor temp unavailable — holding","missing:presence":"Presence unknown — holding","missing:unit":"Unit unavailable",zone_disabled:"Zone disabled in app",
+ vacation_setback:"Vacation — setting back",vacation_at_setback:"Vacation — holding the setback",vacation_radiant_off:"Vacation — radiant floor stays off"};
+const PROF={home:"Home",away:"Away",sleep:"Sleep",guest:"Guest",auto:"Auto",vacation:"Vacation"};
+const I={
+ flame:'<path d="M12 3c1 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2.5 1.5-4 2.5-5 .3 1.6 1.2 2.6 2.5 3-.6-3 0-5.6 0-8z"/>',
+ snow:'<path d="M12 2v20M4 6l16 12M20 6 4 18M9 3.5 12 6l3-2.5M9 20.5 12 18l3 2.5"/>',
+ power:'<path d="M12 3v8M6.3 6.6a8 8 0 1 0 11.4 0"/>',
+ menu:'<path d="M4 7h16M4 12h16M4 17h16"/>',
+ sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+ cloud:'<path d="M7 18h10a4 4 0 0 0 .5-8 6 6 0 0 0-11.3 1.6A3.3 3.3 0 0 0 7 18z"/>',
+ partly:'<path d="M8 4v1.5M3.5 8.5H5M4.8 5.3l1 1M11.2 5.3l-1 1"/><path d="M5.6 11a3 3 0 1 1 5.3-2.6"/><path d="M8.5 19h8a3.5 3.5 0 0 0 .4-7 5 5 0 0 0-9.3 1.4A2.8 2.8 0 0 0 8.5 19z"/>',
+ rain:'<path d="M7 15h10a4 4 0 0 0 .5-8 6 6 0 0 0-11.3 1.6A3.3 3.3 0 0 0 7 15z"/><path d="M9 18l-1 3M13 18l-1 3M17 18l-1 3"/>',
+ night:'<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
+ drop:'<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/>'};
+const svg=(k,c="")=>`<svg class="ico ${c}" viewBox="0 0 24 24" aria-hidden="true">${I[k]}</svg>`;
+function wxIcon(w){w=w||"";if(/rain|pour|storm|snow|hail/.test(w))return"rain";if(/night/.test(w))return"night";if(/partly/.test(w))return"partly";if(/sun/.test(w))return"sun";return"cloud";}
+async function api(p,b){if(MOCK)return mockApi(p,b);const r=await fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{});
+ const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j;}
+function note(m){const n=$("notice");n.hidden=!m;n.textContent=m||"";}
+function fmtT(ts){return new Date(ts*1000).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});}
+function card(z){
+ const L=S.last||{},r=(L.zones||{})[z.name]||{},lv=r.live||{},now=Date.now()/1000;
+ const hold=z.override_until&&z.override_until>now, mode=lv.mode||"off", off=mode==="off";
+ const sp=pend[z.name]??lv.setpoint, act=lv.hvac_action, heat=act==="heating"||(!act&&mode==="heat");
+ const stat=off?"Off":act==="heating"?"Heating":act==="cooling"?"Cooling":act==="fan"?"Fan":"Idle";
+ const prof=r.profile||(S.profile&&S.profile!=="auto"?S.profile:null);
+ const capOn=L.radiant_timeout==="on";
+ const ro=!S.enabled||S.dry_run;
+ let chips=S.vacation?`<span class="chip hold">Vacation · ${z.heat_only?"radiant off":`${S.vacation_heat}° heat / ${S.vacation_cool}° cool`}</span>`
+  :`<span class="chip">${esc(PROF[S.profile]||S.profile)}${S.profile==="auto"&&prof?" → "+esc(PROF[prof]):""}</span>`;
+ chips+=hold?`<span class="chip hold">Manual hold · until ${fmtT(z.override_until)}</span>`:`<span class="chip auto">App in control</span>`;
+ if(L.outdoor!=null)chips+=`<span class="chip">Outside ${Math.round(L.outdoor)}°</span>`;
+ if(z.heat_only)chips+=`<span class="chip ${capOn?"ok":"bad"}">90-min cap ${capOn?"armed":"OFF"}</span><span class="chip">Max ${S.radiant_setpoint_max??85}° · Air off ${S.radiant_air_shutoff??80}°</span>`;
+ const modes=(z.heat_only?["heat","off"]:["heat","cool","off"]).filter(m=>!lv.hvac_modes||!lv.hvac_modes.length||lv.hvac_modes.includes(m));
+ const fans=z.heat_only?[]:(lv.fan_modes||[]);
+ const why=REASONS[r.reason]||(r.reason?String(r.reason):"Waiting for first run");
+ const tgt=r.setpoint!=null&&(r.reason==="ok"||r.reason==="vacation_setback")?` (${r.setpoint}°)`:"";
+ return `<div class="card" id="c-${z.name}">
+ <div class="zhead"><h2>${esc(z.label)}</h2><span class="dim">${z.heat_only?"Radiant floor":"Mini split"}</span></div>
+ <div class="face ${off?"off":""}">
+  <div class="top">${svg(wxIcon(L.weather))}${off?svg("power","offi"):mode==="cool"?svg("snow","cool"):svg("flame","heat")}
+   <button class="menu" aria-label="Menu" onclick="sheet('${z.name}',1)">${svg("menu")}</button></div>
+  <div class="status">${lv.humidity!=null?`<span>${svg("drop").replace('class="ico ','class="ico " style="width:14px;height:14px" ')} ${Math.round(lv.humidity)}%</span><span class="sep"></span>`:""}<span>${stat}</span></div>
+  <div class="big">${lv.indoor!=null?Math.round(lv.indoor):"--"}</div>
+  <div class="sp"><button class="step" aria-label="Lower" ${off||ro?"disabled":""} onclick="bump('${z.name}',-1)">−</button>
+   <div class="pill ${off?"off":heat||mode==="heat"?"heat":""}">${off?"Off":sp!=null?(+sp).toFixed(sp%1?1:0):"--"}</div>
+   <button class="step" aria-label="Raise" ${off||ro?"disabled":""} onclick="bump('${z.name}',1)">+</button></div>
+  <div class="sheet ${UI[z.name]?"open":""}"><button class="close" aria-label="Close" onclick="sheet('${z.name}',0)">×</button>
+   <h3>Mode</h3><div class="row">${modes.map(m=>`<button class="btn ${m===mode?"sel":""}" data-zone="${esc(z.name)}" data-mode="${esc(m)}" onclick="act(this.dataset.zone,'mode',{hvac_mode:this.dataset.mode})">${esc(m[0].toUpperCase()+m.slice(1))}</button>`).join("")}</div>
+   ${fans.length?`<h3>Fan</h3><div class="row">${fans.map(f=>`<button class="btn ${f===lv.fan_mode?"sel":""}" data-zone="${esc(z.name)}" data-fan="${esc(f)}" onclick="act(this.dataset.zone,'fan',{fan_mode:this.dataset.fan})">${esc(f)}</button>`).join("")}</div>`:""}
+   <h3>Power</h3><div class="row"><button class="btn ${!off?"sel":""}" onclick="act('${z.name}','power',{on:true})">On</button><button class="btn ${off?"sel":""}" onclick="act('${z.name}','power',{on:false})">Off</button></div>
+  </div></div>
+ <div class="chips">${chips}</div>
+ <div class="why">${esc(why)}${esc(tgt)}</div>
+ <div class="row">${hold?`<button class="btn primary" onclick="act('${z.name}','resume',{})">Resume auto</button>`:`<button class="btn" onclick="act('${z.name}','hold',{})">Hold ${S.override_hours||2}h</button>`}</div>
+ <div class="gwrap"><div class="gbar"><span class="seg">${["24h","7d"].map(g=>`<button class="${(H[z.name]?.range||"24h")===g?"on":""}" onclick="loadHist('${z.name}','${g}')">${g}</button>`).join("")}</span>
+  <label class="tog"><input type="checkbox" ${H[z.name]?.out!==false?"checked":""} onchange="H['${z.name}'].out=this.checked;drawG('${z.name}')"> Outdoor</label></div>
+  <svg class="g" id="g-${z.name}" viewBox="0 0 600 150"></svg>
+  <div class="leg"><span><i style="background:#e8eef4"></i>Indoor</span><span><i style="background:var(--accent)"></i>Setpoint</span><span><i style="background:rgba(201,137,43,.55);height:8px"></i>Heating</span><span><i style="background:#6f8296"></i>Outdoor</span></div></div>
+ </div>`;}
+function render(){if(!S)return;
+ $("sub").textContent=!S.enabled?"App is off — cards are read-only":S.dry_run?"Dry run — cards are read-only":"Live";
+ $("cards").innerHTML=S.zones.map(card).join("");S.zones.forEach(z=>drawG(z.name));}
+function sheet(z,o){UI[z]=!!o;render();}
+const timers={};
+function bump(z,d){const zone=S.zones.find(x=>x.name===z),lv=((S.last.zones||{})[z]||{}).live||{};
+ const cap=zone.heat_only?(S.radiant_setpoint_max??85):84;pend[z]=Math.max(55,Math.min(cap,(pend[z]??lv.setpoint??70)+d));render();
+ clearTimeout(timers[z]);timers[z]=setTimeout(async()=>{try{S=await api(`api/zone/${z}/setpoint`,{temperature:pend[z]});note("");}
+ catch(e){note("Can't change it now: "+e.message);}delete pend[z];render();},900);}
+async function act(z,what,body){try{S=await api(`api/zone/${z}/${what}`,body);UI[z]=false;note("");render();}catch(e){note("Can't change it now: "+e.message);}}
+async function loadHist(z,rng){H[z]=Object.assign(H[z]||{out:true},{range:rng});
+ try{H[z].d=await api(`api/zone/${z}/history?range=${rng}`);}catch(e){H[z].d=null;}drawG(z);
+ document.querySelectorAll(`#c-${z} .seg button`).forEach(b=>b.classList.toggle("on",b.textContent===rng));}
+function drawG(z){const el=$("g-"+z),h=H[z];if(!el)return;const d=h&&h.d;
+ if(!d){el.innerHTML='<text x="50%" y="80" fill="#8a9bac" font-size="14" text-anchor="middle">No history yet</text>';return;}
+ const W=Math.max(280,Math.round(el.clientWidth||600)),Ht=150;el.setAttribute('viewBox',`0 0 ${W} ${Ht}`);const P=22,x0=d.start,x1=d.end,X=t=>(t-x0)/(x1-x0)*(W-30)+28;
+ const vals=[...d.indoor,...d.setpoint,...(h.out!==false?d.outdoor:[])].map(p=>p[1]).filter(v=>v!=null);
+ if(!vals.length){el.innerHTML='<text x="50%" y="80" fill="#8a9bac" font-size="14" text-anchor="middle">No history yet</text>';return;}
+ let lo=Math.floor(Math.min(...vals)-2),hi=Math.ceil(Math.max(...vals)+2);const Y=v=>Ht-P-(v-lo)/(hi-lo)*(Ht-2*P)+6;
+ let s="";for(let i=0;i<=3;i++){const v=lo+(hi-lo)*i/3,y=Y(v);s+=`<line x1="28" x2="${W-2}" y1="${y}" y2="${y}" stroke="#2a3540" stroke-width="1"/><text x="2" y="${y+4}" fill="#8a9bac" font-size="11">${Math.round(v)}°</text>`;}
+ const hp=d.heating;for(let i=0;i<hp.length;i++)if(hp[i][1]){const a=X(hp[i][0]),b=X(i+1<hp.length?hp[i+1][0]:x1);s+=`<rect x="${a}" y="6" width="${Math.max(1,b-a)}" height="${Ht-P-6}" fill="rgba(201,137,43,.22)"/>`;}
+ const hold=pts=>{const l=pts[pts.length-1];return l&&l[1]!=null&&l[0]<x1?[...pts,[x1,l[1]]]:pts;}; // carry last value to now
+ const line=(pts,step)=>{let p="",prev=null;for(const [t,v] of hold(pts)){if(v==null){prev=null;continue;}const x=X(t),y=Y(v);
+  if(prev==null)p+=`M${x},${y}`;else p+=step?`H${x}V${y}`:`L${x},${y}`;prev=y;}return p;};
+ if(h.out!==false&&d.outdoor.length)s+=`<path d="${line(d.outdoor)}" fill="none" stroke="#6f8296" stroke-width="1.5" stroke-dasharray="4 4"/>`;
+ s+=`<path d="${line(d.setpoint,1)}" fill="none" stroke="#2a9d8f" stroke-width="2"/>`;
+ s+=`<path d="${line(d.indoor)}" fill="none" stroke="#e8eef4" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+ const lab=d.range==="7d"?t=>new Date(t*1000).toLocaleDateString([],{weekday:"short"}):t=>new Date(t*1000).toLocaleTimeString([],{hour:"numeric"});
+ for(let i=0;i<=4;i++){const t=x0+(x1-x0)*i/4;s+=`<text x="${Math.min(X(t),W-40)}" y="${Ht-3}" fill="#8a9bac" font-size="11">${lab(t)}</text>`;}
+ el.innerHTML=s;}
+async function refresh(){try{S=await api("api/state");render();S.zones.forEach(z=>{if(!H[z.name])loadHist(z.name,"24h");});}catch(e){note("Can't reach Smart HVAC");}}
+/* ---------- mock (screenshots / design review only: ?mock=1; never writes) ---------- */
+function mockApi(p,b){const now=Math.floor(Date.now()/1000);
+ if(p.includes("/history")){const z=p.split("/")[2],rng=p.endsWith("7d")?"7d":"24h",span=rng==="7d"?7*86400:86400,n=rng==="7d"?168:96;
+  const base=z==="bathroom_radiant"?70:69,set=z==="bathroom_radiant"?72:71;const o={zone:z,range:rng,start:now-span,end:now,indoor:[],setpoint:[],heating:[],outdoor:[]};
+  for(let i=0;i<=n;i++){const t=now-span+i*span/n,hr=new Date(t*1000).getHours(),sl=hr>=22||hr<6,sp=sl?(z==="bathroom_radiant"?66:68):set;
+   const ph=Math.sin(i/3+z.length);const ind=sp-0.6+ph*0.7+(sl?0.3:0);o.indoor.push([t,+ind.toFixed(1)]);o.setpoint.push([t,sp]);
+   o.heating.push([t,z!=='bathroom_radiant'||i<n*0.8?(ind<sp-1.0?1:0):0]);o.outdoor.push([t,+(44+9*Math.sin((hr-9)/24*2*Math.PI)+3*Math.sin(i/20)).toFixed(1)]);}
+  return o;}
+ return S||MOCK_STATE;}
+const MOCK_STATE={enabled:true,dry_run:false,profile:"auto",override_hours:2,radiant_room_cap:85,radiant_setpoint_max:85,radiant_air_shutoff:80,radiant_floor_cap:85,
+ zones:[{name:"living_room",label:"Living room",heat_only:false,override_until:null},
+  {name:"master_bedroom",label:"Bedroom",heat_only:false,override_until:Date.now()/1000+5400},
+  {name:"bathroom_radiant",label:"Bath floor",heat_only:true,override_until:null}],
+ last:{ts:Date.now()/1000,presence_home:true,outdoor:47,weather:"partlycloudy",radiant_timeout:"on",zones:{
+  living_room:{action:"hold",reason:"no_change",profile:"home",setpoint:71,live:{mode:"heat",setpoint:71,indoor:70.4,humidity:41,hvac_action:"heating",fan_mode:"auto",fan_modes:["auto","low","medium","high"],hvac_modes:["off","heat","cool","fan_only","dry"]}},
+  master_bedroom:{action:"hold",reason:"manual_override",profile:"home",setpoint:72,live:{mode:"heat",setpoint:72,indoor:71.2,humidity:44,hvac_action:"idle",fan_mode:"low",fan_modes:["auto","low","medium","high"],hvac_modes:["off","heat","cool"]}},
+  bathroom_radiant:{action:"hold",reason:"unit_off",profile:"home",setpoint:72,live:{mode:"off",setpoint:72,indoor:68.6,humidity:52,hvac_action:"off",hvac_modes:["off","heat"]}}}}};
+refresh();if(!MOCK)setInterval(refresh,30000);
+</script></body></html>

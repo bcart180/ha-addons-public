@@ -1,0 +1,66 @@
+{
+  "state": "3",
+  "attributes": {
+    "friendly_name": "Inbound Voicemails",
+    "voicemails": [
+      {
+        "voicemail_id": "demo-1",
+        "caller": "15555550101",
+        "caller_pretty": "+1 (555) 555-0101",
+        "caller_display": "+1 (555) 555-0101",
+        "caller_title": "Lumen Parcel Co.",
+        "date": "2026-09-11T17:16:00-04:00",
+        "date_display": "9/11/26",
+        "timestamp_display": "September 11, 2026 at 17:16",
+        "duration_sec": 30,
+        "duration_display": "30s",
+        "snippet": "Lumen Parcel Co.: a sample package is held for pickup. Call (555) 555-0102 to choose another day.",
+        "transcript": "This is Lumen Parcel Co., a fictional shop. Your sample package is held for pickup on Friday. Press one to confirm. If you need another day, call (555) 555-0102.",
+        "heard": false,
+        "has_audio": true,
+        "audio_url": "/local/voicemail/demo-1.wav",
+        "call_id": "demo-1",
+        "missed_call": false
+      },
+      {
+        "voicemail_id": "demo-2",
+        "caller": "15555550103",
+        "caller_pretty": "+1 (555) 555-0103",
+        "caller_display": "+1 (555) 555-0103",
+        "caller_title": "Jordan Hale",
+        "date": "2026-08-31T10:00:00-04:00",
+        "date_display": "8/31/26",
+        "timestamp_display": "August 31, 2026 at 10:00",
+        "duration_sec": 22,
+        "duration_display": "22s",
+        "snippet": "Hi, this is Jordan Hale, calling you back about Thursday.",
+        "transcript": "Hi, this is Jordan Hale, calling you back about Thursday. Give me a ring when you can.",
+        "heard": true,
+        "has_audio": false,
+        "call_id": "demo-2",
+        "missed_call": false
+      },
+      {
+        "voicemail_id": "demo-3",
+        "caller": "15555550104",
+        "caller_pretty": "+1 (555) 555-0104",
+        "caller_display": "+1 (555) 555-0104",
+        "caller_title": "Bright Kettle Cafe",
+        "date": "2026-09-10T09:00:00-04:00",
+        "date_display": "9/10/26",
+        "timestamp_display": "September 10, 2026 at 09:00",
+        "duration_sec": 45,
+        "duration_display": "45s",
+        "snippet": "Bright Kettle Cafe: a sample table is saved under the name Guest.",
+        "transcript": "Bright Kettle Cafe: your sample reservation is saved under the name Guest. Call (555) 555-0104 if you want a different time.",
+        "heard": false,
+        "has_audio": false,
+        "call_id": "demo-3",
+        "missed_call": false,
+        "business": true
+      }
+    ],
+    "unheard": 2,
+    "version": "mock"
+  }
+}

@@ -1,0 +1,7 @@
+name: bcart180 Home Assistant add-ons
+url: https://github.com/bcart180/ha-addons-public
+maintainer: bcart180
+# Folders Supervisor discovers (this file is the repo index, not the add-on list):
+# - trading_desk
+# - twilio_house_voice
+# - voicemail
