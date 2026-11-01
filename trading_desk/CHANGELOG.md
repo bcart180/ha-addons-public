@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0 — 2026-11-01
+
+- Public store marker: name suffix (new); no functional change.
+
 ## 0.2.3
 - Fix (L1): cost basis is converted with `Number()` before use, so numeric strings from the feed can't break the sum.
 - Fix (L2): short rows (qty < 0) show "basis n/a" and are excluded from the unrealized gain/loss headline.

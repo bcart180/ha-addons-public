@@ -1,5 +1,5 @@
-name: Smart HVAC
-version: "0.6.6"
+name: Smart HVAC (new)
+version: "0.7.0"
 slug: smart_hvac
 description: Presence-, weather- and sun-aware climate control for mini splits and radiant floor (Ingress panel)
 url: https://github.com/bcart180/ha-addons-public/tree/main/smart_hvac

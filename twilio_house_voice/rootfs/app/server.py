@@ -49,7 +49,7 @@ import audio
 import share_import
 import trust
 
-VERSION = "0.2.7"
+VERSION = "0.3.0"
 PORT = int(os.environ.get("THV_PORT", "8787"))
 XAI_DEFAULT_URL = "wss://api.x.ai/v1/realtime"
 INGRESS_PEERS = {"172.30.32.2", "127.0.0.1", "::1"}

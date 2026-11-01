@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0 — 2026-11-01
+
+- Public store marker: name suffix (new); no functional change.
+
 ## 0.1.2
 - Public-safe defaults: `x_accounts` and `zones` ship empty, and `cloudflare_account_id` has no default. Set them in the Configuration tab. Test fixtures use example domains and obviously fake IDs. No code change. Existing installs keep their saved options.
 
