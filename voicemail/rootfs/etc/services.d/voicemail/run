@@ -1,0 +1,7 @@
+#!/command/with-contenv bash
+# Start Voicemail under with-contenv so SUPERVISOR_TOKEN (and other
+# Supervisor-injected vars) are loaded from
+# /var/run/s6/container_environment/* into this process. A bare Dockerfile
+# CMD runs via S6 legacy-services with a minimal env, which left in_ha=False
+# and made clear/play/mark_heard return 503.
+exec python3 -u /app/server.py

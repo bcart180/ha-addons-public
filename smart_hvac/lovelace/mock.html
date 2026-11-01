@@ -1,0 +1,26 @@
+<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#0b1117;padding:16px}</style></head><body>
+<smart-hvac-card id="c"></smart-hvac-card>
+<script type="module">
+import "./smart-hvac-card.js";
+const q = new URLSearchParams(location.search), vac = q.has("vacation"), admin = !q.has("viewer");
+const now = 1793357234, start = now - 86400;
+const st = (s, a) => ({ state: s, attributes: a });
+const hass = { user: { is_admin: admin }, config: { time_zone: "America/New_York" }, states: {
+  "example.zone_entity": st("heat", { temperature: vac ? 60 : 71, current_temperature: 71, hvac_action: vac ? "idle" : "heating", hvac_modes: ["off","heat","cool","fan_only","dry","auto"], fan_modes: ["auto","low","medium","high","quiet"], fan_mode: "auto" }),
+  "example.zone_entity": st("heat", { temperature: vac ? 60 : 71, current_temperature: 72, hvac_action: "idle", hvac_modes: ["off","heat","cool"], fan_modes: ["auto","low","medium","high","quiet"], fan_mode: "auto" }),
+  "example.zone_entity": st("off", { temperature: 72, hvac_action: "heating", hvac_modes: ["heat","auto","off"] }),
+  "example.zone_entity": st("71.3", {}), "example.zone_entity": st("62", {}),
+  "example.zone_entity": st("72.4", {}), "example.zone_entity": st("62", {}),
+  "example.zone_entity": st("73.3", {}), "example.zone_entity": st("64", {}),
+  "weather.home": st("clear-night", { temperature: 56 }),
+  "input_boolean.vacation_mode": st(vac ? "on" : "off", {}) },
+  callWS: async (m) => { const out = {}; const step = 1800;
+    const zones = { "example.zone_entity": [71.3, 0], "example.zone_entity": [72.4, 1], "example.zone_entity": [73.3, 2] };
+    for (const [e, [base, k]] of Object.entries(zones)) { out[e] = []; for (let t = start; t <= now; t += step) {
+      const h = (t - start) / 3600; const off = k === 2; out[e].push({ s: off ? "off" : "heat", lu: t, a: { temperature: off ? 72 : (vac && h > 22 ? 60 : 71), hvac_action: off ? "heating" : ((Math.floor(h * 1.7 + k) % 3) === 0 ? "heating" : "idle") } }); } }
+    const ind = { "example.zone_entity": 71, "example.zone_entity": 72, "example.zone_entity": 73 };
+    for (const [e, b] of Object.entries(ind)) { out[e] = []; for (let t = start; t <= now; t += 3600) out[e].push({ s: String(b + Math.sin((t - start) / 20000) * 0.8), lu: t }); }
+    out["weather.home"] = []; for (let t = start; t <= now; t += 3600) out["weather.home"].push({ s: "x", lu: t, a: { temperature: 58 + 7 * Math.sin((t - start) / 86400 * 2 * Math.PI - 0.3) } });
+    return out; } };
+const c = document.getElementById("c"); c.setConfig({}); c.hass = hass;
+</script></body></html>

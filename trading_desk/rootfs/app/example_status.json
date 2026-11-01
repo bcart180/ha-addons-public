@@ -1,0 +1,34 @@
+{
+  "schema": "trading_desk.status/v1",
+  "example": true,
+  "updated": "2026-10-09T15:42:00Z",
+  "bots": [
+    {"name": "Desk Lead", "status": "working", "last_action": "EXAMPLE: routed ticket EX-01 to Risk Manager", "ts": "2026-10-09T15:41:10Z"},
+    {"name": "Strategist", "status": "idle", "last_action": "EXAMPLE: rules check passed for EX-01", "ts": "2026-10-09T15:30:00Z"},
+    {"name": "Risk Manager", "status": "working", "last_action": "EXAMPLE: sizing EX-01 (0.5% risk)", "ts": "2026-10-09T15:41:40Z"},
+    {"name": "Research Analyst", "status": "idle", "last_action": "EXAMPLE: catalyst brief for EX-02", "ts": "2026-10-09T14:55:00Z"},
+    {"name": "Execution Trader", "status": "waiting", "last_action": "EXAMPLE: waiting for Risk PASS", "ts": "2026-10-09T15:20:00Z"},
+    {"name": "Trade Reviewer", "status": "idle", "last_action": "EXAMPLE: reviewed yesterday's fills", "ts": "2026-10-09T13:05:00Z"},
+    {"name": "Trading Floor", "status": "alert", "last_action": "EXAMPLE: digest posted", "ts": "2026-10-09T15:00:00Z"}
+  ],
+  "pipeline": [
+    {"trade_id": "EX-01", "symbol": "AAPL", "stage": "scan", "ts": "2026-10-09T15:10:00Z"},
+    {"trade_id": "EX-01", "symbol": "AAPL", "stage": "vet", "ts": "2026-10-09T15:30:00Z"},
+    {"trade_id": "EX-01", "symbol": "AAPL", "stage": "size", "ts": "2026-10-09T15:41:40Z"},
+    {"trade_id": "EX-02", "symbol": "XOM", "stage": "scan", "ts": "2026-10-09T14:20:00Z"},
+    {"trade_id": "EX-02", "symbol": "XOM", "stage": "vet", "ts": "2026-10-09T14:40:00Z"},
+    {"trade_id": "EX-02", "symbol": "XOM", "stage": "size", "ts": "2026-10-09T14:44:00Z"},
+    {"trade_id": "EX-02", "symbol": "XOM", "stage": "risk", "ts": "2026-10-09T14:46:00Z"},
+    {"trade_id": "EX-02", "symbol": "XOM", "stage": "fill", "ts": "2026-10-09T14:48:07Z"}
+  ],
+  "caps": {"temp_open_risk_pct": 20, "single_name_cap_pct": 10},
+  "risk": {"open_risk_pct": null},
+  "thresholds": [
+    {"name": "Max risk per trade", "value": "0.5% equity"},
+    {"name": "Open-risk ceiling", "value": "20% equity (EXAMPLE)"}
+  ],
+  "proposals": [
+    {"id": "ROT-EX-1", "out": "KO", "in": "MSFT", "reason": "EXAMPLE: weaker relative strength", "score": 0.62, "status": "proposed", "ts": "2026-10-09T13:00:00Z"},
+    {"id": "ROT-EX-2", "out": "XOM", "in": "NVDA", "reason": "EXAMPLE: sector rotation screen", "score": 0.41, "status": "watch", "ts": "2026-10-09T13:00:00Z"}
+  ]
+}

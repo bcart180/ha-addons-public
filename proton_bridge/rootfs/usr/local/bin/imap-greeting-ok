@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Exit 0 only if Bridge's loopback IMAP sends a cleartext "* OK" greeting.
+# Reads one line from 127.0.0.1:1143 and sends nothing: no LOGIN, no
+# AUTHENTICATE, no STARTTLS, no bytes at all. Prints nothing (the greeting
+# is not logged). Any other result, including a mute accept, is failure.
+set -euo pipefail
+
+if [ "${IMAP_GREETING_TIMED:-}" != 1 ]; then
+  timeout_s=5
+  if [[ "${IMAP_HEALTH_TIMEOUT:-}" =~ ^[1-9][0-9]{0,1}$ ]] \
+      && [ "$IMAP_HEALTH_TIMEOUT" -ge 1 ] && [ "$IMAP_HEALTH_TIMEOUT" -le 30 ]; then
+    timeout_s=$IMAP_HEALTH_TIMEOUT
+  fi
+  export IMAP_GREETING_TIMED=1
+  # Re-exec under timeout so a connection that is accepted but never greets
+  # cannot stall the supervisor. stderr of the probe is discarded so a refused
+  # connection does not spam the add-on log. stdout is kept only so a bug that
+  # prints the greeting is visible to tests; this script never writes it.
+  exec timeout "$timeout_s" "$0" 2>/dev/null
+fi
+
+if ! IFS= read -r line < /dev/tcp/127.0.0.1/1143; then
+  exit 1
+fi
+line=${line%$'\r'}
+# Literal "* OK" at the start. A leading glob would also match "xx * OK".
+[[ "$line" == '* OK'* ]]

@@ -1,0 +1,13 @@
+build_from:
+  # Plain dated tags only: HA Supervisor rejects image:tag@sha256:... here (falls back to
+  # Alpine base:latest; Pi re-test 2026-10-30). CI verifies these tags still resolve to:
+  #   aarch64 sha256:19c262f6a05c25fe280fa7b54fc9172d6461e90c7714d82a03eb041e83ee6a8e
+  #   amd64   sha256:ace0614750c6347ad5833b57f6adb0d576c31d1f8725efe38a1fb318512edf49
+  aarch64: ghcr.io/home-assistant/aarch64-base-debian:bookworm-2026.10.3
+  amd64: ghcr.io/home-assistant/amd64-base-debian:bookworm-2026.10.3
+args:
+  BRIDGE_TAG: v3.27.1
+  BRIDGE_SHA: 43b9237786204a0215abfd4dcc51ee7bb92f52d4
+  # golang:1.26.7-bookworm (pinned by index digest)
+  GO_IMAGE: golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514
+  # ttyd: static release binary, version + sha256 pinned in the Dockerfile.

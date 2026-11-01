@@ -1,0 +1,50 @@
+name: Trading Desk
+version: "0.2.3"
+slug: trading_desk
+description: Read-only live control room for an Alpaca equity desk (positions, P&L, fills, risk vs caps, desk bots)
+url: https://github.com/bcart180/ha-addons-public/tree/main/trading_desk
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: application
+boot: auto
+# Sidebar panel behind the HA login. No host ports are published.
+ingress: true
+ingress_port: 8099
+ingress_stream: true
+panel_icon: mdi:chart-timeline-variant
+panel_title: Trading Desk
+panel_admin: true
+# Read the desk status sensor (optional) through the Supervisor proxy.
+homeassistant_api: true
+# Read-only maps for the desk status file.
+map:
+  - share:ro
+backup: hot
+watchdog: http://[HOST]:[PORT:8099]/api/health
+options:
+  trading_env: live
+  data_feed: iex
+  data_stream: true
+  status_file: ""
+  status_entity: ""
+  mock: false
+  log_level: info
+schema:
+  api_key_id: password?
+  api_secret_key: password?
+  trading_env: list(live|paper)
+  data_feed: list(iex|sip|delayed_sip)
+  data_stream: bool
+  status_file: str?
+  status_entity: str?
+  feed_github_repo: str?
+  feed_github_path: str?
+  feed_github_token: password?
+  feed_github_poll_s: int(60,3600)?
+  trezor_btc_entity: str?
+  temp_open_risk_cap_pct: float?
+  single_name_cap_pct: float?
+  mock: bool
+  log_level: list(debug|info|warning|error)

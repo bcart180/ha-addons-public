@@ -1,0 +1,22 @@
+/* Assets tab (Schwab-style snapshot view). Pure #000, same palette as the desk. */
+.tabs{display:flex;gap:6px}
+.tabs button{background:#000;color:var(--mut);border:1px solid var(--line);border-radius:8px;padding:6px 14px;font:600 13px/1 inherit;cursor:pointer}
+.tabs button.on{color:#fff;border-color:var(--acc)}
+#assetsview{max-width:960px;margin:0 auto;padding:12px 12px 60px}
+.as-hd{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.as-hd h1{margin:0;font-size:20px}.as-hd small{color:var(--mut)}
+.as-pill{font-size:12px;border-radius:99px;padding:2px 10px;margin-left:8px;border:1px solid}
+.as-pill.fresh{color:var(--up);border-color:var(--up)}.as-pill.stale{color:var(--warn);border-color:var(--warn)}
+.as-sum{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin:10px 0}
+.as-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:4px 0}
+.as-row .l{color:var(--mut);font-size:16px}.as-big{font-size:38px;font-weight:700;letter-spacing:-.5px}.as-v{font-size:20px;font-weight:600;white-space:nowrap}
+.as-up{color:var(--up)}.as-dn{color:var(--dn)}.as-mu{color:var(--mut)}
+table.as-pos{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;color:var(--fg)}
+table.as-pos th{color:var(--acc);font-weight:500;font-size:14px;text-align:right;padding:10px 12px;border-bottom:1px solid var(--line);line-height:1.3}
+table.as-pos th:first-child,table.as-pos td:first-child{text-align:left}
+table.as-pos td{padding:14px 12px;border-bottom:1px solid var(--line);text-align:right;vertical-align:top;font-size:18px;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--fg);line-height:1.45}
+table.as-pos td .s{font-size:20px;font-weight:700}table.as-pos td .n{font-size:13px;color:var(--mut);white-space:normal}
+table.as-pos tr.sec td{background:#000;font-weight:700;padding:12px}table.as-pos tr.tot td{background:#0b0b0b}
+.as-note{font-size:12px;color:var(--mut);margin:10px 0}
+.as-empty{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;color:var(--mut)}
+@media(max-width:560px){.as-big{font-size:32px}.as-v{font-size:17px}table.as-pos td{font-size:14.5px;padding:10px 6px}table.as-pos td .s{font-size:17px}table.as-pos th{padding:8px 6px;font-size:12px}#assetsview{padding:10px 10px 60px}}

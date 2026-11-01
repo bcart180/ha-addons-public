@@ -1,0 +1,126 @@
+name: Smart HVAC
+version: "0.6.6"
+slug: smart_hvac
+description: Presence-, weather- and sun-aware climate control for mini splits and radiant floor (Ingress panel)
+url: https://github.com/bcart180/ha-addons-public/tree/main/smart_hvac
+arch:
+  - aarch64
+  - amd64
+init: false
+# Sidebar panel behind the HA login. No host ports. Never public.
+ingress: true
+ingress_panel: true
+panel_icon: mdi:thermostat-auto
+panel_title: Climate
+# panel_admin omitted: Supervisor default is true (admin-only panel, MA M2); linter rejects the explicit default.
+homeassistant_api: true
+options:
+  # SAFE ON INSTALL: master off + dry run. Go-live is a separate GO after MA review.
+  enabled: false
+  dry_run: true
+  log_level: info
+  interval_s: 300
+  # Occupancy = anyone listed is home (e.g. device_tracker.person_a_phone, person.person_b).
+  # No house entities ship as defaults: set these in the add-on Configuration tab.
+  presence_entities: []
+  weather_entity: ""
+  forecast_entity: ""
+  min_cycle_min: 15
+  override_hours: 2
+  # Bath radiant: floor setpoint cap 85, air shutoff 80 (owner, 30 Oct).
+  radiant_setpoint_max: 85
+  radiant_air_shutoff: 80
+  radiant_floor_cap: 85
+  # Vacation (input_boolean.vacation_mode on): mini splits set back to these; radiant stays off.
+  vacation_heat: 60
+  vacation_cool: 82
+  profiles:
+    home: 71
+    guest: 71
+    sleep: 68
+    away_heat: 65
+    away_cool: 78
+    sleep_start: "22:00"
+    wake: "07:00"
+  zones:
+    - name: living_room
+      label: Living room
+      climate: example.zone_entity
+      indoor: example.zone_entity
+      humidity: example.zone_entity
+      facing_az: 225
+      solar_factor: 0.8
+      heat_only: false
+      enabled: true
+    - name: zone_b
+      label: Bedroom
+      climate: example.zone_entity
+      indoor: example.zone_entity
+      humidity: example.zone_entity
+      facing_az: 135
+      solar_factor: 0.6
+      heat_only: false
+      enabled: true
+    - name: zone_c
+      label: Bath floor
+      climate: example.zone_entity
+      indoor: example.zone_entity
+      humidity: example.zone_entity
+      facing_az: 90
+      solar_factor: 0
+      heat_only: true
+      enabled: true
+      comfort: 72
+      sleep: 66
+      away: 60
+schema:
+  enabled: bool
+  dry_run: bool
+  log_level: list(debug|info|warning|error)
+  interval_s: int(60,3600)
+  presence_entity: match(^(device_tracker|person)\.[a-z0-9_]+$)?
+  presence_entities:
+    - match(^(device_tracker|person)\.[a-z0-9_]+$)
+  weather_entity: str?
+  forecast_entity: str?
+  min_cycle_min: int(5,60)
+  override_hours: float(0.5,12)
+  cool_lockout: float(55,95)?
+  radiant_room_cap: float(70,85)?
+  radiant_setpoint_max: float(60,85)
+  radiant_air_shutoff: float(70,85)
+  radiant_floor_cap: float(70,95)
+  vacation_heat: float(50,68)?
+  vacation_cool: float(76,90)?
+  defrost_aware: bool?
+  learned_preheat: bool?
+  away_delay_min: int(0,120)?
+  sleep_coast_max_min: int(0,180)?
+  forecast_anticipation: bool?
+  profiles:
+    home: float(60,80)
+    guest: float(60,80)
+    sleep: float(58,78)
+    away_heat: float(50,70)
+    away_cool: float(72,86)
+    sleep_start: match(^\d{2}:\d{2}$)
+    wake: match(^\d{2}:\d{2}$)
+  zones:
+    - name: match(^[a-z0-9_]+$)
+      label: str
+      climate: str
+      indoor: str?
+      humidity: str?
+      floor: str?
+      window: match(^binary_sensor\.[a-z0-9_]+$)?
+      window_action: list(off|fan_only|eco)?
+      window_open_delay_s: int(0,3600)?
+      window_close_delay_s: int(0,3600)?
+      facing_az: int(0,359)
+      solar_factor: float(0,1)
+      heat_only: bool
+      heat_pump: bool?
+      enabled: bool
+      comfort: float(50,80)?
+      sleep: float(50,80)?
+      away: float(45,75)?

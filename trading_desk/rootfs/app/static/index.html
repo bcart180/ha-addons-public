@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Trading Desk</title>
+<link rel="stylesheet" href="static/vendor/uPlot.min.css">
+<link rel="stylesheet" href="static/style.css">
+<link rel="stylesheet" href="static/assets.css">
+<link rel="stylesheet" href="static/main.css">
+</head>
+<body>
+<header>
+  <div class="brand">TRADING DESK <span id="env" class="badge">…</span><span id="mock" class="badge warn hidden">MOCK DATA</span><span id="readonly" class="badge dim">READ-ONLY</span></div>
+  <nav class="tabs" id="tabs"><button data-tab="main" class="on">Main</button><button data-tab="desk">Detail</button><button data-tab="assets">Schwab</button></nav>
+  <div id="health" class="health"></div>
+  <div id="clock" class="clock"></div>
+</header>
+<div id="banner" class="banner hidden"></div>
+<section id="mainview" class="hidden" aria-label="Main"></section>
+<main id="deskview">
+  <section class="card totals" id="totals">
+    <h2>Total assets <span class="muted" id="tothint"></span></h2>
+    <div class="tot-big" id="tottotal">—</div>
+    <div class="tot-split" id="totsplit"></div>
+    <div class="tot-periods" id="totperiods"></div>
+  </section>
+  <section class="card portfolio">
+    <h2>Whole portfolio <span class="muted" id="pfhint"></span></h2>
+    <div class="kv" id="pftot"></div>
+    <div class="tablewrap"><table id="pf"><thead><tr><th>Sym</th><th>Qty</th><th>Price</th><th>Value</th><th>Wt</th><th>Day $</th><th>Day %</th><th>Lifetime $</th><th>Lifetime %</th></tr></thead><tbody></tbody></table></div>
+  </section>
+  <section class="card equity">
+    <h2>Account</h2>
+    <div class="big" id="equity">—</div>
+    <div class="sub"><span id="daypl">—</span> <span id="dayplpc" class="muted"></span> <span class="muted">today</span></div>
+    <div class="kv"><span>Cash</span><b id="cash">—</b><span>Long MV</span><b id="lmv">—</b><span>Buying power</span><b id="bp">—</b></div>
+  </section>
+  <section class="card risk">
+    <h2>Risk vs caps</h2>
+    <div id="risk"></div>
+  </section>
+  <section class="card curve">
+    <h2>Day equity <span class="muted" id="curvehint"></span></h2>
+    <div id="curve" class="chart"></div>
+  </section>
+  <section class="card positions">
+    <h2>Positions <span class="muted" id="poscount"></span></h2>
+    <div class="tablewrap"><table id="positions"><thead><tr>
+      <th>Sym</th><th>Qty</th><th>Avg cost</th><th>Price</th><th>Day</th><th>Unrl $ (vs cost)</th><th>Unrl %</th><th>Wt</th>
+    </tr></thead><tbody></tbody></table></div>
+  </section>
+  <section class="card holdings">
+    <h2>Long-term holdings (Schwab) <span class="badge dim">VIEW-ONLY</span> <span class="muted" id="holdhint"></span></h2>
+    <div class="kv" id="holdtot"></div>
+    <h3 class="muted">Since day one</h3>
+    <div class="kv" id="alltime"></div>
+    <div class="tablewrap"><table id="holdings"><thead><tr><th>Acct</th><th>Sym</th><th>Shares</th><th>Cost/sh</th><th>Price</th><th>Value</th><th>Day</th><th>Unrl vs cost</th></tr></thead><tbody></tbody></table></div>
+  </section>
+  <section class="card bots">
+    <h2>Desk bots <span id="deskex" class="badge warn hidden">EXAMPLE DATA</span><span id="feedst" class="badge dim"></span> <span class="muted" id="desksrc"></span></h2>
+    <div id="bots" class="tiles"></div>
+  </section>
+  <section class="card room">
+    <h2>Room <span class="muted" id="roomhint">hand-offs</span></h2>
+    <svg id="room" viewBox="0 0 720 300" preserveAspectRatio="xMidYMid meet"></svg>
+  </section>
+  <section class="card fills">
+    <h2>Today's fills <span class="muted" id="fillcount"></span></h2>
+    <div class="tablewrap"><table id="fills"><thead><tr><th>Time</th><th>Sym</th><th>Side</th><th>Qty</th><th>Price</th></tr></thead><tbody></tbody></table></div>
+  </section>
+  <section class="card proposals">
+    <h2>Rotation proposals <span id="propex" class="badge warn hidden">EXAMPLE</span></h2>
+    <div id="proposals"></div>
+  </section>
+  <section class="card orders">
+    <h2>Open orders &amp; stops <span class="muted" id="ordcount"></span></h2>
+    <div class="tablewrap"><table id="orders"><thead><tr><th>Sym</th><th>Side</th><th>Type</th><th>Qty</th><th>Stop</th><th>Limit</th><th>Status</th></tr></thead><tbody></tbody></table></div>
+  </section>
+  <section class="card price">
+    <h2>Price <span class="muted" id="pricesym">tap a position</span> <span class="muted" id="pricelegend"></span></h2>
+    <div id="pricechart" class="chart"></div>
+  </section>
+  <section class="card thresholds">
+    <h2>Thresholds</h2>
+    <div id="thresholds"></div>
+  </section>
+</main>
+<section id="assetsview" class="hidden" aria-label="Assets"></section>
+<footer class="muted">Read-only view. This add-on cannot place, change or cancel orders. <span id="ver"></span></footer>
+<script src="static/vendor/uPlot.iife.min.js"></script>
+<script src="static/app.js"></script>
+<script src="static/assets.js"></script>
+<script src="static/main.js"></script>
+</body>
+</html>

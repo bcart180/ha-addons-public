@@ -1,0 +1,7 @@
+#!/command/with-contenv bash
+# Restart on crash (non-zero / non-256). Do not take the container down for a
+# clean exit.
+if [[ "${1}" -ne 0 ]] && [[ "${1}" -ne 256 ]]; then
+  exit 1
+fi
+exit 0

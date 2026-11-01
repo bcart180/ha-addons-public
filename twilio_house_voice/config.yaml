@@ -1,0 +1,73 @@
+name: CallCatch Voice
+version: "0.2.6"
+slug: twilio_house_voice
+description: Twilio Media Streams bridge to xAI Realtime. Mixed call recordings are saved for CallCatch (Your Personalized Voicemail).
+url: https://github.com/bcart180/ha-addons-public/tree/main/twilio_house_voice
+arch:
+  - aarch64
+  - amd64
+init: false
+# Sidebar status page behind the HA login. Twilio cannot use ingress (it is
+# authenticated). Voice webhooks and Media Streams use the published port,
+# which you put behind your own HTTPS / WSS reverse proxy.
+ingress: true
+ingress_port: 8787
+panel_icon: mdi:phone-in-talk
+panel_title: CallCatch Voice
+# No Supervisor or Core API access. HA delivery is an outbound POST to the
+# webhook URL you configure (Nabu Casa hooks or a LAN webhook).
+map:
+  - share:rw
+  - media:rw
+ports:
+  "8787/tcp": 8787
+ports_description:
+  "8787/tcp": "Twilio Voice webhook + Media Streams WebSocket (terminate HTTPS/WSS in front)"
+# hassio.addon_stdin: the CallCatch notification Block / Undo buttons send
+# {"cmd": "block"|"unblock", "number": ...}. Nothing else is accepted.
+stdin: true
+watchdog: http://[HOST]:[PORT:8787]/api/health
+options:
+  twilio_account_sid: ""
+  twilio_auth_token: ""
+  twilio_phone_number: ""
+  xai_api_key: ""
+  xai_voice: eve
+  xai_model: grok-voice-latest
+  xai_instructions: ""
+  instructions_file: ""
+  public_base_url: ""
+  ha_webhook_transcript: ""
+  ha_webhook_audio: ""
+  ha_webhook_token: ""
+  record_caller_audio: true
+  record_assistant_audio: false
+  mix_recording: true
+  greeting_mode: agent
+  xai_bridge: live
+  include_audio_base64: false
+  validate_twilio_signature: true
+  trust_api_token: ""
+  log_level: info
+schema:
+  twilio_account_sid: password
+  twilio_auth_token: password
+  twilio_phone_number: str
+  xai_api_key: password
+  xai_voice: str
+  xai_model: str
+  xai_instructions: str
+  instructions_file: str
+  public_base_url: str
+  ha_webhook_transcript: str
+  ha_webhook_audio: str
+  ha_webhook_token: password
+  record_caller_audio: bool
+  record_assistant_audio: bool
+  mix_recording: bool
+  greeting_mode: list(agent|none)
+  xai_bridge: list(live|stub)
+  include_audio_base64: bool
+  validate_twilio_signature: bool
+  trust_api_token: password
+  log_level: list(debug|info|warning|error)

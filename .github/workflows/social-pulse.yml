@@ -1,0 +1,18 @@
+name: social-pulse
+on:
+  pull_request:
+    paths: ["social_pulse/**", ".github/workflows/social-pulse.yml"]
+  push:
+    branches: [main]
+    paths: ["social_pulse/**", ".github/workflows/social-pulse.yml"]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: python3 social_pulse/rootfs/app/selfcheck.py
+      - run: python3 social_pulse/tests/test_social_pulse.py

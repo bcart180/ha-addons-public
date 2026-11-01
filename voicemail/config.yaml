@@ -1,0 +1,55 @@
+name: CallCatch
+version: "0.3.7"
+slug: voicemail
+description: Your Personalized Voicemail. iPhone-style house inbox (list + detail) via Supervisor ingress
+url: https://github.com/bcart180/ha-addons-public/tree/main/voicemail
+arch:
+  - aarch64
+  - amd64
+init: false
+# Sidebar panel behind the HA login. No host ports published. Never public.
+ingress: true
+ingress_panel: true
+panel_icon: mdi:voicemail
+panel_title: CallCatch
+homeassistant_api: true
+hassio_api: true
+map:
+  # Read-only, so the one-time pyscript import cannot write the config folder.
+  - homeassistant_config:ro
+  - share:rw
+  - media:rw
+options:
+  sensor_entity: sensor.inbound_voicemails
+  media_player: ""
+  audio_dir: ""
+  mock: false
+  log_level: info
+  ingest_token: ""
+  legacy_pyscript: auto
+  storage_backend: local
+  keep_local_copy: true
+  google_drive_folder_id: ""
+  google_service_account_json: ""
+  google_oauth_client_id: ""
+  google_oauth_client_secret: ""
+  google_oauth_refresh_token: ""
+  voice_trust_url: ""
+  voice_trust_token: ""
+schema:
+  sensor_entity: str
+  media_player: str?
+  audio_dir: str?
+  mock: bool
+  log_level: list(debug|info|warning|error)
+  ingest_token: password
+  legacy_pyscript: list(auto|on|off)
+  storage_backend: list(local|google_drive)
+  keep_local_copy: bool
+  google_drive_folder_id: str?
+  google_service_account_json: password
+  google_oauth_client_id: str?
+  google_oauth_client_secret: password
+  google_oauth_refresh_token: password
+  voice_trust_url: str?
+  voice_trust_token: password
