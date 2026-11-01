@@ -34,7 +34,7 @@ import share_import
 APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC = APP_DIR / "static"
 EXAMPLE = APP_DIR / "example_voicemails.json"
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 AUDIO_LIMIT = 25 * 1024 * 1024
 SENSOR_RE = re.compile(r"sensor\.[a-z0-9_]+")
 RT = web.AppKey("rt", dict)
@@ -135,6 +135,17 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 log = logging.getLogger("voicemail")
+
+# 0.4.2: drop only successful (2xx) access lines for exactly GET /api/health (Supervisor watchdog / HEALTHCHECK).
+# Anchored on the full request line + status, so errors, other methods, query strings and /api/healthz still log.
+# aiohttp default access format: %a %t "%r" %s ... -> match from line start so a UA/Referer
+# containing the health request line cannot hide another request.
+_HEALTH_OK = re.compile(r'^\S+ \[[^\]]*\] "GET /api/health HTTP/1\.[01]" 2\d\d ')
+
+
+class NoHealthAccess(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return _HEALTH_OK.match(record.getMessage()) is None
 
 PHONE_RE = re.compile(r"(?<!\d)(\+?1?[\s\-.]?\(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4})(?!\d)")
 
@@ -1450,6 +1461,7 @@ def run_share_import() -> dict:
 
 
 def main() -> None:
+    logging.getLogger("aiohttp.access").addFilter(NoHealthAccess())
     run_share_import()
     web.run_app(make_app(), host="0.0.0.0", port=PORT, print=lambda *_: None)
 
