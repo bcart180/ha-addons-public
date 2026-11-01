@@ -398,3 +398,15 @@ async def test_state_live_reflects_app_write(mkc):
     lr = j["last"]["zones"]["lr"]
     assert lr["applied"], lr
     assert lr["live"]["setpoint"] == lr["setpoint"] == ha.s["climate.lr"][1]["temperature"]
+
+
+def test_health_filter_ignores_spoofed_ua_and_referer():
+    """A 403 whose User-Agent or Referer carries the health request line must still log."""
+    filt = _NoHealthAccess()
+    spoof = '"GET /api/health HTTP/1.1" 200 '
+    pre = '203.0.113.9 [01/Nov/2026:16:00:00 +0000] '
+    for msg in (pre + '"GET /api/admin HTTP/1.1" 403 14 "-" "' + spoof + '"',
+                pre + '"POST /api/zone/room_a/mode HTTP/1.1" 403 14 "' + spoof + '" "x"'):
+        assert filt.filter(logging.LogRecord("aiohttp.access", logging.INFO, "", 0, msg, None, None)) is True, msg
+    ok = '172.30.32.2 [01/Nov/2026:16:00:00 +0000] "GET /api/health HTTP/1.1" 200 11 "-" "Supervisor"'
+    assert filt.filter(logging.LogRecord("aiohttp.access", logging.INFO, "", 0, ok, None, None)) is False
