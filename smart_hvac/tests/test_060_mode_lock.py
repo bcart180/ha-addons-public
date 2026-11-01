@@ -20,7 +20,7 @@ from test_engine import FakeHA, lt14  # noqa: E402
 
 NOW = 1_800_000_000
 SPLITS = [
-    {"name": "lr", "label": "Living", "climate": "climate.lr", "indoor": "sensor.lr_t", "heat_only": False,
+    {"name": "lr", "label": "Room A", "climate": "climate.lr", "indoor": "sensor.lr_t", "heat_only": False,
      "facing_az": 225, "solar_factor": 0, "enabled": True},
     {"name": "br", "label": "Bed", "climate": "climate.br", "indoor": "sensor.br_t", "heat_only": False,
      "facing_az": 135, "solar_factor": 0, "enabled": True},

@@ -15,7 +15,7 @@ SPLIT = {"facing_az": 225, "solar_factor": 0.8, "heat_only": False}
 
 
 def inp(indoor, outdoor, minute=22 * 60 + 35, fc=None, hum=62, last_mode="heat", last_sp=71.0):
-    return {"enabled": True, "manual_profile": "auto", "bryson_home": True, "minute_of_day": minute,
+    return {"enabled": True, "manual_profile": "auto", "owner_home": True, "minute_of_day": minute,
             "now_ts": 1_800_000_000, "outdoor_temp": outdoor, "forecast_temp": fc, "cloud_pct": 0,
             "sun_elev": -10, "sun_az": 0, "indoor_temp": indoor, "humidity": hum, "window_open": None,
             "unit_available": True, "last_mode": last_mode, "last_setpoint": last_sp,
