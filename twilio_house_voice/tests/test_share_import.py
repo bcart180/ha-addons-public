@@ -182,3 +182,170 @@ def test_server_hook_allow_list(tmp_path, monkeypatch):
     app = server.create_app(options={}, data_dir=data)
     assert app["trust"] is not None
     assert (data / "trust_lists.json").read_text() == json.dumps(TRUST)
+
+
+# --- Security Audit L1-L4 hardening (2026-11-01) ---
+
+
+def _swap_after_lstat(monkeypatch, target_name, action):
+    real = os.lstat
+    fired = []
+
+    def fake(path, *a, **kw):
+        res = real(path, *a, **kw)
+        if not fired and os.fspath(path) == target_name and kw.get("dir_fd") is not None:
+            fired.append(1)
+            action(kw["dir_fd"])
+        return res
+
+    monkeypatch.setattr(share_import.os, "lstat", fake)
+
+
+def test_l1_fifo_swapped_in_after_lstat_is_refused_not_hung(tmp_path, monkeypatch):
+    import threading
+
+    root, src, data = stage(tmp_path, {"trust_lists.json": TRUST})
+
+    def swap(_dir_fd):
+        os.unlink(src / "trust_lists.json")
+        os.mkfifo(src / "trust_lists.json")
+
+    _swap_after_lstat(monkeypatch, "trust_lists.json", swap)
+    out = {}
+    th = threading.Thread(target=lambda: out.setdefault("r", run(root, data)), daemon=True)
+    th.start()
+    th.join(5)
+    assert not th.is_alive(), "importer blocked on a FIFO"
+    assert out["r"]["status"] == "refused"
+    assert out["r"]["reason"] in ("not_regular_file", "file_changed")
+    assert list(data.iterdir()) == []
+
+
+def test_l1_regular_file_swapped_after_lstat_is_refused(tmp_path, monkeypatch):
+    root, src, data = stage(tmp_path, {"trust_lists.json": TRUST})
+
+    def swap(_dir_fd):
+        (src / "other.tmp").write_bytes(json.dumps(TRUST).encode())  # new inode
+        os.replace(src / "other.tmp", src / "trust_lists.json")
+
+    _swap_after_lstat(monkeypatch, "trust_lists.json", swap)
+    res = run(root, data)
+    assert res["status"] == "refused" and res["reason"] == "file_changed"
+
+
+def test_l1_plain_fifo_refused(tmp_path):
+    root, src, data = stage(tmp_path, {})
+    os.mkfifo(src / "trust_lists.json")
+    assert run(root, data)["reason"] == "not_regular_file"
+
+
+def test_l2_symlinked_staging_dir_refused(tmp_path):
+    root, src, data = stage(tmp_path, {"trust_lists.json": TRUST})
+    real = tmp_path / "elsewhere"
+    os.rename(src, real)
+    os.symlink(real, src)
+    res = run(root, data)
+    assert res["status"] == "refused" and res["reason"] == "staging_symlink"
+    assert (real / "trust_lists.json").exists()
+
+
+def test_l2_cleanup_cannot_be_steered_by_swapped_symlink(tmp_path, monkeypatch):
+    root, src, data = stage(tmp_path, {"trust_lists.json": TRUST})
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    (victim / "trust_lists.json").write_bytes(b'{"v": 1}')
+    moved = tmp_path / "moved"
+    real_commit = share_import._commit_all
+    done = []
+
+    def commit(pairs):
+        real_commit(pairs)
+        if not done:
+            done.append(1)
+            os.rename(src, moved)
+            os.symlink(victim, src)
+
+    monkeypatch.setattr(share_import, "_commit_all", commit)
+    res = run(root, data)
+    assert res["status"] == "imported"
+    assert (victim / "trust_lists.json").read_bytes() == b'{"v": 1}'
+    assert (data / "trust_lists.json").exists()
+    assert not (moved / "trust_lists.json").exists()  # the real staged file was the one removed
+    assert res["staging"] == "flagged"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [b"[" * 200000 + b"]" * 200000, b'{"a": ' + b"1" * 5_000_000 + b"}"],
+    ids=["deep_nesting", "huge_int"],
+)
+def test_l3_json_resource_errors_are_invalid_json(tmp_path, body):
+    root, src, data = stage(tmp_path, {"trust_lists.json": body})
+    res = run(root, data)
+    assert res["status"] == "refused" and res["reason"] == "invalid_json"
+    assert list(data.iterdir()) == []
+    assert (src / "trust_lists.json").exists()
+
+
+def test_l4_existing_destination_refuses_whole_import(tmp_path):
+    root, src, data = stage(tmp_path, {"trust_lists.json": TRUST, "index.json": INDEX})
+    (data / "voicemail").mkdir()
+    (data / "voicemail" / "index.json").write_bytes(b'{"existing": true}')
+    res = run(root, data)
+    assert res["status"] == "refused" and res["reason"] == "dest_exists" and res["file"] == "index.json"
+    assert (data / "voicemail" / "index.json").read_bytes() == b'{"existing": true}'
+    assert not (data / "trust_lists.json").exists()
+    assert not (data / share_import.MARKER_NAME).exists()
+    assert sorted(p.name for p in src.iterdir()) == ["index.json", "trust_lists.json"]
+
+
+def test_l4_partial_write_failure_rolls_back(tmp_path, monkeypatch):
+    root, src, data = stage(tmp_path, {"trust_lists.json": TRUST, "index.json": INDEX})
+    real = share_import._write_temp
+    calls = []
+
+    def flaky(dest, body):
+        calls.append(dest.name)
+        if len(calls) == 2:
+            raise OSError(28, "No space left on device")
+        return real(dest, body)
+
+    monkeypatch.setattr(share_import, "_write_temp", flaky)
+    res = run(root, data)
+    assert res == {"status": "error", "reason": "write_failed", "file": ""}
+    leftovers = [p.relative_to(data).as_posix() for p in data.rglob("*") if p.is_file()]
+    assert leftovers == []
+    assert sorted(p.name for p in src.iterdir()) == ["index.json", "trust_lists.json"]
+
+
+def test_l4_rename_failure_rolls_back_renamed(tmp_path, monkeypatch):
+    root, src, data = stage(tmp_path, {"trust_lists.json": TRUST, "index.json": INDEX})
+    real = os.rename
+    calls = []
+
+    def flaky(a, b, *x, **k):
+        calls.append(1)
+        if len(calls) == 2:
+            raise OSError(5, "I/O error")
+        return real(a, b, *x, **k)
+
+    monkeypatch.setattr(share_import.os, "rename", flaky)
+    res = run(root, data)
+    assert res["status"] == "error"
+    assert [p for p in data.rglob("*") if p.is_file()] == []
+    assert src.exists()
+
+
+def test_l4_marker_failure_rolls_back_imports(tmp_path, monkeypatch):
+    root, src, data = stage(tmp_path, {"trust_lists.json": TRUST})
+    real = share_import._write_temp
+
+    def flaky(dest, body):
+        if dest.name == share_import.MARKER_NAME:
+            raise OSError(28, "No space left on device")
+        return real(dest, body)
+
+    monkeypatch.setattr(share_import, "_write_temp", flaky)
+    assert run(root, data)["status"] == "error"
+    assert [p for p in data.rglob("*") if p.is_file()] == []
+    assert src.exists()

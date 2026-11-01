@@ -10,12 +10,19 @@ Rules (store migration plan, C3/C4/C6):
 * Reads only ``<staging_root>/<addon>/``. The staging root and the add-on
   folder must be real directories (not symlinks), owned by the expected uid
   (root) and mode 700 (no group/other bits).
-* Every entry must be on the allow-list, a regular file (symlinks refused),
+* Every entry must be on the allow-list, a regular file (symlinks refused;
+  opened O_NONBLOCK|O_NOFOLLOW and re-checked with fstat on the open fd),
   at most ``max_bytes`` and valid JSON. Any refusal aborts the whole import
   before anything is written (fail closed); the staging folder is left for
   the owner to inspect and nothing is marked done.
-* Files are moved file-to-file: the validated bytes are written as-is
-  (temp file + fsync + rename). Nothing is re-serialized, printed or logged.
+* Fresh install expected: if any destination already exists the whole import
+  is refused (``dest_exists``), staging left in place, nothing overwritten.
+* Files are moved file-to-file: the validated bytes are written as-is. All
+  temp files are written and fsynced first, then all are renamed, then the
+  marker; on any failure the temps (and any renamed files) are removed and no
+  marker is written. Nothing is re-serialized, printed or logged.
+* Staging traversal and cleanup go through directory fds opened with
+  O_DIRECTORY|O_NOFOLLOW, so a swapped-in symlink cannot steer them.
 * One-shot and idempotent: success writes a marker in /data. With the marker
   present the importer never imports again; a staging folder that is still
   there is only flagged (``status: already_imported_staging_present``).
@@ -27,6 +34,7 @@ Rules (store migration plan, C3/C4/C6):
 from __future__ import annotations
 
 import datetime as dt
+import errno
 import json
 import logging
 import os
@@ -62,11 +70,12 @@ def _count(doc) -> int:
     return 0
 
 
-def _check_dir(path: pathlib.Path, owner_uid: int) -> None:
-    try:
-        st = os.lstat(path)
-    except FileNotFoundError:
-        raise ImportRefused("staging_missing") from None
+_O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
+_DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | _O_CLOEXEC
+_FILE_FLAGS = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | _O_CLOEXEC
+
+
+def _check_dir_stat(st: os.stat_result, owner_uid: int) -> None:
     if stat.S_ISLNK(st.st_mode):
         raise ImportRefused("staging_symlink")
     if not stat.S_ISDIR(st.st_mode):
@@ -77,21 +86,136 @@ def _check_dir(path: pathlib.Path, owner_uid: int) -> None:
         raise ImportRefused("staging_mode")
 
 
-def _write_atomic(dest: pathlib.Path, data: bytes) -> None:
+def _open_dir(name, owner_uid: int, dir_fd: int | None = None) -> int:
+    """lstat, then open with O_DIRECTORY|O_NOFOLLOW and re-check the open fd.
+
+    All later traversal and cleanup go through the returned fd, so swapping
+    the path for a symlink afterwards cannot steer reads or deletes (L2).
+    """
+    try:
+        st = os.lstat(name, dir_fd=dir_fd)
+    except FileNotFoundError:
+        raise ImportRefused("staging_missing") from None
+    _check_dir_stat(st, owner_uid)
+    try:
+        fd = os.open(name, _DIR_FLAGS, dir_fd=dir_fd)
+    except FileNotFoundError:
+        raise ImportRefused("staging_missing") from None
+    except NotADirectoryError:
+        raise ImportRefused("staging_not_dir") from None
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise ImportRefused("staging_symlink") from None
+        raise
+    try:
+        fst = os.fstat(fd)
+        _check_dir_stat(fst, owner_uid)
+        if (fst.st_dev, fst.st_ino) != (st.st_dev, st.st_ino):
+            raise ImportRefused("staging_changed")
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _read_staged(name: str, src_fd: int, max_bytes: int) -> bytes:
+    """Read one staged file safely (L1): never blocks, never follows links."""
+    st = os.lstat(name, dir_fd=src_fd)
+    if stat.S_ISLNK(st.st_mode):
+        raise ImportRefused("symlink", name)
+    if not stat.S_ISREG(st.st_mode):
+        raise ImportRefused("not_regular_file", name)
+    if st.st_size > max_bytes:
+        raise ImportRefused("too_large", name)
+    try:
+        fd = os.open(name, _FILE_FLAGS, dir_fd=src_fd)
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise ImportRefused("symlink", name) from None
+        raise ImportRefused("file_changed", name) from None
+    try:
+        fst = os.fstat(fd)
+        if not stat.S_ISREG(fst.st_mode):
+            raise ImportRefused("not_regular_file", name)
+        if (fst.st_dev, fst.st_ino) != (st.st_dev, st.st_ino):
+            raise ImportRefused("file_changed", name)
+        if fst.st_size > max_bytes:
+            raise ImportRefused("too_large", name)
+        chunks = []
+        remaining = max_bytes + 1
+        while remaining > 0:
+            chunk = os.read(fd, min(remaining, 1024 * 1024))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+    finally:
+        os.close(fd)
+    data = b"".join(chunks)
+    if len(data) > max_bytes:
+        raise ImportRefused("too_large", name)
+    return data
+
+
+def _write_temp(dest: pathlib.Path, data: bytes) -> pathlib.Path:
+    """Write ``data`` to a fresh temp file next to ``dest`` and fsync it."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_name(dest.name + ".import.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | _O_CLOEXEC, 0o600)
     try:
         with os.fdopen(fd, "wb") as fh:
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
-        os.replace(tmp, dest)
     except BaseException:
-        try:
-            tmp.unlink()
-        except OSError:
-            pass
+        _unlink_quiet(tmp)
+        raise
+    return tmp
+
+
+def _unlink_quiet(path: pathlib.Path) -> None:
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+def _fsync_dir(path: pathlib.Path) -> None:
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | _O_CLOEXEC)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
+def _commit_all(pairs: list[tuple[pathlib.Path, bytes]]) -> None:
+    """All-or-nothing write (L4): every temp first, then every rename.
+
+    Destinations are known not to exist. On any failure the temps and any
+    destinations already renamed in this call are removed, then it re-raises.
+    """
+    temps: list[tuple[pathlib.Path, pathlib.Path]] = []
+    renamed: list[pathlib.Path] = []
+    try:
+        for dest, data in pairs:
+            temps.append((_write_temp(dest, data), dest))
+        for tmp, dest in temps:
+            if os.path.lexists(dest):
+                raise FileExistsError(dest.name)
+            os.rename(tmp, dest)
+            renamed.append(dest)
+        for parent in {dest.parent for _t, dest in temps}:
+            _fsync_dir(parent)
+    except BaseException:
+        for tmp, _dest in temps:
+            _unlink_quiet(tmp)
+        for dest in renamed:
+            _unlink_quiet(dest)
         raise
 
 
@@ -129,71 +253,82 @@ def import_from_share(
     if not os.path.lexists(src_dir):
         return _summary("no_staging")
 
+    root_fd = src_fd = None
     try:
-        _check_dir(staging_root, owner_uid)
-        _check_dir(src_dir, owner_uid)
-        staged: list[tuple[str, bytes, int]] = []
-        with os.scandir(src_dir) as entries:
-            names = sorted(e.name for e in entries)
-        if not names:
-            raise ImportRefused("staging_empty")
-        for name in names:
-            if name not in allow:
-                raise ImportRefused("not_allow_listed")
-            path = src_dir / name
-            st = os.lstat(path)
-            if stat.S_ISLNK(st.st_mode):
-                raise ImportRefused("symlink", name)
-            if not stat.S_ISREG(st.st_mode):
-                raise ImportRefused("not_regular_file", name)
-            if st.st_size > max_bytes:
-                raise ImportRefused("too_large", name)
-            fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-            with os.fdopen(fd, "rb") as fh:
-                data = fh.read(max_bytes + 1)
-            if len(data) > max_bytes:
-                raise ImportRefused("too_large", name)
-            try:
-                doc = json.loads(data.decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                raise ImportRefused("invalid_json", name) from None
-            if not isinstance(doc, (dict, list)):
-                raise ImportRefused("invalid_json", name)
-            staged.append((name, data, _count(doc)))
-    except ImportRefused as exc:
-        # The name is only echoed when it is on the allow-list.
-        log.error("import_from_share refused: %s%s", exc.code, f" file={exc.name}" if exc.name in allow else "")
-        return _summary("refused", reason=exc.code, file=exc.name if exc.name in allow else "")
-    except OSError:
-        log.error("import_from_share refused: staging_unreadable")
-        return _summary("refused", reason="staging_unreadable", file="")
-
-    files = []
-    for name, data, count in staged:
-        dest = data_root / allow[name]
-        _write_atomic(dest, data)
-        files.append({"file": name, "bytes": len(data), "entries": count})
-
-    record = {
-        "imported_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-        "addon": addon,
-        "files": files,
-    }
-    _write_atomic(marker, json.dumps(record, indent=2).encode("utf-8"))
-
-    # Delete the source only after the import and the marker are on disk.
-    cleanup = "deleted"
-    try:
-        for name, _data, _count_ in staged:
-            (src_dir / name).unlink()
-        src_dir.rmdir()
         try:
-            staging_root.rmdir()  # only succeeds when no other add-on is staged
+            root_fd = _open_dir(staging_root, owner_uid)
+            src_fd = _open_dir(addon, owner_uid, dir_fd=root_fd)
+            staged: list[tuple[str, bytes, int]] = []
+            names = sorted(os.listdir(src_fd))
+            if not names:
+                raise ImportRefused("staging_empty")
+            for name in names:
+                if name not in allow:
+                    raise ImportRefused("not_allow_listed")
+            for name in names:
+                data = _read_staged(name, src_fd, max_bytes)
+                try:
+                    doc = json.loads(data.decode("utf-8"))
+                except (ValueError, RecursionError):
+                    # ValueError covers JSONDecodeError, UnicodeDecodeError and
+                    # the int-digit limit; RecursionError covers deep nesting (L3).
+                    raise ImportRefused("invalid_json", name) from None
+                if not isinstance(doc, (dict, list)):
+                    raise ImportRefused("invalid_json", name)
+                staged.append((name, data, _count(doc)))
+            # Fresh install expected: never overwrite existing /data files (L4).
+            for name, _data, _c in staged:
+                dest = data_root / allow[name]
+                if os.path.lexists(dest) or os.path.lexists(dest.with_name(dest.name + ".import.tmp")):
+                    raise ImportRefused("dest_exists", name)
+        except ImportRefused as exc:
+            # The name is only echoed when it is on the allow-list.
+            log.error("import_from_share refused: %s%s", exc.code, f" file={exc.name}" if exc.name in allow else "")
+            return _summary("refused", reason=exc.code, file=exc.name if exc.name in allow else "")
         except OSError:
-            pass
-    except OSError:
-        cleanup = "flagged"
-        log.warning("import_from_share: imported, but the staging folder could not be deleted; delete it by hand")
+            log.error("import_from_share refused: staging_unreadable")
+            return _summary("refused", reason="staging_unreadable", file="")
+
+        files = [{"file": n, "bytes": len(d), "entries": c} for n, d, c in staged]
+        record = {
+            "imported_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+            "addon": addon,
+            "files": files,
+        }
+        pairs = [(data_root / allow[n], d) for n, d, _c in staged]
+        try:
+            _commit_all(pairs)
+            try:
+                _commit_all([(marker, json.dumps(record, indent=2).encode("utf-8"))])
+            except BaseException:
+                for dest, _d in pairs:
+                    _unlink_quiet(dest)
+                raise
+        except OSError:
+            log.error("import_from_share failed: write_failed (nothing imported, staging left)")
+            return _summary("error", reason="write_failed", file="")
+
+        # Delete the source only after the import and the marker are on disk,
+        # and only through the directory fds opened above (L2).
+        cleanup = "deleted"
+        try:
+            for name, _data, _count_ in staged:
+                os.unlink(name, dir_fd=src_fd)
+            os.rmdir(addon, dir_fd=root_fd)
+        except OSError:
+            cleanup = "flagged"
+            log.warning("import_from_share: imported, but the staging folder could not be deleted; delete it by hand")
+        else:
+            try:
+                st, fst = os.lstat(staging_root), os.fstat(root_fd)
+                if stat.S_ISDIR(st.st_mode) and (st.st_dev, st.st_ino) == (fst.st_dev, fst.st_ino):
+                    os.rmdir(staging_root)  # only succeeds when no other add-on is staged
+            except OSError:
+                pass
+    finally:
+        for fd in (src_fd, root_fd):
+            if fd is not None:
+                os.close(fd)
 
     for f in files:
         log.info("import_from_share: imported %s bytes=%d entries=%d", f["file"], f["bytes"], f["entries"])
