@@ -139,6 +139,8 @@ def _read_staged(name: str, src_fd: int, max_bytes: int) -> bytes:
             raise ImportRefused("not_regular_file", name)
         if (fst.st_dev, fst.st_ino) != (st.st_dev, st.st_ino):
             raise ImportRefused("file_changed", name)
+        if fst.st_nlink != 1:
+            raise ImportRefused("hardlinked", name)
         if fst.st_size > max_bytes:
             raise ImportRefused("too_large", name)
         chunks = []
