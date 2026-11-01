@@ -64,9 +64,14 @@ Pi test 2026-10-30 (check b): Bridge v3.27.1 in its default STARTTLS mode advert
 - `log_level`: default `info`. `debug` is for short troubleshooting only (verbose logs).
 - `lan_cidr`: see above.
 - `health_interval`: seconds between probes of Bridge's own IMAP greeting (default 60,
-  range 1–3600).
-- `health_failures`: consecutive missed greetings before the add-on stops (default 5,
-  range 1–30). At the defaults that is about five minutes.
+  range 15–3600).
+- `health_failures`: consecutive missed greetings, after startup grace, before the
+  add-on stops (default 5, range 3–30). At the defaults that is about five minutes.
+- `health_startup_grace`: seconds after Bridge starts during which a missed greeting
+  is logged and not counted (default 900, range 60–7200). A slow first sync/unlock
+  after login can take longer than a few minutes before 1143 answers. The Bridge
+  process exiting still stops the add-on immediately.
+- A value outside those ranges is refused (logged) and the default is used.
 
 ## Failure behaviour
 - Fatal errors pause 30 s before exiting (avoids restart loops / Proton rate limits).
@@ -76,8 +81,10 @@ Pi test 2026-10-30 (check b): Bridge v3.27.1 in its default STARTTLS mode advert
   Bridge closes 127.0.0.1:1143 when it loses Proton and keeps running, so 8143 would
   stay green while mail is dead. While Bridge is running, the add-on reads one
   cleartext IMAP greeting from 127.0.0.1:1143 (`* OK` only). It sends nothing: no
-  LOGIN, no STARTTLS. The greeting text is not logged. After `health_failures`
-  consecutive misses, or if the Bridge process exits, it stops socat and exits so
-  the watchdog restarts the add-on.
+  LOGIN, no STARTTLS. The greeting text is not logged. For `health_startup_grace`
+  seconds after Bridge starts, misses are logged and not counted. After that,
+  `health_failures` consecutive misses stop socat and exit so the watchdog
+  restarts the add-on. If the Bridge process exits, socat is stopped immediately,
+  including during the grace period.
 - The greeting check expects Bridge's default STARTTLS mode. Implicit SSL
   (`change imap-security`) does not send a cleartext `* OK` line.
