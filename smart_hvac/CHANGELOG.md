@@ -1,3 +1,7 @@
+## 0.7.1 — 2026-11-01
+
+- Logs: the 30-second health check no longer writes an access line (about 2,880 lines a day); all other requests still log. No behaviour change.
+
 ## 0.7.0 — 2026-11-01
 
 - Public store marker: name suffix (new); no functional change.

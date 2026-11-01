@@ -1,4 +1,5 @@
 """Ingress GUI/API: ingress-only access, dry-run refuses writes, profile one-tap."""
+import logging
 import os
 import sys
 
@@ -7,7 +8,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import pytest  # noqa: E402
 
 from engine import Engine  # noqa: E402
-from server import make_app  # noqa: E402
+from server import _NoHealthAccess, make_app  # noqa: E402
 from test_engine import FakeHA, lt14, opts, states  # noqa: E402
 
 
@@ -356,6 +357,19 @@ async def test_history_same_timestamp_with_none_setpoint_does_not_crash(mkc):
     r = await c.get("/api/zone/lr/history?range=24h")
     assert r.status == 200
     assert [s[1] for s in (await r.json())["setpoint"]] == [None, 71]
+
+
+def test_health_access_filtered():
+    msg = '127.0.0.1 [..] "GET /api/health HTTP/1.1" 200 190 "-" "x"'
+    record = logging.LogRecord("aiohttp.access", logging.INFO, "", 0, msg, None, None)
+    assert _NoHealthAccess().filter(record) is False
+
+
+def test_other_access_kept():
+    filt = _NoHealthAccess()
+    for msg in ('"GET /api/state HTTP/1.1"', '"POST /api/zone/living_room/mode HTTP/1.1"'):
+        record = logging.LogRecord("aiohttp.access", logging.INFO, "", 0, msg, None, None)
+        assert filt.filter(record) is True
 
 
 async def test_state_live_reflects_app_write(mkc):
