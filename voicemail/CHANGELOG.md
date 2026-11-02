@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.4 — 2026-11-02
+
+- List rows (iPhone): the full caller name or number now wraps instead of being cut off with "…"; the date (and duration, if known) sits on its own small muted line; the preview shows up to 3 lines of the summary or transcript. The hangup header (masked number, "Source: CallCatch", "Duration_s") is stripped from the list preview only. Urgent tag kept. Display-only: no data, API or dry_run change.
+
 ## 0.4.3 — 2026-11-02
 
 - Least privilege: removed `hassio_api: true`. The add-on only talks to Home Assistant Core through the Supervisor proxy (`http://supervisor/core/api/...` and `ws://supervisor/core/websocket`), which `homeassistant_api: true` covers. `tools/wire_voice_link.py` (Supervisor add-on options) is not shipped in the image and runs from an SSH/other add-on. `share:rw` / `media:rw` stay: new recordings are written under `/media/callcatch` or `/share/callcatch`.

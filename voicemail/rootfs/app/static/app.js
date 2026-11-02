@@ -80,6 +80,16 @@
     }).join("\n");
   }
 
+  // List preview only: strip the hangup header (masked number, Source, Duration, TRANSCRIPT)
+  // so the 3 visible lines are what the caller said. Stored text is unchanged.
+  function previewText(raw) {
+    let t = String(raw || "").replace(/\s+/g, " ").trim();
+    const head = /^(?:[•*·]{2,}\s*\d{2,4}|Source:\s*\S+|Duration(?:_s)?:\s*(?:[0-9.]+(?:\s*(?:minutes?|seconds?|s))?\s*)+|TRANSCRIPT:?)\s*/i;
+    let prev;
+    do { prev = t; t = t.replace(head, ""); } while (t !== prev && t);
+    return t;
+  }
+
   function fmt(sec) {
     sec = Math.max(0, Math.floor(sec || 0));
     const m = Math.floor(sec / 60);
@@ -241,14 +251,17 @@
       const cb = v.tel && !editMode
         ? `<a class="cb-btn" href="${esc(v.tel)}" title="Call back" aria-label="Call back">${phoneSvg()}</a>`
         : `<span></span>`;
+      const preview = (v.summary && v.summary.reason) || previewText(mapSpeakerText(v.snippet || "")) || "No transcript";
+      const meta = [v.date_display, v.duration_sec ? fmt(v.duration_sec) : ""].filter(Boolean).map(esc).join(" · ");
       li.innerHTML = `
         ${left}
         <div class="main">
           <div class="top">
             <div class="name">${v.heard ? "" : '<span class="dot-unheard"></span>'}${esc(v.caller_title)}</div>
-            <div class="date">${esc(v.date_display)}</div>
+            ${urgencyPill(v.summary)}
           </div>
-          <div class="snippet"><span class="snippet-badge">P</span>${urgencyPill(v.summary)}<span>${esc((v.summary && v.summary.reason) || mapSpeakerText(v.snippet || "No transcript"))}</span></div>
+          <div class="meta">${meta}</div>
+          <div class="snippet">${esc(preview)}</div>
         </div>
         ${cb}`;
       const cbLink = li.querySelector(".cb-btn");
