@@ -1,3 +1,7 @@
+## 0.7.8 — 2026-11-02
+
+- Remove '(new)' name suffix; no functional change.
+
 ## 0.7.7 — 2026-11-02
 
 - Shipped sleep/wake defaults are now generic (22:00 / 07:00) in `config.yaml` and the internal `core.DEFAULTS` fallback; saved options are unchanged. The engine reads `profiles.sleep_start` / `profiles.wake` from the Configuration tab and only falls back to the defaults when they are blank. Tests and the golden scenario fixture follow the new defaults (only the reported next-change times move). No control-logic change; split same-mode behavior unchanged.

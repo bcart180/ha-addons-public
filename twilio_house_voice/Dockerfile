@@ -29,4 +29,4 @@ LABEL \
     org.opencontainers.image.title="Home Assistant Add-on: CallCatch Voice" \
     org.opencontainers.image.description="Twilio Media Streams bridge to xAI Realtime with call audio for CallCatch" \
     org.opencontainers.image.source="https://github.com/bcart180/ha-addons-public" \
-    org.opencontainers.image.version="0.3.1"
+    org.opencontainers.image.version="0.3.2"

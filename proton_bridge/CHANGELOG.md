@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.27.1-22 — 2026-11-02
+
+- Remove '(new)' name suffix; no functional change.
+
 ## 3.27.1-21 — 2026-11-01
 
 Carries over the hardening from the source repo (bcart180/ha-addon-proton-bridge 3.27.1-11 to -13, tip 0991bcfa). The store name suffix and URL from -20 are kept.

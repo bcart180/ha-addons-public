@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2 — 2026-11-02
+
+- Remove '(new)' name suffix; no functional change.
+
 ## 0.3.1 — 2026-11-01
 
 - Removed the obsolete `watchdog:` key from `config.yaml` (flagged by the add-on linter). The Supervisor watchdog now follows a Docker `HEALTHCHECK` that probes the same endpoint, `http://127.0.0.1:8787/api/health`, with the `python3` already in the image.

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1 — 2026-11-02
+
+- Remove '(new)' name suffix; no functional change.
+
 ## 0.5.0 — 2026-11-02
 
 - **iCloud contacts → caller names (Phase 1).** New options `contacts_sync_enabled` (default `false`), `icloud_apple_id`, `icloud_app_password` (password) and `contacts_sync_interval_min` (default 30, minimum 15). When enabled, CallCatch reads ALL iCloud contacts over CardDAV (`contacts.icloud.com`: current-user-principal → addressbook-home-set → every address book), in memory, normalizes every TEL to E.164 (US 10 digits → `+1`, extensions dropped) and writes the flat `{"+1…": "Name"}` map to `/share/callcatch/private/caller_names.json` — the same flat format the pyscript caller-ID directory already reads. Needs the companion ha-automation-tests change so the pyscript reads the `/share` path (it falls back to `/config/private`).
