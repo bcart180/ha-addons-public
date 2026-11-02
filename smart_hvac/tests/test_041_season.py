@@ -74,5 +74,5 @@ def test_projection_moves_room_toward_setpoint(monkeypatch):
     monkeypatch.setattr(engine.core, "decide", spy)
     n = Engine.next_change(inp(74.0, 58, minute=14 * 60), SPLIT, {"home": 71, "guest": 71},
                            {"reason": "no_change", "mode": "heat"})
-    assert seen[0] == 74.0 and seen[1] < 74.0 and abs(seen[-1] - 71.0) < 0.3  # 74 -> ~71 by 22:00
+    assert seen[0] == 74.0 and seen[1] < 74.0 and abs(seen[-1] - 71.0) < 0.3  # 74 -> ~71 by sleep start
     assert n["setpoint"] == 68.0 and n["mode"] == "heat"
