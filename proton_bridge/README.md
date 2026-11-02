@@ -20,7 +20,7 @@ The box Bridge (`/home/box/bin/ensure-proton-bridge.sh`) stays as the **fallback
 - No add-on options hold secrets. No HA-side alert or send path. No notifications, no automations.
 - Watchdog: Supervisor probes host port 1143 (socat on container 8143). The add-on stops that socat listener and exits when Bridge's own IMAP greeting on 127.0.0.1:1143 fails, or when the Bridge process exits, so Supervisor restarts it.
 
-## Install (only after owner's GO)
+## Install (only after the owner's GO)
 Listed in the existing store repo `bcart180/ha-addons-public` (folder `proton_bridge/`, a synced copy of
 this repo). **Do not change the Supervisor store URL.** Settings → Apps → App Store → ⋮ → Check for
 updates → *Proton Mail Bridge* → Install. Supervisor builds the image locally on the Pi

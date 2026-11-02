@@ -389,7 +389,7 @@ def presence_debounce(prev, raw, now, away_delay_s=0):
 
 
 # 0.6.3 sleep coast (option sleep_coast_max_min, 0 = off). The house loses heat slowly (31 Oct: 73.9 -> 70.8 in
-# 7 h at 53-58°F outside, ~0.4°F/h), so a 68 sleep target set at 10:00 PM is barely reached before morning. The
+# 7 h at 53-58°F outside, ~0.4°F/h), so a 68 sleep target set at 10 PM is barely reached before morning. The
 # app learns each split's passive drift rate (unit idle, room off target) and lowers to the sleep target early
 # enough to arrive by bedtime, capped by the option. It never runs the unit against the drift: the shared-mode
 # lock and the season guard still pick the mode.

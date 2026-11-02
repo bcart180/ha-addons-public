@@ -1,3 +1,7 @@
+## 0.7.7 — 2026-11-02
+
+- Shipped sleep/wake defaults are now generic (22:00 / 07:00) in `config.yaml` and the internal `core.DEFAULTS` fallback; saved options are unchanged. The engine reads `profiles.sleep_start` / `profiles.wake` from the Configuration tab and only falls back to the defaults when they are blank. Tests and the golden scenario fixture follow the new defaults (only the reported next-change times move). No control-logic change; split same-mode behavior unchanged.
+
 ## 0.7.6 — 2026-11-01
 
 - Add-on lint: removed the obsolete `watchdog` key from `config.yaml` (linter: "'watchdog' is obsolete, use the native Docker HEALTHCHECK"). The Dockerfile `HEALTHCHECK` already probes the same endpoint and port (`http://127.0.0.1:8099/api/health`, python3 urllib; interval 30s, timeout 10s, start period 30s, retries 3). The Watchdog toggle in the Info tab no longer applies. No control-logic change; split same-mode tests unchanged.
@@ -76,7 +80,7 @@
 
 ## 0.4.0
 - Defrost awareness: `hvac_action` `defrosting` / `preheating` is not a manual change, not a short cycle and not a missed setpoint (no write that cycle); card shows "Defrosting" and a graph band. Live check 30 Oct: the splits (raw ESPHome + `_proxy`) never reported either and have no defrost attribute, so it is display-on-report only, no inference.
-- Card: one-tap Home / Sleep / Away / Eco presets via the new `/api/preset` (ingress, MA M1 pattern; Eco = automatic); "next change / why" line (e.g. "71° at 7:00 AM · pre-heat 5:45 AM"); 24 h event strip (hold, window, vacation, defrost, pre-heat); still fits the Echo Show at 1280x800.
+- Card: one-tap Home / Sleep / Away / Eco presets via the new `/api/preset` (ingress, MA M1 pattern; Eco = automatic); "next change / why" line (e.g. "71° at 7:00 AM · pre-heat 6:15 AM"); 24 h event strip (hold, window, vacation, defrost, pre-heat); still fits the Echo Show at 1280x800.
 - MA lows from 0.3.3: `/api/state` `radiant_room_cap` documented as a deprecated alias of `radiant_air_shutoff`; a warning is logged at start when the ignored legacy `radiant_room_cap` is set lower than `radiant_setpoint_max`; the card reads `radiant_setpoint_max` from `/api/state` instead of a hard 85 (still never above 85).
 
 ## 0.3.3

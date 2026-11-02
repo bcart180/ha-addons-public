@@ -108,9 +108,15 @@ def test_old_rows_derive_summary_and_display_adds_tel():
 
 
 def test_no_house_specific_strings():
-    src = (ROOT / "rootfs" / "app" / "call_summary.py").read_text(encoding="utf-8").lower()
-    for word in ("owner", "Example Town", "Example Venue", "owner", "homepod"):
-        assert word not in src
+    """Generic guard: the summarizer ships no hardcoded contact data. Any phone number in the
+    source must be a fictional 555 number, and there are no email addresses or private IPs."""
+    src = (ROOT / "rootfs" / "app" / "call_summary.py").read_text(encoding="utf-8")
+    phone = re.compile(r"\+1(\d{3})(\d{3})\d{4}|\((\d{3})\) (\d{3})-\d{4}")
+    for m in phone.finditer(src):
+        area, exch = m.group(1) or m.group(3), m.group(2) or m.group(4)
+        assert "555" in (area, exch), m.group(0)
+    assert not re.search(r"[\w.+-]+@[\w-]+\.[a-z]{2,}", src)
+    assert not re.search(r"\b(10|192\.168)\.\d{1,3}\.\d{1,3}", src)
 
 
 def test_ui_and_blueprint_wired():

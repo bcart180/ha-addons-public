@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.3 — 2026-11-02
+
+- Least privilege: removed `hassio_api: true`. The add-on only talks to Home Assistant Core through the Supervisor proxy (`http://supervisor/core/api/...` and `ws://supervisor/core/websocket`), which `homeassistant_api: true` covers. `tools/wire_voice_link.py` (Supervisor add-on options) is not shipped in the image and runs from an SSH/other add-on. `share:rw` / `media:rw` stay: new recordings are written under `/media/callcatch` or `/share/callcatch`.
+- Tests: removed the hashed word and phone deny-lists; the fixture guards are now generic (only fictional 555 numbers, no email addresses or private IPs in the summarizer). No behavior change; dry_run handling unchanged.
+
 ## 0.4.2 — 2026-11-01
 
 - Quieter logs: successful `GET /api/health` access lines (watchdog / health checks) are no longer logged. The filter is anchored on the exact request line and a 2xx status, so health errors, other methods, query strings and paths like `/api/healthz` still log (new tests). No other change; dry_run handling unchanged.
@@ -117,7 +122,7 @@
 
 ## Docs / ops — 2026-10-27 (option A)
 
-- **Soft Slate Voicemail sidebar ON (tip):** `ingress_panel: true` after CoS GO (owner chose option A ~7:35 AM ET America/New_York). Soft Slate Recents returns as the HA sidebar app.
+- **Soft Slate Voicemail sidebar ON (tip):** `ingress_panel: true` after CoS GO (the owner chose option A ~7:35 AM ET America/New_York). Soft Slate Recents returns as the HA sidebar app.
 - Companion track: remove only the legacy Lovelace Recents block on `home-dashboard` view `path: voicemail` (storage dashboard; not this add-on). House Voice stays `ingress_panel: false`. Pipeline/bridge unchanged.
 - No version bump (0.1.5). Runtime Supervisor `ingress_panel` flip applies after Sec Audit YES; tip is source of truth for reinstall.
 
