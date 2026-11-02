@@ -1,5 +1,5 @@
 name: CallCatch (new)
-version: "0.4.4"
+version: "0.5.0"
 slug: voicemail
 description: Your Personalized Voicemail. iPhone-style house inbox (list + detail) via Supervisor ingress
 url: https://github.com/bcart180/ha-addons-public/tree/main/voicemail
@@ -10,6 +10,7 @@ init: false
 # Sidebar panel behind the HA login. No host ports published. Never public.
 ingress: true
 ingress_panel: true
+panel_admin: true
 panel_icon: mdi:voicemail
 panel_title: CallCatch
 homeassistant_api: true
@@ -35,6 +36,10 @@ options:
   google_oauth_refresh_token: ""
   voice_trust_url: ""
   voice_trust_token: ""
+  contacts_sync_enabled: false
+  icloud_apple_id: ""
+  icloud_app_password: ""
+  contacts_sync_interval_min: 30
 schema:
   sensor_entity: str
   media_player: str?
@@ -52,3 +57,7 @@ schema:
   google_oauth_refresh_token: password
   voice_trust_url: str?
   voice_trust_token: password
+  contacts_sync_enabled: bool
+  icloud_apple_id: str?
+  icloud_app_password: password?
+  contacts_sync_interval_min: int(15,1440)

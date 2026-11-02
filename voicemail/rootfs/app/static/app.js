@@ -187,6 +187,50 @@
     }
   }
 
+  const CONTACT_STATE = {
+    ok: "OK", disabled: "iCloud sync off", not_configured: "Apple ID or app password not set",
+    auth: "iCloud rejected the sign-in", http: "iCloud error", network: "network error",
+    parse: "unexpected iCloud reply", no_addressbook: "no address book found",
+    empty: "no numbers found; directory unchanged", write: "could not write caller_names.json",
+    too_large: "file too large", bad_upload: "not a .vcf file",
+  };
+
+  function contactsLine(d) {
+    const when = d.last_success ? new Date(d.last_success * 1000).toLocaleString() : "never";
+    const src = d.source === "upload" ? "upload" : d.source === "icloud" ? "iCloud" : "";
+    const state = CONTACT_STATE[d.state] || d.state || "";
+    return `Last sync: ${when}${src ? ` (${src})` : ""} · ${d.numbers || 0} numbers from ${d.contacts || 0} contacts · ${d.directory_entries || 0} in directory · Status: ${state}`;
+  }
+
+  async function loadContacts() {
+    try {
+      const d = await api("api/contacts/status");
+      $("contacts-status").textContent = contactsLine(d);
+      $("btn-contacts-sync").disabled = !(d.enabled && d.configured);
+    } catch (e) {
+      $("contacts-status").textContent = `Contacts: ${e.message}`;
+    }
+  }
+
+  $("btn-contacts-sync").addEventListener("click", async () => {
+    $("contacts-status").textContent = "Syncing…";
+    try { await api("api/contacts/sync", { method: "POST", body: "{}" }); } catch (_) { /* status shows reason */ }
+    loadContacts();
+  });
+
+  $("contacts-file").addEventListener("change", async (ev) => {
+    const f = ev.target.files && ev.target.files[0];
+    ev.target.value = "";
+    if (!f) return;
+    if (f.size > 5 * 1024 * 1024) { showToast("File too large (5 MB max)"); return; }
+    $("contacts-status").textContent = "Importing…";
+    try {
+      await api("api/contacts/upload", { method: "POST", body: f, headers: { "Content-Type": "text/vcard" } });
+      showToast("Contacts imported");
+    } catch (e) { showToast(CONTACT_STATE[e.message] || e.message); }
+    loadContacts();
+  });
+
   const shell = $("app");
 
   function showNumbers() {
@@ -196,6 +240,7 @@
     viewDetail.classList.add("hidden");
     viewNumbers.classList.remove("hidden");
     loadNumbers();
+    loadContacts();
   }
 
   function phoneSvg() {

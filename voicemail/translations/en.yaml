@@ -78,3 +78,22 @@ configuration:
     name: CallCatch Voice trust token
     description: >-
       The same secret as trust_api_token in CallCatch Voice. Password field. Never logged.
+  contacts_sync_enabled:
+    name: Sync iPhone contacts (iCloud)
+    description: >-
+      Off by default. When on, CallCatch reads ALL iCloud contacts over CardDAV
+      and writes number-to-name pairs to /share/callcatch/private/caller_names.json so
+      missed-call and voicemail alerts show the contact's name. iCloud names
+      override hand-kept entries; hand-kept numbers not in iCloud are kept
+      (they live in caller_names.manual.json). Only counts are logged.
+  icloud_apple_id:
+    name: Apple ID email
+    description: The Apple ID that owns the contacts. Never logged.
+  icloud_app_password:
+    name: iCloud app-specific password
+    description: >-
+      Create one at appleid.apple.com > Sign-In and Security > App-Specific
+      Passwords. Do not use your Apple ID password. Password field. Never logged.
+  contacts_sync_interval_min:
+    name: Contacts sync interval (minutes)
+    description: How often to re-read iCloud contacts. Default 30, minimum 15.

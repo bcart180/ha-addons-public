@@ -20,16 +20,22 @@ NEW_OPTIONS = (
     "google_oauth_refresh_token",
     "voice_trust_url",
     "voice_trust_token",
+    "contacts_sync_enabled",
+    "icloud_apple_id",
+    "icloud_app_password",
+    "contacts_sync_interval_min",
 )
 
 
 def test_slug_version_and_blank_player():
     assert "\nslug: voicemail\n" in CONFIG
-    assert 'version: "0.4.4"' in CONFIG
+    assert 'version: "0.5.0"' in CONFIG
     assert 'media_player: ""' in CONFIG
     assert "bedroom_homepod" not in CONFIG
     assert "HomePod" not in CONFIG
     assert "homeassistant_config:ro" in CONFIG
+    assert "homeassistant_config:rw" not in CONFIG
+    assert "\npanel_admin: true\n" in CONFIG
     assert "share:rw" in CONFIG
     assert "media:rw" in CONFIG
     for key in ("startup:", "boot:", "ingress_port:", "watchdog:", "hassio_role:", "backup:"):
@@ -47,6 +53,10 @@ def test_password_options_and_translations():
         "google_oauth_refresh_token",
     ):
         assert f"{name}: password" in CONFIG
+    assert "icloud_app_password: password" in CONFIG
+    assert "contacts_sync_enabled: false" in CONFIG
+    assert "contacts_sync_interval_min: 30" in CONFIG
+    assert "contacts_sync_interval_min: int(15," in CONFIG
     assert "storage_backend: list(local|google_drive)" in CONFIG
     assert "legacy_pyscript: list(auto|on|off)" in CONFIG
     for name in NEW_OPTIONS:

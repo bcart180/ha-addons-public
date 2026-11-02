@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0 — 2026-11-02
+
+- **iCloud contacts → caller names (Phase 1).** New options `contacts_sync_enabled` (default `false`), `icloud_apple_id`, `icloud_app_password` (password) and `contacts_sync_interval_min` (default 30, minimum 15). When enabled, CallCatch reads ALL iCloud contacts over CardDAV (`contacts.icloud.com`: current-user-principal → addressbook-home-set → every address book), in memory, normalizes every TEL to E.164 (US 10 digits → `+1`, extensions dropped) and writes the flat `{"+1…": "Name"}` map to `/share/callcatch/private/caller_names.json` — the same flat format the pyscript caller-ID directory already reads. Needs the companion ha-automation-tests change so the pyscript reads the `/share` path (it falls back to `/config/private`).
+- **Merge.** iCloud names override hand-kept names; hand-kept numbers not in iCloud are kept. Before the first write the existing hand-kept map (`/config/private/caller_names.json`, read-only) is copied once to `caller_names.manual.json`, which is the hand-edited source from then on. Writes are atomic (temp file, fsync, rename) with mode 600. A sync or upload that yields no numbers leaves the directory untouched; an unreadable existing directory is refused, not overwritten.
+- **.vcf fallback.** Numbers view → Contacts → Upload .vcf (`POST /api/contacts/upload`): ingress session only, 5 MB limit, same parse/merge/write; the upload is never stored. `Sync now` (`POST /api/contacts/sync`) and `GET /api/contacts/status` are ingress-only too.
+- **Status.** The Numbers view and `/api/diag` show last sync time, source, counts and a fixed status code only — never names, numbers, e-mail or the Apple ID.
+- **Privacy.** Logs carry only counts and reason codes (`synced N numbers from M contacts`). Errors never echo credentials, URLs or response bodies. Credentials are only ever sent to `https://*.icloud.com`; redirects elsewhere are refused.
+- **No new privilege.** `homeassistant_config` stays `ro`. The directory lives in `/share/callcatch/private/` (folder 700, files 600), which Home Assistant Core also sees as `/share`; the pyscript reads it there and falls back to `/config/private/caller_names.json` while it is missing. The old `/config/private` file is only read once, to seed `caller_names.manual.json`.
+- **Hardening.** Ingress POSTs (clear, play, mark heard, trust lists, contacts) are refused with 403 when `Sec-Fetch-Site` is present and not `same-origin`. `panel_admin: true` is now explicit.
+- Tests: `tests/test_contacts_sync.py` (vCard edge cases, normalization, merge precedence, atomic write + 0600, log redaction, upload auth and size limit, mocked CardDAV, non-iCloud host refusal). Fake 555-01xx numbers and fake names only. dry_run handling unchanged.
+
 ## 0.4.4 — 2026-11-02
 
 - List rows (iPhone): the full caller name or number now wraps instead of being cut off with "…"; the date (and duration, if known) sits on its own small muted line; the preview shows up to 3 lines of the summary or transcript. The hangup header (masked number, "Source: CallCatch", "Duration_s") is stripped from the list preview only. Urgent tag kept. Display-only: no data, API or dry_run change.
