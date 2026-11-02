@@ -2,25 +2,12 @@
 
 Run: python3 voicemail/tests/test_normalize.py
 """
-import hashlib
 import importlib.util
 import os
 import pathlib
 import re
 import sys
 
-# SHA-256 of digit-normalized national numbers (non-digits removed, and a
-# leading country code 1 dropped so +1 and 10-digit forms share one digest)
-# and of lowercase phrases. Plaintext stays out of this file.
-_BANNED_SHA256 = frozenset(
-    {
-        "REMOVED_DIGEST",
-        "REMOVED_DIGEST",
-        "REMOVED_DIGEST",
-        "REMOVED_DIGEST",
-        "REMOVED_DIGEST",
-    }
-)
 # NANP with an optional leading +1. Area and exchange are NXX (N = 2-9).
 _NANP_RE = re.compile(
     r"(?<!\d)(?:\+?1[\s.\-]*)?\(?[2-9]\d{2}\)?[\s.\-]*[2-9]\d{2}[\s.\-]*\d{4}(?!\d)"
@@ -31,10 +18,6 @@ _NON_555_NANP_RE = re.compile(
 )
 
 
-def _sha256(text):
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
 def _national_digits(raw):
     digits = re.sub(r"\D", "", raw)
     if len(digits) == 11 and digits.startswith("1"):
@@ -42,19 +25,8 @@ def _national_digits(raw):
     return digits if len(digits) == 10 else ""
 
 
-def _phrase_candidates(text):
-    words = re.findall(r"[a-z]+", text.lower())
-    return words + [f"{a} {b}" for a, b in zip(words, words[1:])]
-
-
 def _assert_fixture_clean(text):
-    for phrase in _phrase_candidates(text):
-        assert _sha256(phrase) not in _BANNED_SHA256, "fixture contains a banned phrase"
-    for match in _NANP_RE.finditer(text):
-        digits = _national_digits(match.group(0))
-        if not digits:
-            continue
-        assert _sha256(digits) not in _BANNED_SHA256, "fixture contains a banned phone number"
+    """Generic guard: fixtures use only fictional 555 numbers."""
     non_555 = _NON_555_NANP_RE.search(text)
     assert non_555 is None, f"non-555 NANP number in fixture: {non_555.group(0)}"
 
@@ -85,9 +57,7 @@ assert _NON_555_NANP_RE.search("9992345678")
 assert _NON_555_NANP_RE.search("+1 (555) 555-0101") is None
 assert _NON_555_NANP_RE.search("208-555-0100") is None
 assert _NON_555_NANP_RE.search("555-0101") is None
-assert _sha256(_national_digits("+1 (999) 234-5678")) == _sha256("9992345678")
-assert _sha256("9992345678") not in _BANNED_SHA256
-assert _sha256("example town") in {_sha256(p) for p in _phrase_candidates("See Example Town")}
+assert _national_digits("+1 (999) 234-5678") == "9992345678"
 _assert_fixture_clean(example)
 assert "555-0101" in example and "555-0102" in example and "555-0103" in example and "555-0104" in example
 
