@@ -1,5 +1,5 @@
 name: Smart HVAC (new)
-version: "0.7.5"
+version: "0.7.6"
 slug: smart_hvac
 description: Presence-, weather- and sun-aware climate control for mini splits and radiant floor (Ingress panel)
 url: https://github.com/bcart180/ha-addons-public/tree/main/smart_hvac
@@ -12,9 +12,8 @@ ingress: true
 ingress_panel: true
 panel_icon: mdi:thermostat-auto
 panel_title: Climate
-# Supervisor watchdog (0.7.3): /api/health answers from the event loop only; it never waits on a control
-# cycle or the HA API, so an HA outage or a slow cycle cannot make it fail. Turn the watchdog on in the Info tab.
-watchdog: "http://[HOST]:[PORT:8099]/api/health"
+# Health (0.7.6): the Dockerfile HEALTHCHECK probes http://127.0.0.1:8099/api/health. That endpoint answers from
+# the event loop only, so an HA outage or a slow control cycle cannot make it fail. ('watchdog' is obsolete.)
 # panel_admin omitted: Supervisor default is true (admin-only panel, MA M2); linter rejects the explicit default.
 homeassistant_api: true
 options:

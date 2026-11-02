@@ -18,9 +18,12 @@ CFG = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
 
 
 def test_watchdog_url_in_config():
+    # 0.7.6: the obsolete 'watchdog' key is gone; the Dockerfile HEALTHCHECK probes the same endpoint and port.
     cfg = yaml.safe_load(open(CFG))
-    assert cfg["watchdog"] == "http://[HOST]:[PORT:8099]/api/health"
+    assert "watchdog" not in cfg
     assert "ports" not in cfg and "ingress_port" not in cfg  # 8099 is the default ingress port
+    df = open(os.path.join(os.path.dirname(CFG), "Dockerfile")).read()
+    assert "HEALTHCHECK" in df and "http://127.0.0.1:8099/api/health" in df and "python3" in df
 
 
 class BlockingHA(FakeHA):
