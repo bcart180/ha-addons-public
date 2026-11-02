@@ -1,5 +1,5 @@
 name: CallCatch Voice (new)
-version: "0.3.0"
+version: "0.3.1"
 slug: twilio_house_voice
 description: Twilio Media Streams bridge to xAI Realtime. Mixed call recordings are saved for CallCatch (Your Personalized Voicemail).
 url: https://github.com/bcart180/ha-addons-public/tree/main/twilio_house_voice
@@ -26,7 +26,8 @@ ports_description:
 # hassio.addon_stdin: the CallCatch notification Block / Undo buttons send
 # {"cmd": "block"|"unblock", "number": ...}. Nothing else is accepted.
 stdin: true
-watchdog: http://[HOST]:[PORT:8787]/api/health
+# Health: the Dockerfile HEALTHCHECK probes 127.0.0.1:8787/api/health; the
+# Supervisor watchdog follows container health (the watchdog: URL key is obsolete).
 options:
   twilio_account_sid: ""
   twilio_auth_token: ""
