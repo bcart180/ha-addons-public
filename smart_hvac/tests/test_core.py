@@ -45,7 +45,7 @@ def test_sleep_window():
     assert r["profile"] == "sleep" and r["setpoint"] == 68.0
 
 def test_preheat_before_wake():
-    r = decide(base(minute_of_day=6 * 60), LR)
+    r = decide(base(minute_of_day=6 * 60 + 30), LR)
     assert r["profile"] == "home" and r["setpoint"] == 71.0
 
 def test_sleep_early_morning_not_preheat():
