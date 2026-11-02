@@ -25,7 +25,7 @@ NEW_OPTIONS = (
 
 def test_slug_version_and_blank_player():
     assert "\nslug: voicemail\n" in CONFIG
-    assert 'version: "0.4.2"' in CONFIG
+    assert 'version: "0.4.3"' in CONFIG
     assert 'media_player: ""' in CONFIG
     assert "bedroom_homepod" not in CONFIG
     assert "HomePod" not in CONFIG
