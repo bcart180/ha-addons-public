@@ -1,3 +1,7 @@
+## 0.7.7 — 2026-11-02
+
+- Shipped defaults for `profiles.sleep_start` / `profiles.wake` are now generic (22:00 / 07:00, was 22:00 / 07:00) in `config.yaml`. (`core.DEFAULTS` keeps 22:00 / 07:00 as the internal fallback because the control tests are built on it; it is never used when saved options set the times.) Existing installs keep whatever is saved in their Configuration tab: the engine reads `profiles.sleep_start` / `profiles.wake` from saved options and only falls back to the defaults when they are blank. No control-logic change; split same-mode behavior unchanged.
+
 ## 0.7.6 — 2026-11-01
 
 - Add-on lint: removed the obsolete `watchdog` key from `config.yaml` (linter: "'watchdog' is obsolete, use the native Docker HEALTHCHECK"). The Dockerfile `HEALTHCHECK` already probes the same endpoint and port (`http://127.0.0.1:8099/api/health`, python3 urllib; interval 30s, timeout 10s, start period 30s, retries 3). The Watchdog toggle in the Info tab no longer applies. No control-logic change; split same-mode tests unchanged.
