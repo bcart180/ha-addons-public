@@ -16,6 +16,12 @@ RUN set -e; \
     rm -rf /tmp/addon_src
 
 WORKDIR /app
+
+# Supervisor watchdog uses container health. Probes the same endpoint the old
+# watchdog: URL did, from inside the container (python3 is already installed).
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/api/health', timeout=5).read()"
+
 CMD ["python3", "-u", "/app/server.py"]
 
 LABEL \
@@ -23,4 +29,4 @@ LABEL \
     org.opencontainers.image.title="Home Assistant Add-on: CallCatch Voice" \
     org.opencontainers.image.description="Twilio Media Streams bridge to xAI Realtime with call audio for CallCatch" \
     org.opencontainers.image.source="https://github.com/bcart180/ha-addons-public" \
-    org.opencontainers.image.version="0.2.5"
+    org.opencontainers.image.version="0.3.1"

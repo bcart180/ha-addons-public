@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1 — 2026-11-01
+
+- Removed the obsolete `watchdog:` key from `config.yaml` (flagged by the add-on linter). The Supervisor watchdog now follows a Docker `HEALTHCHECK` that probes the same endpoint, `http://127.0.0.1:8787/api/health`, with the `python3` already in the image.
+- Image label `org.opencontainers.image.version` was stale (0.2.5); it and `server.VERSION` (reported by `/api/health`) now match 0.3.1.
+- No change to startup (CMD), routes, options or call handling.
+- Tests: `test_voice.py` asserts the `watchdog:` key is gone and the HEALTHCHECK exists.
+
 ## 0.3.0 — 2026-11-01
 
 - Public store marker: name suffix (new); no functional change.
