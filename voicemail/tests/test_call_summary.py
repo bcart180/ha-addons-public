@@ -1,6 +1,7 @@
 """0.3.7 post-call structured summary. Synthetic 555-01xx data only."""
 from __future__ import annotations
 
+import hashlib
 import pathlib
 import re
 import sys
@@ -107,10 +108,22 @@ def test_old_rows_derive_summary_and_display_adds_tel():
     assert d["callback_display"] == "(555) 555-0107"
 
 
+_HOUSE_WORD_DIGESTS = (
+    (6, "REMOVED_DIGEST"),
+    (10, "REMOVED_DIGEST"),
+    (8, "REMOVED_DIGEST"),
+    (6, "REMOVED_DIGEST"),
+    (7, "REMOVED_DIGEST"),
+)
+
+
 def test_no_house_specific_strings():
     src = (ROOT / "rootfs" / "app" / "call_summary.py").read_text(encoding="utf-8").lower()
-    for word in ("owner", "Example Town", "Example Venue", "owner", "homepod"):
-        assert word not in src
+    # Deny-list of owner/site-specific words, stored as SHA-256 digests so the
+    # public repo does not spell them out. Every substring of a listed length is checked.
+    for length, digest in _HOUSE_WORD_DIGESTS:
+        for i in range(len(src) - length + 1):
+            assert hashlib.sha256(src[i : i + length].encode()).hexdigest() != digest
 
 
 def test_ui_and_blueprint_wired():
