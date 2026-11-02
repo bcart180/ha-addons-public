@@ -41,7 +41,9 @@ const api = new Function(
     extractFunction("spokenDuration") +
     "\n" +
     extractFunction("polishTranscript") +
-    "\nreturn { spokenDuration, polishTranscript, mapSpeakerLine, mapSpeakerText };"
+    "\n" +
+    extractFunction("previewText") +
+    "\nreturn { spokenDuration, polishTranscript, mapSpeakerLine, mapSpeakerText, previewText };"
 )();
 
 const failures = [];
@@ -162,6 +164,18 @@ for (const key of ["startup:", "boot:", "ingress_port:", "watchdog:", "hassio_ro
   if (new RegExp("^" + key, "m").test(config)) failures.push("config must not set " + key);
 }
 if (appJs.includes("soft-slate")) failures.push("app.js should not touch Soft Slate CSS");
+
+// List row preview (0.4.4)
+eq(api.previewText("•••0123 Source: CallCatch Duration_s: 42.1 TRANSCRIPT Caller: Hi, it's Sam."), "Caller: Hi, it's Sam.", "preview strips hangup header");
+eq(api.previewText("Source: twilio_house_voice\nDuration: 1 minute 5 seconds\nTranscript:\nHello"), "Hello", "preview strips friendly header");
+eq(api.previewText("Please call me back about Source: the invoice"), "Please call me back about Source: the invoice", "mid-text Source kept");
+eq(api.previewText(""), "", "empty preview");
+if (/Source:\s*CallCatch/.test(api.previewText("•••7444 Source: CallCatch Duration_s: 9"))) failures.push("no Source filler in preview");
+const css = fs.readFileSync(path.join(root, "rootfs/app/static/style.css"), "utf8");
+const nameRule = /\.vm-row \.name \{[^}]*\}/.exec(css);
+if (!nameRule || /ellipsis|nowrap/.test(nameRule[0])) failures.push("caller name must wrap, no ellipsis");
+if (!/\.vm-row \.snippet \{[^}]*line-clamp: 3/.test(css)) failures.push("preview must clamp at 3 lines");
+if (!appJs.includes("urgencyPill(v.summary)")) failures.push("list row keeps the urgency pill");
 
 if (failures.length) {
   console.error(failures.join("\n\n"));
