@@ -147,6 +147,16 @@
       <ul id="numbers-block" class="numbers-ul" role="list"></ul>
       <h2 class="numbers-h">Allowed</h2>
       <ul id="numbers-allow" class="numbers-ul" role="list"></ul>
+      <h2 class="numbers-h">Contacts (caller names)</h2>
+      <div class="contacts-card card-soft">
+        <p class="dim tiny" id="contacts-status">Loading…</p>
+        <div class="contacts-actions">
+          <button type="button" class="pill-btn" id="btn-contacts-sync">Sync now</button>
+          <label class="pill-btn contacts-file">Upload .vcf
+            <input type="file" id="contacts-file" accept=".vcf,text/vcard,text/x-vcard" class="hidden" />
+          </label>
+        </div>
+      </div>
     </section>
 
     <div id="toast" class="toast hidden" role="status">

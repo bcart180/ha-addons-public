@@ -356,3 +356,8 @@ button, input, select { font: inherit; color: inherit; }
 .summary-grid dd { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
 .summary-cb { display: inline-flex; align-items: center; min-height: var(--tap); color: var(--call); font-weight: 600; text-decoration: none; }
 .summary-note { margin: 4px 0 0; }
+
+/* ---------- contacts sync (0.5.0) ---------- */
+.contacts-card { margin: 0 16px 24px; }
+.contacts-actions { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.contacts-file { cursor: pointer; }

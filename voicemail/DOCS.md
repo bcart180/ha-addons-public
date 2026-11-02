@@ -269,3 +269,64 @@ Each voicemail gets a short structured summary: **caller name** (only if the cal
 ## Moving stores: import_from_share
 
 When this add-on is moved to another add-on store, its `/data` does not move with it. The new install imports allow-listed files once, on its first start, from `/share/.migrate-2026-11-01/<slug>/` (`voicemail` or `twilio_house_voice`). The folder must be owned by root with mode 700 (`chmod 700`). Anything unexpected (a symlink, a file not on the allow-list, a file over 8 MB, invalid JSON) stops the import with nothing written, and the log names only the reason. After a successful import the add-on writes an import marker in `/data` and deletes the staged files. It never imports twice.
+
+## Contacts → caller names (0.5.0)
+
+Missed-call and voicemail alerts show a contact's name when the caller's
+number is in `/config/private/caller_names.json` (flat `{"+15555550100": "Name"}`
+map, E.164 keys). From 0.5.0 CallCatch can fill that file from your iPhone
+contacts.
+
+### Options
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `contacts_sync_enabled` | `false` | Turn the iCloud sync on. |
+| `icloud_apple_id` | blank | Apple ID email that owns the contacts. Never logged. |
+| `icloud_app_password` | blank | App-specific password (password field). Never logged. |
+| `contacts_sync_interval_min` | `30` | Minutes between syncs. Minimum 15. |
+
+### Create an app-specific password
+
+1. Go to https://appleid.apple.com and sign in.
+2. Open **Sign-In and Security → App-Specific Passwords**.
+3. Click **+**, name it `CallCatch`, and copy the password Apple shows.
+4. In Home Assistant: **Settings → Add-ons → CallCatch → Configuration**, type
+   your Apple ID email into `icloud_apple_id`, paste the password into
+   `icloud_app_password`, turn on `contacts_sync_enabled`, save and restart.
+
+Enter these yourself in the add-on options; never paste them into chat, a
+ticket or the repo. To revoke access, delete the app-specific password on
+appleid.apple.com.
+
+### How it works
+
+- ALL contacts in every iCloud address book are read over CardDAV
+  (`contacts.icloud.com`), in memory. Credentials are only sent to
+  `https://*.icloud.com`.
+- Every phone number is normalized to E.164 (US 10-digit numbers get `+1`;
+  extensions are dropped). Name: full name, else given + family, else company.
+- **Merge:** iCloud names win over hand-kept names. Hand-kept numbers that are
+  not in iCloud stay. Before the first write, the existing `caller_names.json`
+  is copied once to `caller_names.manual.json`. **Edit
+  `caller_names.manual.json` from then on**; `caller_names.json` is rewritten
+  on every sync.
+- Writes are atomic with mode 600. A sync that finds no numbers leaves the file
+  alone. The pyscript picks up changes within seconds (mtime check); no restart.
+- Logs show only counts and a status, for example
+  `contacts: synced 412 numbers from 380 contacts`.
+
+### .vcf upload (fallback)
+
+Numbers view (sidebar) → **Contacts** → **Upload .vcf**. Export contacts from
+iCloud.com or the iPhone Contacts app as a `.vcf`. Limit 5 MB. The file is
+parsed in memory, merged the same way and discarded; it is never stored. Only
+signed-in Home Assistant ingress sessions can upload (the panel is admin-only).
+
+### Status
+
+The same card shows last sync time, source (iCloud or upload), number and
+contact counts, directory size and a status code (`ok`, `disabled`,
+`not_configured`, `auth`, `network`, `http`, `parse`, `no_addressbook`,
+`empty`, `write`). `/api/diag` carries the same fields under `contacts`.
+
