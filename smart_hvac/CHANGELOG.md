@@ -1,3 +1,7 @@
+## 0.7.6 — 2026-11-01
+
+- Add-on lint: removed the obsolete `watchdog` key from `config.yaml` (linter: "'watchdog' is obsolete, use the native Docker HEALTHCHECK"). The Dockerfile `HEALTHCHECK` already probes the same endpoint and port (`http://127.0.0.1:8099/api/health`, python3 urllib; interval 30s, timeout 10s, start period 30s, retries 3). The Watchdog toggle in the Info tab no longer applies. No control-logic change; split same-mode tests unchanged.
+
 ## 0.7.5 — 2026-11-01
 
 - New test: with `learned_preheat: true` and `away_delay_min: 15` both on, a fuzz over random start modes, temperatures, overrides, presence flaps and clock steps never requests or leaves the two splits in opposite modes. No control-logic change; both features are option-only and stay off by default.
