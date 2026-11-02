@@ -1,7 +1,7 @@
 name: Smart HVAC (new)
 version: "0.7.6"
 slug: smart_hvac
-description: Presence-, weather- and sun-aware climate control for mini splits and radiant floor (Ingress panel)
+description: Smart thermostat for multi-zone mini-split systems. All heads share one outdoor unit, so they are always kept in the same heat/cool mode. Presence-, weather- and sun-aware, plus radiant floor (Ingress panel)
 url: https://github.com/bcart180/ha-addons-public/tree/main/smart_hvac
 arch:
   - aarch64
