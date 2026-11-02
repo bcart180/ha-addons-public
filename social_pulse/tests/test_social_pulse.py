@@ -26,16 +26,16 @@ def fx(name):
 
 ZONES = [{"name": "site-a.example", "zone_id": "0000000000000000000000000000a001", "rum_site_tag": "0000000000000000000000000000b001"},
          {"name": "site-b.example", "zone_id": "0000000000000000000000000000a002", "rum_site_tag": "0000000000000000000000000000b002"}]
-HANDLES = ["examplestays", "examplevenue", "Example Ambience"]
+HANDLES = ["example_stays", "ExampleTavern", "ExampleAmbience"]
 
 
 class XTests(unittest.TestCase):
     def test_public_metrics_from_real_sample(self):
         out = {a["handle"]: a for a in c.x_normalize(fx("x_raw.json"), HANDLES, NOW)}
-        self.assertEqual(out["Example Ambience"]["followers"]["value"], 2)
-        self.assertEqual(out["Example Ambience"]["posts_7d"]["value"], 14)
-        self.assertEqual(out["Example Ambience"]["post_impressions_7d"]["value"], 39)
-        self.assertEqual(out["examplestays"]["post_impressions_7d"]["value"], 11)
+        self.assertEqual(out["ExampleAmbience"]["followers"]["value"], 2)
+        self.assertEqual(out["ExampleAmbience"]["posts_7d"]["value"], 14)
+        self.assertEqual(out["ExampleAmbience"]["post_impressions_7d"]["value"], 39)
+        self.assertEqual(out["example_stays"]["post_impressions_7d"]["value"], 11)
 
     def test_private_metrics_are_not_available_never_guessed(self):
         for a in c.x_normalize(fx("x_raw.json"), HANDLES, NOW):
@@ -46,8 +46,8 @@ class XTests(unittest.TestCase):
             # zero engagements with impressions -> 0%, not a guess
             self.assertEqual(a["engagement_rate_7d"]["value"], 0.0)
 
-    def test_adding_extra_handle_is_one_handle(self):
-        out = c.x_normalize(fx("x_raw.json"), HANDLES + ["examplehandle"], NOW)
+    def test_adding_example_new_is_one_handle(self):
+        out = c.x_normalize(fx("x_raw.json"), HANDLES + ["example_new"], NOW)
         self.assertEqual(len(out), 4)
         self.assertIn("error", out[-1])  # not in fixture -> shown as error, not fabricated
 

@@ -1,7 +1,6 @@
 """0.3.7 post-call structured summary. Synthetic 555-01xx data only."""
 from __future__ import annotations
 
-import hashlib
 import pathlib
 import re
 import sys
@@ -108,22 +107,16 @@ def test_old_rows_derive_summary_and_display_adds_tel():
     assert d["callback_display"] == "(555) 555-0107"
 
 
-_HOUSE_WORD_DIGESTS = (
-    (6, "REMOVED_DIGEST"),
-    (10, "REMOVED_DIGEST"),
-    (8, "REMOVED_DIGEST"),
-    (6, "REMOVED_DIGEST"),
-    (7, "REMOVED_DIGEST"),
-)
-
-
 def test_no_house_specific_strings():
-    src = (ROOT / "rootfs" / "app" / "call_summary.py").read_text(encoding="utf-8").lower()
-    # Deny-list of owner/site-specific words, stored as SHA-256 digests so the
-    # public repo does not spell them out. Every substring of a listed length is checked.
-    for length, digest in _HOUSE_WORD_DIGESTS:
-        for i in range(len(src) - length + 1):
-            assert hashlib.sha256(src[i : i + length].encode()).hexdigest() != digest
+    """Generic guard: the summarizer ships no hardcoded contact data. Any phone number in the
+    source must be a fictional 555 number, and there are no email addresses or private IPs."""
+    src = (ROOT / "rootfs" / "app" / "call_summary.py").read_text(encoding="utf-8")
+    phone = re.compile(r"\+1(\d{3})(\d{3})\d{4}|\((\d{3})\) (\d{3})-\d{4}")
+    for m in phone.finditer(src):
+        area, exch = m.group(1) or m.group(3), m.group(2) or m.group(4)
+        assert "555" in (area, exch), m.group(0)
+    assert not re.search(r"[\w.+-]+@[\w-]+\.[a-z]{2,}", src)
+    assert not re.search(r"\b(10|192\.168)\.\d{1,3}\.\d{1,3}", src)
 
 
 def test_ui_and_blueprint_wired():

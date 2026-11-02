@@ -3,7 +3,7 @@
 ## 0.4.3 — 2026-11-02
 
 - Least privilege: removed `hassio_api: true`. The add-on only talks to Home Assistant Core through the Supervisor proxy (`http://supervisor/core/api/...` and `ws://supervisor/core/websocket`), which `homeassistant_api: true` covers. `tools/wire_voice_link.py` (Supervisor add-on options) is not shipped in the image and runs from an SSH/other add-on. `share:rw` / `media:rw` stay: new recordings are written under `/media/callcatch` or `/share/callcatch`.
-- Test deny-list of house-specific words is now stored as SHA-256 digests (same check, no plaintext). No behavior change; dry_run handling unchanged.
+- Tests: removed the hashed word and phone deny-lists; the fixture guards are now generic (only fictional 555 numbers, no email addresses or private IPs in the summarizer). No behavior change; dry_run handling unchanged.
 
 ## 0.4.2 — 2026-11-01
 
