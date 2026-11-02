@@ -328,10 +328,10 @@ def test_instructions_path_and_redact_and_b64_cap():
 
 def test_config_version_and_readme():
     config = (ROOT / "twilio_house_voice" / "config.yaml").read_text()
-    assert re.search(r'(?m)^version:\s*"0\.3\.0"\s*$', config)
+    assert re.search(r'(?m)^version:\s*"0\.3\.1"\s*$', config)
     assert re.search(r"(?m)^slug:\s*twilio_house_voice\s*$", config)
     assert "8787" in config
-    assert server.VERSION == "0.3.0"
+    assert server.VERSION == "0.3.1"
     readme = (ROOT / "README.md").read_text()
     addon = (ROOT / "twilio_house_voice" / "README.md").read_text()
     assert "twilio_house_voice" in readme
@@ -440,7 +440,7 @@ def test_stub_hangup_writes_wav_and_webhook_is_idempotent():
                 assert await health.json() == {"ok": True}
                 status = await client.get("/api/status")
                 payload = await status.json()
-                assert payload["version"] == "0.3.0"
+                assert payload["version"] == "0.3.1"
                 assert payload["mix_recording"] is True
                 assert payload["bridge"] == "stub"
                 dumped = json.dumps(payload)
@@ -1330,6 +1330,20 @@ def test_public_base_url_must_be_bare_https_origin():
     finally:
         server.log.removeHandler(handler)
         server.create_app, server.web.run_app = real_create, real_run
+
+
+def test_031_health_via_docker_healthcheck_not_watchdog_key():
+    root = pathlib.Path(__file__).resolve().parents[1]
+    cfg = (root / "config.yaml").read_text()
+    assert not re.search(r"^watchdog\s*:", cfg, re.M), "obsolete watchdog: key is back"
+    version = re.search(r'^version:\s*"([^"]+)"', cfg, re.M).group(1)
+    dockerfile = (root / "Dockerfile").read_text()
+    hc = re.search(r"^HEALTHCHECK\b.*?CMD (.+)$", dockerfile, re.M | re.S)
+    assert hc, "Dockerfile has no HEALTHCHECK"
+    assert "http://127.0.0.1:8787/api/health" in hc.group(1)
+    assert str(server.PORT) == "8787"
+    assert 'CMD ["python3", "-u", "/app/server.py"]' in dockerfile
+    assert f'org.opencontainers.image.version="{version}"' in dockerfile
 
 
 if __name__ == "__main__":

@@ -164,7 +164,7 @@ def test_server_hook_allow_list(tmp_path, monkeypatch):
     os.environ.pop("SUPERVISOR_TOKEN", None)
     import server  # noqa: PLC0415
 
-    assert server.VERSION == "0.3.0"
+    assert server.VERSION == "0.3.1"
     assert server.SHARE_IMPORT_ALLOW == {"trust_lists.json": "trust_lists.json", "index.json": "voicemail/index.json"}
     root = tmp_path / "stage"
     src = root / "twilio_house_voice"
