@@ -1,5 +1,5 @@
-name: CallCatch Voice (new)
-version: "0.3.1"
+name: CallCatch Voice
+version: "0.3.2"
 slug: twilio_house_voice
 description: Twilio Media Streams bridge to xAI Realtime. Mixed call recordings are saved for CallCatch (Your Personalized Voicemail).
 url: https://github.com/bcart180/ha-addons-public/tree/main/twilio_house_voice

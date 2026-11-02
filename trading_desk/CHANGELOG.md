@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1 — 2026-11-02
+
+- Remove '(new)' name suffix; no functional change.
+
 ## 0.3.0 — 2026-11-01
 
 - Public store marker: name suffix (new); no functional change.
