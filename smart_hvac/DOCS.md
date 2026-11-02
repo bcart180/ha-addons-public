@@ -1,5 +1,8 @@
 # Smart HVAC
 
+A smart thermostat built for multi-zone mini-split systems. All indoor heads share one outdoor unit, so the
+add-on always keeps them in the same heat/cool mode: never one heating while another cools.
+
 ## Safe by default
 Installs with **enabled: false** and **dry_run: true**. In that state it reads sensors every 5 minutes and shows
 what it *would* do in the Climate panel, but sends nothing to any thermostat. Go-live = set `enabled: true`,
