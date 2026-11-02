@@ -53,4 +53,4 @@ a dedicated key you can revoke on its own.
 
 ## Spelling (shelved)
 
-`archive/spelling/`: Shelved 2026-10-11, owner chose LAN-only; not installed.
+`archive/spelling/`: Shelved 2026-10-11, the owner chose LAN-only; not installed.
