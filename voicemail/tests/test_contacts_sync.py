@@ -127,6 +127,28 @@ def test_directory_preserves_manual_once(tmp_path):
     assert all(re.fullmatch(r"\+\d{8,15}", k) and isinstance(v, str) for k, v in data.items())
 
 
+def test_manual_seeded_from_readonly_legacy(tmp_path):
+    legacy = tmp_path / "config_private" / cs.DIRECTORY_NAME
+    legacy.parent.mkdir()
+    legacy.write_text(json.dumps({"+15555550110": "Manual Only", "+15555550101": "Old"}))
+    os.chmod(legacy, 0o400)
+    d = cs.Directory(tmp_path / "share" / "callcatch" / "private", legacy)
+    out = d.write({"+15555550101": "Testy McTestface"})
+    assert out == {"+15555550101": "Testy McTestface", "+15555550110": "Manual Only"}
+    assert json.loads(d.manual_path.read_text()) == {"+15555550110": "Manual Only", "+15555550101": "Old"}
+    assert json.loads(legacy.read_text()) == {"+15555550110": "Manual Only", "+15555550101": "Old"}
+    assert stat.S_IMODE(d.folder.stat().st_mode) == 0o700
+
+
+def test_server_paths_stay_off_config(monkeypatch):
+    tmp = tempfile.mkdtemp()
+    monkeypatch.delenv("VM_CALLER_DIR", raising=False)
+    mod = _load_server(monkeypatch, tmp)
+    monkeypatch.delenv("VM_CALLER_DIR", raising=False)
+    assert str(mod.caller_dir()) == "/share/callcatch/private"
+    assert str(mod.legacy_caller_file()) == "/homeassistant/private/caller_names.json"
+
+
 def test_unreadable_directory_refused(tmp_path):
     (tmp_path / cs.DIRECTORY_NAME).write_text("{not json")
     with pytest.raises(cs.SyncError):

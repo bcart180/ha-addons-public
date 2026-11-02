@@ -273,9 +273,11 @@ When this add-on is moved to another add-on store, its `/data` does not move wit
 ## Contacts → caller names (0.5.0)
 
 Missed-call and voicemail alerts show a contact's name when the caller's
-number is in `/config/private/caller_names.json` (flat `{"+15555550100": "Name"}`
-map, E.164 keys). From 0.5.0 CallCatch can fill that file from your iPhone
-contacts.
+number is in the caller directory (flat `{"+15555550100": "Name"}`
+map, E.164 keys). From 0.5.0 CallCatch can fill
+`/share/callcatch/private/caller_names.json` from your iPhone contacts. The
+pyscript reads that file and falls back to `/config/private/caller_names.json`
+while it does not exist. CallCatch keeps `/config` read-only.
 
 ### Options
 
@@ -307,9 +309,9 @@ appleid.apple.com.
 - Every phone number is normalized to E.164 (US 10-digit numbers get `+1`;
   extensions are dropped). Name: full name, else given + family, else company.
 - **Merge:** iCloud names win over hand-kept names. Hand-kept numbers that are
-  not in iCloud stay. Before the first write, the existing `caller_names.json`
-  is copied once to `caller_names.manual.json`. **Edit
-  `caller_names.manual.json` from then on**; `caller_names.json` is rewritten
+  not in iCloud stay. Before the first write, the existing
+  `/config/private/caller_names.json` (read-only) is copied once to `caller_names.manual.json`. **Edit
+  `/share/callcatch/private/caller_names.manual.json` from then on**; `caller_names.json` is rewritten
   on every sync.
 - Writes are atomic with mode 600. A sync that finds no numbers leaves the file
   alone. The pyscript picks up changes within seconds (mtime check); no restart.

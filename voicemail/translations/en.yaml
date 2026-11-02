@@ -82,7 +82,7 @@ configuration:
     name: Sync iPhone contacts (iCloud)
     description: >-
       Off by default. When on, CallCatch reads ALL iCloud contacts over CardDAV
-      and writes number-to-name pairs to /config/private/caller_names.json so
+      and writes number-to-name pairs to /share/callcatch/private/caller_names.json so
       missed-call and voicemail alerts show the contact's name. iCloud names
       override hand-kept entries; hand-kept numbers not in iCloud are kept
       (they live in caller_names.manual.json). Only counts are logged.
