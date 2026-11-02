@@ -44,7 +44,7 @@ Do not Start until the go-live checklist below is done; Start alone is still dry
   ```
   `zones` ships empty (0.7.2): with no zones the add-on starts, shows nothing to control and sends nothing.
   Existing installs keep their saved zones.
-- `profiles`: home/guest 71, sleep 68, away 65/78, sleep 22:30–06:30.
+- `profiles`: home/guest 71, sleep 68, away 65/78, sleep 22:00–07:00.
 - `min_cycle_min` (anti-short-cycle), `override_hours` (auto-resume), `radiant_setpoint_max` (highest bath floor setpoint a card / panel may set, default 85), `radiant_air_shutoff` (bath air above this turns the radiant off, default 80), both capped at 85; `radiant_floor_cap`. `cool_lockout` (0.4.1, default 75): while the outdoor temp or forecast high is below this the splits never switch to cool, a warm room just coasts in heat. The old `radiant_room_cap` option is still accepted but ignored; if it is set lower than `radiant_setpoint_max` (0.3.2 saved 80) the add-on logs a warning at start saying so. In `/api/state`, `radiant_room_cap` is a **deprecated alias** of `radiant_air_shutoff` kept for 0.3.x clients; the panel and card read `radiant_setpoint_max` / `radiant_air_shutoff`.
 
 ## Behaviour

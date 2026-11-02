@@ -1,5 +1,5 @@
 name: Smart HVAC (new)
-version: "0.7.6"
+version: "0.7.7"
 slug: smart_hvac
 description: Smart thermostat for multi-zone mini-split systems. All heads share one outdoor unit, so they are always kept in the same heat/cool mode. Presence-, weather- and sun-aware, plus radiant floor (Ingress panel)
 url: https://github.com/bcart180/ha-addons-public/tree/main/smart_hvac
@@ -42,8 +42,8 @@ options:
     sleep: 68
     away_heat: 65
     away_cool: 78
-    sleep_start: "22:30"
-    wake: "06:30"
+    sleep_start: "22:00"
+    wake: "07:00"
   # No house entities ship as defaults: add your zones in the Configuration tab (example in DOCS.md).
   # With no zones the add-on runs and controls nothing.
   zones: []
