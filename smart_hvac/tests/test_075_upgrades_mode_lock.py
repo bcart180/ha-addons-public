@@ -1,7 +1,7 @@
 """0.7.5: learned_preheat + away_delay_min=15 turned on together must never put the two splits in opposite modes.
 
 Same fuzz as test_060 (random start modes / temps / overrides), but with both options on, a moving clock
-(localtime=time.gmtime) that starts 0-180 min before the 06:30 wake, per-zone seeded warm-up rates so the two
+(localtime=time.gmtime) that starts 0-180 min before the 07:00 wake, per-zone seeded warm-up rates so the two
 learned leads diverge, and presence flapping so the 15-minute departure debounce is exercised.
 """
 import os
@@ -16,7 +16,7 @@ import core  # noqa: E402
 from engine import Engine  # noqa: E402
 from test_060_mode_lock import MODES, StampedHA, opts, split_modes, st  # noqa: E402
 
-WAKE = 1_800_000_000 - 1_800_000_000 % 86400 + 6 * 3600 + 30 * 60  # 06:30 UTC on some day
+WAKE = 1_800_000_000 - 1_800_000_000 % 86400 + 7 * 3600  # 07:00 UTC on some day
 
 
 def _samples(rnd, rate):
@@ -24,7 +24,7 @@ def _samples(rnd, rate):
 
 
 def test_fuzz_preheat_and_away_delay_never_split_modes():
-    assert time.gmtime(WAKE)[3:5] == (6, 30)
+    assert time.gmtime(WAKE)[3:5] == (7, 0)
     rnd = random.Random(75)
     preheat_hits = diverged = 0
     for _ in range(600):

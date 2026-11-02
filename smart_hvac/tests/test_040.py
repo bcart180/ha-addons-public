@@ -91,24 +91,24 @@ def test_real_change_still_holds_when_not_defrosting():
 
 
 # ---------- next change / why ----------
-def test_next_change_afternoon_is_sleep_at_2230():
+def test_next_change_afternoon_is_sleep_at_2200():
     e, ha, clk = setup()
     n = e.evaluate()["lr"]["next"]
     assert n["setpoint"] == 68.0 and n["profile"] == "sleep" and not n["preheat"]
-    assert n["ts"] == NOW + (22 * 60 + 30 - 14 * 60) * 60
+    assert n["ts"] == NOW + (22 * 60 - 14 * 60) * 60
 
 
 def test_next_change_before_wake_is_preheat_with_wake_time():
-    e, ha, clk = setup(local=lt(5, 0))
+    e, ha, clk = setup(local=lt(5, 30))
     r = e.evaluate()
     assert r["lr"]["profile"] == "sleep"
     n = r["lr"]["next"]
     assert n["setpoint"] == 71.0 and n["preheat"]
-    assert n["ts"] == NOW + 45 * 60 and n["wake_ts"] == NOW + 90 * 60  # pre-heat 5:45, 71 at 6:30
+    assert n["ts"] == NOW + 45 * 60 and n["wake_ts"] == NOW + 90 * 60  # pre-heat 6:15, 71 at 7:00
 
 
 def test_preheat_event_and_flag():
-    e, ha, clk = setup(local=lt(6, 0))
+    e, ha, clk = setup(local=lt(6, 30))
     r = e.evaluate()
     assert r["lr"].get("preheat") and ["preheat", "start"] in [x[1:] for x in e.snapshot()["zones"][0]["events"]]
 
@@ -117,7 +117,7 @@ def test_next_change_ignores_sun():
     e, ha, clk = setup(**{"sun.sun": ("above_horizon", {"elevation": 40, "azimuth": 225}),
                           "weather.w": ("sunny", {"temperature": 45, "cloud_coverage": 0})})
     n = e.evaluate()["lr"]["next"]
-    assert n["ts"] == NOW + (8 * 60 + 30) * 60  # not "in 5 min" because of the solar offset
+    assert n["ts"] == NOW + (8 * 60) * 60  # not "in 5 min" because of the solar offset
 
 
 def test_no_next_on_hold_or_vacation():
