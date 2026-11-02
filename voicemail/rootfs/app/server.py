@@ -26,6 +26,7 @@ from typing import Any
 from aiohttp import ClientError, ClientSession, ClientTimeout, WSMsgType, web
 
 import call_summary
+import contacts_sync
 import drive_backend
 import inbox_store
 import legacy_import
@@ -34,7 +35,7 @@ import share_import
 APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC = APP_DIR / "static"
 EXAMPLE = APP_DIR / "example_voicemails.json"
-VERSION = "0.4.3"
+VERSION = "0.5.0"
 AUDIO_LIMIT = 25 * 1024 * 1024
 SENSOR_RE = re.compile(r"sensor\.[a-z0-9_]+")
 RT = web.AppKey("rt", dict)
@@ -72,6 +73,8 @@ for _secret_key in (
     "google_oauth_client_secret",
     "google_oauth_refresh_token",
     "voice_trust_token",
+    "icloud_app_password",
+    "icloud_apple_id",
 ):
     remember_secret(OPTS.get(_secret_key))
 
@@ -780,6 +783,7 @@ async def api_diag(request: web.Request) -> web.Response:
             "keep_local_copy": keep_local_copy(),
             "ingest_configured": bool(INGEST_TOKEN),
             "trust_configured": bool(VOICE_TRUST_BASE and VOICE_TRUST_TOKEN),
+            "contacts": ensure_contacts(request.app).snapshot(),
             "drive_configured": drive_ready(),
             "audio_root": str(audio_root()),
             "queue_depth": len(queue.jobs()) if queue is not None else 0,
@@ -1333,6 +1337,7 @@ async def on_startup(app: web.Application) -> None:
     IN_HA = _in_ha()
     ensure_runtime(app)
     box["bg"] = asyncio.create_task(background(app))
+    box["contacts_task"] = asyncio.create_task(ensure_contacts(app).run_forever())
     if IN_HA:
         box["commands"] = asyncio.create_task(command_listener(app))
     migration = box.get("migration") or {}
@@ -1355,6 +1360,9 @@ async def on_cleanup(app: web.Application) -> None:
     commands = box.get("commands")
     if commands is not None:
         commands.cancel()
+    contacts_task = box.get("contacts_task")
+    if contacts_task is not None:
+        contacts_task.cancel()
     task = box.get("bg")
     if task is not None:
         task.cancel()
@@ -1415,6 +1423,81 @@ async def security_headers(request: web.Request, handler):
     return resp
 
 
+# ---- iCloud contacts -> caller-ID directory (0.5.0) ----
+# caller_names.json lives in HA's /config/private, which this App sees as
+# /homeassistant/private (homeassistant_config:rw). Names and numbers are
+# never logged or returned; only counts and reason codes.
+
+
+def caller_dir() -> pathlib.Path:
+    override = (os.environ.get("VM_CALLER_DIR") or "").strip()
+    return pathlib.Path(override) if override else pathlib.Path("/homeassistant/private")
+
+
+def ensure_contacts(app: web.Application) -> contacts_sync.ContactsSync:
+    box = _box(app)
+    sync = box.get("contacts")
+    if sync is None:
+
+        def _factory():
+            return contacts_sync.aiohttp_transport(
+                box["session"], str(OPTS.get("icloud_apple_id") or ""), str(OPTS.get("icloud_app_password") or "")
+            )
+
+        sync = contacts_sync.ContactsSync(
+            contacts_sync.Directory(caller_dir()),
+            data_dir() / contacts_sync.STATUS_NAME,
+            enabled=bool(OPTS.get("contacts_sync_enabled")),
+            apple_id=str(OPTS.get("icloud_apple_id") or ""),
+            app_password=str(OPTS.get("icloud_app_password") or ""),
+            interval_min=OPTS.get("contacts_sync_interval_min", contacts_sync.DEFAULT_INTERVAL_MIN),
+            transport_factory=_factory,
+        )
+        box["contacts"] = sync
+    return sync
+
+
+async def api_contacts_status(request: web.Request) -> web.Response:
+    denied = deny_mutation(request)
+    if denied:
+        return denied
+    return web.json_response({"ok": True, **ensure_contacts(request.app).snapshot()})
+
+
+async def api_contacts_sync(request: web.Request) -> web.Response:
+    denied = deny_mutation(request)
+    if denied:
+        return denied
+    snap = await ensure_contacts(request.app).sync_icloud()
+    return web.json_response({"ok": snap.get("state") == "ok", **snap})
+
+
+async def api_contacts_upload(request: web.Request) -> web.Response:
+    """Admin-only .vcf import. Read into memory, parsed, merged, discarded."""
+    denied = deny_mutation(request)
+    if denied:
+        return denied
+    limit = contacts_sync.UPLOAD_MAX_BYTES
+    if (request.content_length or 0) > limit:
+        return web.json_response({"ok": False, "error": "too_large", "max_bytes": limit}, status=413)
+    buf = bytearray()
+    while True:
+        chunk = await request.content.read(65536)
+        if not chunk:
+            break
+        buf.extend(chunk)
+        if len(buf) > limit:
+            return web.json_response({"ok": False, "error": "too_large", "max_bytes": limit}, status=413)
+    snap = await ensure_contacts(request.app).import_vcf(bytes(buf))
+    buf.clear()
+    state = snap.get("state")
+    if state == "bad_upload":
+        return web.json_response({"ok": False, "error": "bad_upload"}, status=400)
+    if state == "too_large":
+        return web.json_response({"ok": False, "error": "too_large", "max_bytes": limit}, status=413)
+    return web.json_response({"ok": state == "ok", **snap}, status=200 if state == "ok" else 422)
+
+
 def make_app() -> web.Application:
     app = web.Application(client_max_size=40 * 1024 * 1024, middlewares=[security_headers])
     app[RT] = {}
@@ -1430,6 +1513,9 @@ def make_app() -> web.Application:
     app.router.add_get("/api/trust", api_trust_get)
     app.router.add_post("/api/trust/add", api_trust_add)
     app.router.add_post("/api/trust/remove", api_trust_remove)
+    app.router.add_get("/api/contacts/status", api_contacts_status)
+    app.router.add_post("/api/contacts/sync", api_contacts_sync)
+    app.router.add_post("/api/contacts/upload", api_contacts_upload)
     app.router.add_get("/", index)
     app.router.add_static("/", STATIC, show_index=False)
     app.on_startup.append(on_startup)

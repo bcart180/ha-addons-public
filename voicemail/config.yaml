@@ -1,5 +1,5 @@
 name: CallCatch (new)
-version: "0.4.3"
+version: "0.5.0"
 slug: voicemail
 description: Your Personalized Voicemail. iPhone-style house inbox (list + detail) via Supervisor ingress
 url: https://github.com/bcart180/ha-addons-public/tree/main/voicemail
@@ -14,8 +14,10 @@ panel_icon: mdi:voicemail
 panel_title: CallCatch
 homeassistant_api: true
 map:
-  # Read-only, so the one-time pyscript import cannot write the config folder.
-  - homeassistant_config:ro
+  # rw since 0.5.0: contacts sync writes ONLY /config/private/caller_names.json
+  # and caller_names.manual.json (atomic, mode 600). Nothing else under
+  # /config is written; the legacy pyscript import still only reads.
+  - homeassistant_config:rw
   - share:rw
   - media:rw
 options:
@@ -35,6 +37,10 @@ options:
   google_oauth_refresh_token: ""
   voice_trust_url: ""
   voice_trust_token: ""
+  contacts_sync_enabled: false
+  icloud_apple_id: ""
+  icloud_app_password: ""
+  contacts_sync_interval_min: 30
 schema:
   sensor_entity: str
   media_player: str?
@@ -52,3 +58,7 @@ schema:
   google_oauth_refresh_token: password
   voice_trust_url: str?
   voice_trust_token: password
+  contacts_sync_enabled: bool
+  icloud_apple_id: str?
+  icloud_app_password: password?
+  contacts_sync_interval_min: int(15,1440)
