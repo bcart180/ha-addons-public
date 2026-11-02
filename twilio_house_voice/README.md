@@ -22,7 +22,7 @@ Supervisor → Add-on Store → ⋮ → Repositories → already using https://g
 
 Then open CallCatch Voice and update it. Do not restart Home Assistant Core.
 
-## Secrets Bryson fills
+## Secrets the owner fills
 
 Paste these on the add-on **Configuration** tab. They are stored by Supervisor in `/data/options.json` on the Home Assistant host. Do not commit them, and do not put them in a GitHub secret for this repo. Backups of the add-on include them; keep backups private.
 
