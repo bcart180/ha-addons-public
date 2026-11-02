@@ -10,6 +10,7 @@ init: false
 # Sidebar panel behind the HA login. No host ports published. Never public.
 ingress: true
 ingress_panel: true
+panel_admin: true
 panel_icon: mdi:voicemail
 panel_title: CallCatch
 homeassistant_api: true

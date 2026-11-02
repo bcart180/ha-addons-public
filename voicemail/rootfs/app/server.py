@@ -657,6 +657,11 @@ def deny_mutation(request: web.Request) -> web.Response | None:
     denied = deny_client(request)
     if denied:
         return denied
+    # CSRF: a browser POST from another site/origin carries Sec-Fetch-Site.
+    if str(getattr(request, "method", "") or "").upper() == "POST":
+        site = (request.headers.get("Sec-Fetch-Site") or "").strip().lower()
+        if site and site != "same-origin":
+            return web.json_response({"ok": False, "error": "cross-site"}, status=403)
     peer = request.remote or ""
     if peer != SUPERVISOR_INGRESS_IP:
         return web.json_response(

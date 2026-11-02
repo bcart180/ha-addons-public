@@ -362,7 +362,8 @@ class _App(dict):
 
 
 class _Req:
-    def __init__(self, app, remote, headers=None, body=b"", content_length=None):
+    def __init__(self, app, remote, headers=None, body=b"", content_length=None, method="POST"):
+        self.method = method
         self.app = app
         self.remote = remote
         self.headers = headers or {}
@@ -429,3 +430,26 @@ async def test_upload_merges_and_keeps_no_file(monkeypatch):
     assert stat.S_IMODE(d.stat().st_mode) == 0o600
     r = await mod.api_contacts_upload(_Req(app, "172.30.32.2", INGRESS, b"hello"))
     assert r.status == 400
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("site,ok", [("cross-site", False), ("same-site", False), ("none", False), ("same-origin", True), (None, True)])
+async def test_post_sec_fetch_site(monkeypatch, site, ok):
+    tmp = tempfile.mkdtemp()
+    mod = _load_server(monkeypatch, tmp)
+    h = dict(INGRESS)
+    if site:
+        h["Sec-Fetch-Site"] = site
+    r = mod.deny_mutation(_Req(_app(mod), "172.30.32.2", h))
+    assert (r is None) == ok
+    if not ok:
+        assert r.status == 403
+        r = await mod.api_contacts_upload(_Req(_app(mod), "172.30.32.2", h, VCF.encode()))
+        assert r.status == 403
+        assert not (pathlib.Path(tmp) / "private").exists()
+
+
+def test_get_not_blocked_by_sec_fetch_site(monkeypatch):
+    mod = _load_server(monkeypatch, tempfile.mkdtemp())
+    h = {**INGRESS, "Sec-Fetch-Site": "cross-site"}
+    assert mod.deny_mutation(_Req(None, "172.30.32.2", h, method="GET")) is None

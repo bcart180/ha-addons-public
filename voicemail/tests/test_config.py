@@ -34,6 +34,8 @@ def test_slug_version_and_blank_player():
     assert "bedroom_homepod" not in CONFIG
     assert "HomePod" not in CONFIG
     assert "homeassistant_config:ro" in CONFIG
+    assert "homeassistant_config:rw" not in CONFIG
+    assert "\npanel_admin: true\n" in CONFIG
     assert "share:rw" in CONFIG
     assert "media:rw" in CONFIG
     for key in ("startup:", "boot:", "ingress_port:", "watchdog:", "hassio_role:", "backup:"):
