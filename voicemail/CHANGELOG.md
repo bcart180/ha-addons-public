@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0 — 2026-11-02
+
+- **iCloud contacts → caller names (Phase 1).** New options `contacts_sync_enabled` (default `false`), `icloud_apple_id`, `icloud_app_password` (password) and `contacts_sync_interval_min` (default 30, minimum 15). When enabled, CallCatch reads ALL iCloud contacts over CardDAV (`contacts.icloud.com`: current-user-principal → addressbook-home-set → every address book), in memory, normalizes every TEL to E.164 (US 10 digits → `+1`, extensions dropped) and writes the flat `{"+1…": "Name"}` map to `/config/private/caller_names.json` — the same format the pyscript caller-ID directory already reads, so no consumer change.
+- **Merge.** iCloud names override hand-kept names; hand-kept numbers not in iCloud are kept. Before the first write the existing `caller_names.json` is copied once to `caller_names.manual.json`, which is the hand-edited source from then on. Writes are atomic (temp file, fsync, rename) with mode 600. A sync or upload that yields no numbers leaves the directory untouched; an unreadable existing directory is refused, not overwritten.
+- **.vcf fallback.** Numbers view → Contacts → Upload .vcf (`POST /api/contacts/upload`): ingress session only, 5 MB limit, same parse/merge/write; the upload is never stored. `Sync now` (`POST /api/contacts/sync`) and `GET /api/contacts/status` are ingress-only too.
+- **Status.** The Numbers view and `/api/diag` show last sync time, source, counts and a fixed status code only — never names, numbers, e-mail or the Apple ID.
+- **Privacy.** Logs carry only counts and reason codes (`synced N numbers from M contacts`). Errors never echo credentials, URLs or response bodies. Credentials are only ever sent to `https://*.icloud.com`; redirects elsewhere are refused.
+- **Privilege change:** `homeassistant_config` is now mapped `rw` (was `ro`) so the App can write `/config/private/caller_names.json`. Only `caller_names.json` and `caller_names.manual.json` in `/config/private` are written.
+- Tests: `tests/test_contacts_sync.py` (vCard edge cases, normalization, merge precedence, atomic write + 0600, log redaction, upload auth and size limit, mocked CardDAV, non-iCloud host refusal). Fake 555-01xx numbers and fake names only. dry_run handling unchanged.
+
 ## 0.4.3 — 2026-11-02
 
 - Least privilege: removed `hassio_api: true`. The add-on only talks to Home Assistant Core through the Supervisor proxy (`http://supervisor/core/api/...` and `ws://supervisor/core/websocket`), which `homeassistant_api: true` covers. `tools/wire_voice_link.py` (Supervisor add-on options) is not shipped in the image and runs from an SSH/other add-on. `share:rw` / `media:rw` stay: new recordings are written under `/media/callcatch` or `/share/callcatch`.

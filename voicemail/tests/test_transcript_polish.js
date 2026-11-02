@@ -147,12 +147,12 @@ if (
   failures.push("share sheet should keep the stored transcript");
 }
 if (!/^slug:\s*voicemail\s*$/m.test(config)) failures.push("slug must stay voicemail");
-if (!/^version:\s*"0\.4\.3"\s*$/m.test(config)) failures.push("config version must be 0.4.3");
-if (!changelog.startsWith("# Changelog\n\n## 0.4.3 — 2026-11-02\n")) failures.push("changelog missing 0.4.3 entry");
+if (!/^version:\s*"0\.5\.0"\s*$/m.test(config)) failures.push("config version must be 0.5.0");
+if (!changelog.startsWith("# Changelog\n\n## 0.5.0 — 2026-11-02\n")) failures.push("changelog missing 0.5.0 entry");
 if (!/## 0\.1\.9 — 2026-10-29\n/.test(changelog)) failures.push("changelog must keep the 0.1.9 entry");
 if (!/## 0\.1\.8 — 2026-10-29\n/.test(changelog)) failures.push("changelog must keep the 0.1.8 packaging entry");
 if (!/## 0\.1\.7 — 2026-10-28\n/.test(changelog)) failures.push("changelog must keep the 0.1.7 entry");
-if (!/VERSION = "0\.4\.3"/.test(server)) failures.push("server.py VERSION must match 0.4.3");
+if (!/VERSION = "0\.5\.0"/.test(server)) failures.push("server.py VERSION must match 0.5.0");
 if (/^image:/m.test(config)) failures.push("config must not set an image field");
 if (!/^ingress_panel:\s*true\s*$/m.test(config)) failures.push("ingress_panel must stay true");
 if (/bedroom_homepod|HomePod/.test([server, config, appJs, indexHtml].join("\n"))) {
