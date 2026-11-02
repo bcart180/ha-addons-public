@@ -1,6 +1,6 @@
 # Spelling add-on: local install
 
-> Shelved 2026-10-11, owner chose LAN-only; not installed. Files moved to `archive/spelling/`; staging moved to `/share/archive/to-delete-review/spelling_addon_install/`. Steps below are historical.
+> Shelved 2026-10-11, the owner chose LAN-only; not installed. Files moved to `archive/spelling/`; staging moved to `/share/archive/to-delete-review/spelling_addon_install/`. Steps below are historical.
 
 Staged (non-public): `/share/spelling_addon_install/spelling/` (5 files) + `spelling-0.1.0.zip` + `MANIFEST.sha256`.
 
