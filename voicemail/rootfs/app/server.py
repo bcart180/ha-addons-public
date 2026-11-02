@@ -1424,14 +1424,20 @@ async def security_headers(request: web.Request, handler):
 
 
 # ---- iCloud contacts -> caller-ID directory (0.5.0) ----
-# caller_names.json lives in HA's /config/private, which this App sees as
-# /homeassistant/private (homeassistant_config:rw). Names and numbers are
-# never logged or returned; only counts and reason codes.
+# The directory is written under /share/callcatch/private (share:rw; HA Core
+# sees the same /share). /config stays read-only: the old
+# /config/private/caller_names.json is only read once to seed the manual map.
+# Names and numbers are never logged or returned; only counts and reason codes.
 
 
 def caller_dir() -> pathlib.Path:
     override = (os.environ.get("VM_CALLER_DIR") or "").strip()
-    return pathlib.Path(override) if override else pathlib.Path("/homeassistant/private")
+    return pathlib.Path(override) if override else pathlib.Path("/share/callcatch/private")
+
+
+def legacy_caller_file() -> pathlib.Path:
+    override = (os.environ.get("VM_LEGACY_CALLER_FILE") or "").strip()
+    return pathlib.Path(override) if override else pathlib.Path("/homeassistant/private/caller_names.json")
 
 
 def ensure_contacts(app: web.Application) -> contacts_sync.ContactsSync:
@@ -1445,7 +1451,7 @@ def ensure_contacts(app: web.Application) -> contacts_sync.ContactsSync:
             )
 
         sync = contacts_sync.ContactsSync(
-            contacts_sync.Directory(caller_dir()),
+            contacts_sync.Directory(caller_dir(), legacy_caller_file()),
             data_dir() / contacts_sync.STATUS_NAME,
             enabled=bool(OPTS.get("contacts_sync_enabled")),
             apple_id=str(OPTS.get("icloud_apple_id") or ""),

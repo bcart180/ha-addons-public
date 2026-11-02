@@ -1,8 +1,8 @@
 """iCloud contacts -> caller-ID directory (0.5.0, Phase 1).
 
 Builds the flat {"+1XXXXXXXXXX": "Name"} map that the pyscript caller-ID
-directory already reads from /config/private/caller_names.json (E.164 keys,
-string values). Sources:
+directory already reads from /share/callcatch/private/caller_names.json (E.164 keys,
+string values; the pyscript falls back to /config/private if it is missing). Sources:
 
 * iCloud CardDAV (contacts.icloud.com), fetched in memory on a timer.
 * A one-off .vcf upload through the admin panel (never stored).
@@ -254,7 +254,10 @@ def _read_map(path: pathlib.Path) -> dict[str, str] | None:
 def atomic_write_json(path: pathlib.Path, data: Any) -> None:
     """Temp file in the same folder (0600), fsync, rename, chmod 0600."""
     path = pathlib.Path(path)
+    new_dir = not path.parent.exists()
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if new_dir:
+        os.chmod(path.parent, 0o700)
     payload = json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
     fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
     try:
@@ -284,19 +287,25 @@ def atomic_write_json(path: pathlib.Path, data: Any) -> None:
 class Directory:
     """caller_names.json plus its preserved manual source."""
 
-    def __init__(self, folder: pathlib.Path):
+    def __init__(self, folder: pathlib.Path, legacy_path: pathlib.Path | None = None):
         self.folder = pathlib.Path(folder)
         self.path = self.folder / DIRECTORY_NAME
         self.manual_path = self.folder / MANUAL_NAME
+        # Read-only seed: the pre-0.5.0 /config/private/caller_names.json.
+        self.legacy_path = pathlib.Path(legacy_path) if legacy_path else None
 
     def ensure_manual(self) -> dict[str, str]:
-        """Create caller_names.manual.json once from the current directory."""
+        """Create caller_names.manual.json once, seeded from the current directory,
+        or (first run) from the read-only legacy /config/private file."""
         if self.manual_path.exists():
             data = _read_map(self.manual_path)
             if data is None:
                 raise SyncError("write")
             return data
-        current = _read_map(self.path)
+        if self.path.exists() or self.legacy_path is None:
+            current = _read_map(self.path)
+        else:
+            current = _read_map(self.legacy_path)
         if current is None:
             # Unreadable existing directory: refuse rather than lose entries.
             raise SyncError("write")

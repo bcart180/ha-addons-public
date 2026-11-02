@@ -14,10 +14,8 @@ panel_icon: mdi:voicemail
 panel_title: CallCatch
 homeassistant_api: true
 map:
-  # rw since 0.5.0: contacts sync writes ONLY /config/private/caller_names.json
-  # and caller_names.manual.json (atomic, mode 600). Nothing else under
-  # /config is written; the legacy pyscript import still only reads.
-  - homeassistant_config:rw
+  # Read-only, so the one-time pyscript import cannot write the config folder.
+  - homeassistant_config:ro
   - share:rw
   - media:rw
 options:
