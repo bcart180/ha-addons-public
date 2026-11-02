@@ -15,7 +15,9 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Confirm sidebar flag
-        run: "grep -qx 'ingress_panel: true' voicemail/config.yaml"
+        run: |
+          grep -qx 'ingress_panel: true' voicemail/config.yaml
+          grep -qx 'panel_admin: true' voicemail/config.yaml
       - name: Prepare voicemail lint input
         # frenck/action-addon-linter rejects ingress_panel; that key is not in its schema.
         # config.yaml keeps it. Lint the same config and build files with only that key removed.
@@ -24,6 +26,8 @@ jobs:
           mkdir -p .ci-lint/voicemail
           cp voicemail/config.yaml voicemail/build.yaml .ci-lint/voicemail/
           sed -i '/^ingress_panel: true$/d' .ci-lint/voicemail/config.yaml
+          # panel_admin: true is the Supervisor default; the linter rejects an explicit default.
+          sed -i '/^panel_admin: true$/d' .ci-lint/voicemail/config.yaml
           grep -qx 'ingress_panel: true' voicemail/config.yaml
           if grep -q '^ingress_panel:' .ci-lint/voicemail/config.yaml; then
             echo "lint copy still has ingress_panel" >&2

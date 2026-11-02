@@ -120,6 +120,8 @@ def test_crash_500_has_security_headers(monkeypatch, tmp_path):
 
 
 def test_panel_admin_default_admin_only():
-    # Supervisor defaults panel_admin to true; the linter rejects the explicit default.
+    # Explicit since 0.5.0 (SA L1). CI strips it from the linter copy only,
+    # because the linter rejects an explicit default.
     cfg = (pathlib.Path(__file__).resolve().parents[1] / "config.yaml").read_text()
-    assert "panel_admin" not in cfg
+    assert "\npanel_admin: true\n" in cfg
+    assert "panel_admin: false" not in cfg
