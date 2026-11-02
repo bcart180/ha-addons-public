@@ -10,7 +10,7 @@ No third-party images. The Dockerfile refuses to build if the tag no longer poin
 > pinned SHA, not a signature.
 
 ## Status
-**Not installed.** Review order: President & COO (HA side) → VP, Mission Assurance → CoS → Bryson's install GO.
+**Not installed.** Review order: President & COO (HA side) → VP, Mission Assurance → CoS → owner's install GO.
 The box Bridge (`/home/box/bin/ensure-proton-bridge.sh`) stays as the **fallback** and is not touched.
 
 ## What it does / doesn't do
@@ -20,14 +20,14 @@ The box Bridge (`/home/box/bin/ensure-proton-bridge.sh`) stays as the **fallback
 - No add-on options hold secrets. No HA-side alert or send path. No notifications, no automations.
 - Watchdog: Supervisor probes host port 1143 (socat on container 8143). The add-on stops that socat listener and exits when Bridge's own IMAP greeting on 127.0.0.1:1143 fails, or when the Bridge process exits, so Supervisor restarts it.
 
-## Install (only after Bryson's GO)
+## Install (only after the owner's GO)
 Listed in the existing store repo `bcart180/ha-addons-public` (folder `proton_bridge/`, a synced copy of
 this repo). **Do not change the Supervisor store URL.** Settings → Apps → App Store → ⋮ → Check for
 updates → *Proton Mail Bridge* → Install. Supervisor builds the image locally on the Pi
 (Go build; expect ~10–20 min the first time). v1 is build-on-Pi on purpose; a prebuilt
 multi-arch GHCR image may come later. The pinned-commit check runs on every build either way.
 
-## First login (Bryson, once)
+## First login (owner, once)
 1. Configuration → `login_mode: true` → Save → Start.
 2. Open the **Proton Bridge** sidebar panel (admin-only ingress; terminal running `bridge --cli`).
    ttyd runs only in login mode; in normal mode there is no ttyd process and the panel is empty.
