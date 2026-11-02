@@ -109,7 +109,7 @@ button, input, select { font: inherit; color: inherit; }
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) auto;
   gap: 14px;
-  align-items: center;
+  align-items: start;
   min-height: 76px;
   padding: 12px 10px;
   border-radius: var(--radius);
@@ -124,21 +124,25 @@ button, input, select { font: inherit; color: inherit; }
 .vm-row:active, .vm-row.active { background: var(--raise); }
 .vm-row.active::before, .vm-row.active + .vm-row::before { border-color: transparent; }
 .vm-row .main { min-width: 0; }
-.vm-row .top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.vm-row .top { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+.vm-row .top .urgency-pill { flex-shrink: 0; margin-top: 3px; }
+/* Full caller name or number: wrap, never ellipsis. Steps down on narrow phones. */
 .vm-row .name {
-  font-size: 17px; font-weight: 500; color: var(--text);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 17px; font-weight: 500; color: var(--text); line-height: 1.3;
+  min-width: 0; overflow-wrap: anywhere; word-break: normal;
 }
 .vm-row.unheard .name { font-weight: 700; }
-.vm-row .date { color: var(--dim); font-size: 14px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.vm-row .meta { margin-top: 2px; color: var(--faint, var(--dim)); font-size: 13px; font-variant-numeric: tabular-nums; }
 .vm-row .snippet {
-  margin-top: 3px;
-  color: var(--dim);
-  font-size: 15px;
-  display: flex; align-items: center; gap: 6px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-top: 4px; color: var(--dim); font-size: 15px; line-height: 1.35;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3;
+  overflow: hidden; overflow-wrap: anywhere;
 }
-.vm-row .snippet > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 400px) {
+  .vm-row { gap: 12px; padding: 12px 8px; grid-template-columns: 40px minmax(0, 1fr) auto; }
+  .vm-row .avatar { width: 40px; height: 40px; }
+  .vm-row .name { font-size: 16px; }
+}
 .snippet-badge { display: none; }
 .avatar {
   width: 44px; height: 44px; border-radius: 50%;

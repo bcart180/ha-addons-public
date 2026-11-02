@@ -41,7 +41,9 @@ const api = new Function(
     extractFunction("spokenDuration") +
     "\n" +
     extractFunction("polishTranscript") +
-    "\nreturn { spokenDuration, polishTranscript, mapSpeakerLine, mapSpeakerText };"
+    "\n" +
+    extractFunction("previewText") +
+    "\nreturn { spokenDuration, polishTranscript, mapSpeakerLine, mapSpeakerText, previewText };"
 )();
 
 const failures = [];
@@ -147,12 +149,12 @@ if (
   failures.push("share sheet should keep the stored transcript");
 }
 if (!/^slug:\s*voicemail\s*$/m.test(config)) failures.push("slug must stay voicemail");
-if (!/^version:\s*"0\.4\.3"\s*$/m.test(config)) failures.push("config version must be 0.4.3");
-if (!changelog.startsWith("# Changelog\n\n## 0.4.3 — 2026-11-02\n")) failures.push("changelog missing 0.4.3 entry");
+if (!/^version:\s*"0\.4\.4"\s*$/m.test(config)) failures.push("config version must be 0.4.4");
+if (!changelog.startsWith("# Changelog\n\n## 0.4.4 — 2026-11-02\n")) failures.push("changelog missing 0.4.4 entry");
 if (!/## 0\.1\.9 — 2026-10-29\n/.test(changelog)) failures.push("changelog must keep the 0.1.9 entry");
 if (!/## 0\.1\.8 — 2026-10-29\n/.test(changelog)) failures.push("changelog must keep the 0.1.8 packaging entry");
 if (!/## 0\.1\.7 — 2026-10-28\n/.test(changelog)) failures.push("changelog must keep the 0.1.7 entry");
-if (!/VERSION = "0\.4\.3"/.test(server)) failures.push("server.py VERSION must match 0.4.3");
+if (!/VERSION = "0\.4\.4"/.test(server)) failures.push("server.py VERSION must match 0.4.4");
 if (/^image:/m.test(config)) failures.push("config must not set an image field");
 if (!/^ingress_panel:\s*true\s*$/m.test(config)) failures.push("ingress_panel must stay true");
 if (/bedroom_homepod|HomePod/.test([server, config, appJs, indexHtml].join("\n"))) {
@@ -162,6 +164,18 @@ for (const key of ["startup:", "boot:", "ingress_port:", "watchdog:", "hassio_ro
   if (new RegExp("^" + key, "m").test(config)) failures.push("config must not set " + key);
 }
 if (appJs.includes("soft-slate")) failures.push("app.js should not touch Soft Slate CSS");
+
+// List row preview (0.4.4)
+eq(api.previewText("•••0123 Source: CallCatch Duration_s: 42.1 TRANSCRIPT Caller: Hi, it's Sam."), "Caller: Hi, it's Sam.", "preview strips hangup header");
+eq(api.previewText("Source: twilio_house_voice\nDuration: 1 minute 5 seconds\nTranscript:\nHello"), "Hello", "preview strips friendly header");
+eq(api.previewText("Please call me back about Source: the invoice"), "Please call me back about Source: the invoice", "mid-text Source kept");
+eq(api.previewText(""), "", "empty preview");
+if (/Source:\s*CallCatch/.test(api.previewText("•••7444 Source: CallCatch Duration_s: 9"))) failures.push("no Source filler in preview");
+const css = fs.readFileSync(path.join(root, "rootfs/app/static/style.css"), "utf8");
+const nameRule = /\.vm-row \.name \{[^}]*\}/.exec(css);
+if (!nameRule || /ellipsis|nowrap/.test(nameRule[0])) failures.push("caller name must wrap, no ellipsis");
+if (!/\.vm-row \.snippet \{[^}]*line-clamp: 3/.test(css)) failures.push("preview must clamp at 3 lines");
+if (!appJs.includes("urgencyPill(v.summary)")) failures.push("list row keeps the urgency pill");
 
 if (failures.length) {
   console.error(failures.join("\n\n"));
