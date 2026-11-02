@@ -157,10 +157,10 @@ test("0.4.0 defrost: status, why and graph band", () => {
 
 test("0.4.0 next change / why line", () => {
   const tz = "America/New_York";
-  const wake = Date.parse("2026-10-30T10:00:00Z") / 1000, pre = wake - 45 * 60;
+  const wake = Date.parse("2026-10-30T11:00:00Z") / 1000, pre = wake - 45 * 60;
   assert.equal(nextLine({ reason: "no_change", next: { setpoint: 71, ts: pre, wake_ts: wake, preheat: true, profile: "home" } }, tz),
-    "Next: 71° at 7:00 AM · pre-heat 5:45 AM");
-  const t = Date.parse("2026-10-31T02:30:00Z") / 1000;
+    "Next: 71° at 7:00 AM · pre-heat 6:15 AM");
+  const t = Date.parse("2026-10-31T02:00:00Z") / 1000;
   assert.equal(nextLine({ reason: "ok", next: { setpoint: 68, ts: t, profile: "sleep" } }, tz), "Next: 68° at 10:00 PM (sleep)");
   assert.equal(nextLine({ reason: "manual_override", next: null }, tz, t), "Manual hold until 10:00 PM");
   assert.equal(nextLine({ reason: "defrosting", next: null }, tz), "Defrosting — app waits");

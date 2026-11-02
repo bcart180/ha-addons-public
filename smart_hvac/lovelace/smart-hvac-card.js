@@ -206,7 +206,7 @@ const REASON = { manual_override: "Manual hold", vacation_setback: "Vacation set
   overtemp_shutoff: "Bath over air shutoff — off", short_cycle_guard: "Waiting (anti short-cycle)",
   defrosting: "Defrosting — app waits", preheating: "Pre-heating — app waits", disabled: "App off" };
 
-/** "Next change / why" line from the add-on zone result, e.g. "71° at 7:00 AM · pre-heat 5:45 AM". */
+/** "Next change / why" line from the add-on zone result, e.g. "71° at 7:00 AM · pre-heat 6:15 AM". */
 export function nextLine(zr, tz, holdUntil) {
   if (!zr) return "";
   if (holdUntil && zr.reason === "manual_override") return `Manual hold until ${fmtClock(holdUntil, tz)}`;
