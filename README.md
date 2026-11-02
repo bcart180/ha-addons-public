@@ -7,7 +7,7 @@ Home Assistant add-on repository.
 | [Trading Desk](trading_desk/) | Read-only live control room for an Alpaca equity desk (Ingress panel) |
 | [CallCatch Voice](twilio_house_voice/) | Twilio Media Streams bridge to xAI Realtime, with caller audio saved for CallCatch |
 | [CallCatch](voicemail/) | Your Personalized Voicemail. iPhone-style house inbox (Ingress panel) |
-| [Smart HVAC](smart_hvac/) | Presence/weather/sun-aware mini splits + radiant floor (Ingress panel "Climate"). Installs **off + dry run**. |
+| [Smart HVAC](smart_hvac/) | Smart thermostat for multi-zone mini-split systems: all heads share one outdoor unit, so they always stay in the same heat/cool mode. Presence/weather/sun-aware, plus radiant floor (Ingress panel "Climate"). Installs **off + dry run**. |
 | [Social Pulse](social_pulse/) | Read-only X engagement + Cloudflare site traffic dashboard (Ingress panel). Tokens are password options only. |
 
 ## Install
