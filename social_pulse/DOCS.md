@@ -17,7 +17,7 @@ Profile visits, link clicks and account-level impressions need each account's ow
 ## Options
 | option | meaning |
 |---|---|
-| `x_accounts` | one handle per line. Add `- notboozeco` to include @notboozeco. |
+| `x_accounts` | one handle per line. Add `- example_handle` to include @example_handle. |
 | `zones` | name, zone_id, optional `rum_site_tag` (Web Analytics) per site |
 | `cloudflare_account_id` | account for Web Analytics queries |
 | `refresh_minutes` | 15–1440, default 30 |

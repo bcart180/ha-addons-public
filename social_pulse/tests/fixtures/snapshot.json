@@ -4,9 +4,9 @@
  "source": "real sample pulled 2026-11-01 via read-only X + Cloudflare connectors",
  "x": [
   {
-   "handle": "winchesterstays",
-   "name": "Winchester Getaways",
-   "id": "2115520262351323136",
+   "handle": "example_stays",
+   "name": "Example Getaway",
+   "id": "1000000000000000001",
    "profile_image_url": null,
    "followers": {
     "value": 3,
@@ -53,10 +53,10 @@
    },
    "recent_posts": [
     {
-     "id": "2116556125827170614",
+     "id": "1000000000000000004",
      "created_at": "2026-10-31T15:41:18.000Z",
-     "text": "Prairie House is open Sun Nov 1 and Mon Nov 2. A reclaimed barn-wood shouse near Winchester Lake with a fire pit, a pool table game room and",
-     "url": "https://x.com/winchesterstays/status/2116556125827170614",
+     "text": "Example post 17: placeholder text for tests.",
+     "url": "https://x.com/example_stays/status/1000000000000000004",
      "impressions": 11,
      "likes": 0,
      "reposts": 0,
@@ -67,9 +67,9 @@
    ]
   },
   {
-   "handle": "HideAWayLCV",
-   "name": "Hide-A-Way Tavern",
-   "id": "2115547473775083520",
+   "handle": "ExampleTavern",
+   "name": "Example Tavern",
+   "id": "1000000000000000002",
    "profile_image_url": null,
    "followers": {
     "value": 3,
@@ -116,10 +116,10 @@
    },
    "recent_posts": [
     {
-     "id": "2116882852251861375",
+     "id": "1000000000000000005",
      "created_at": "2026-11-01T13:19:36.000Z",
-     "text": "A local tavern, not a chain, where everyone knows your name. Warm lights, a cold pint, and a stool waiting for you.",
-     "url": "https://x.com/HideAWayLCV/status/2116882852251861375",
+     "text": "Example post 18: placeholder text for tests.",
+     "url": "https://x.com/ExampleTavern/status/1000000000000000005",
      "impressions": 8,
      "likes": 0,
      "reposts": 0,
@@ -130,9 +130,9 @@
    ]
   },
   {
-   "handle": "AmbienceHours",
-   "name": "Ambience Hours",
-   "id": "2116206223842304000",
+   "handle": "ExampleAmbience",
+   "name": "Example Ambience",
+   "id": "1000000000000000003",
    "profile_image_url": null,
    "followers": {
     "value": 2,
@@ -179,10 +179,10 @@
    },
    "recent_posts": [
     {
-     "id": "2116547180940951965",
+     "id": "1000000000000000006",
      "created_at": "2026-10-31T15:05:46.000Z",
-     "text": "Snow falling, wind outside, one warm window. Full 3-hour winter cabin on YouTube",
-     "url": "https://x.com/AmbienceHours/status/2116547180940951965",
+     "text": "Example post 19: placeholder text for tests.",
+     "url": "https://x.com/ExampleAmbience/status/1000000000000000006",
      "impressions": 6,
      "likes": 0,
      "reposts": 0,
@@ -191,10 +191,10 @@
      "bookmarks": 0
     },
     {
-     "id": "2116546115365675036",
+     "id": "1000000000000000007",
      "created_at": "2026-10-31T15:01:32.000Z",
-     "text": "Drift off with a slow-turning galaxy and a soft 963 Hz tone.",
-     "url": "https://x.com/AmbienceHours/status/2116546115365675036",
+     "text": "Example post 20: placeholder text for tests.",
+     "url": "https://x.com/ExampleAmbience/status/1000000000000000007",
      "impressions": 5,
      "likes": 0,
      "reposts": 0,
@@ -203,10 +203,10 @@
      "bookmarks": 0
     },
     {
-     "id": "2116545252156698630",
+     "id": "1000000000000000008",
      "created_at": "2026-10-31T14:58:06.000Z",
-     "text": "Crackling fire, warm glow, nowhere to be.",
-     "url": "https://x.com/AmbienceHours/status/2116545252156698630",
+     "text": "Example post 21: placeholder text for tests.",
+     "url": "https://x.com/ExampleAmbience/status/1000000000000000008",
      "impressions": 3,
      "likes": 0,
      "reposts": 0,
@@ -215,10 +215,10 @@
      "bookmarks": 0
     },
     {
-     "id": "2116543637937164631",
+     "id": "1000000000000000009",
      "created_at": "2026-10-31T14:51:41.000Z",
-     "text": "Deep brown noise + a dark screen. Shut the world off.",
-     "url": "https://x.com/AmbienceHours/status/2116543637937164631",
+     "text": "Example post 22: placeholder text for tests.",
+     "url": "https://x.com/ExampleAmbience/status/1000000000000000009",
      "impressions": 3,
      "likes": 0,
      "reposts": 0,
@@ -227,10 +227,10 @@
      "bookmarks": 0
     },
     {
-     "id": "2116542598135337189",
+     "id": "1000000000000000010",
      "created_at": "2026-10-31T14:47:33.000Z",
-     "text": "Close your eyes. Neon sunset, warm 80s synth pads, zero beats.",
-     "url": "https://x.com/AmbienceHours/status/2116542598135337189",
+     "text": "Example post 23: placeholder text for tests.",
+     "url": "https://x.com/ExampleAmbience/status/1000000000000000010",
      "impressions": 3,
      "likes": 0,
      "reposts": 0,
@@ -239,10 +239,10 @@
      "bookmarks": 0
     },
     {
-     "id": "2116261206159995021",
+     "id": "1000000000000000011",
      "created_at": "2026-10-30T20:09:24.000Z",
-     "text": "432 Hz under the stars",
-     "url": "https://x.com/AmbienceHours/status/2116261206159995021",
+     "text": "Example post 24: placeholder text for tests.",
+     "url": "https://x.com/ExampleAmbience/status/1000000000000000011",
      "impressions": 4,
      "likes": 0,
      "reposts": 0,
@@ -251,10 +251,10 @@
      "bookmarks": 0
     },
     {
-     "id": "2116260120539607207",
+     "id": "1000000000000000012",
      "created_at": "2026-10-30T20:05:05.000Z",
-     "text": "Waves rolling in, all night long",
-     "url": "https://x.com/AmbienceHours/status/2116260120539607207",
+     "text": "Example post 25: placeholder text for tests.",
+     "url": "https://x.com/ExampleAmbience/status/1000000000000000012",
      "impressions": 3,
      "likes": 0,
      "reposts": 0,
@@ -263,10 +263,10 @@
      "bookmarks": 0
     },
     {
-     "id": "2116259665587925059",
+     "id": "1000000000000000013",
      "created_at": "2026-10-30T20:03:17.000Z",
-     "text": "Close your eyes. Let the rain do the rest",
-     "url": "https://x.com/AmbienceHours/status/2116259665587925059",
+     "text": "Example post 26: placeholder text for tests.",
+     "url": "https://x.com/ExampleAmbience/status/1000000000000000013",
      "impressions": 2,
      "likes": 0,
      "reposts": 0,
@@ -275,10 +275,10 @@
      "bookmarks": 0
     },
     {
-     "id": "2116259123054424375",
+     "id": "1000000000000000014",
      "created_at": "2026-10-30T20:01:07.000Z",
-     "text": "Delta waves for deep sleep. Headphones on.",
-     "url": "https://x.com/AmbienceHours/status/2116259123054424375",
+     "text": "Example post 27: placeholder text for tests.",
+     "url": "https://x.com/ExampleAmbience/status/1000000000000000014",
      "impressions": 1,
      "likes": 0,
      "reposts": 0,
@@ -287,10 +287,10 @@
      "bookmarks": 0
     },
     {
-     "id": "2116258814110441966",
+     "id": "1000000000000000015",
      "created_at": "2026-10-30T19:59:54.000Z",
-     "text": "174 Hz under the northern lights",
-     "url": "https://x.com/AmbienceHours/status/2116258814110441966",
+     "text": "Example post 28: placeholder text for tests.",
+     "url": "https://x.com/ExampleAmbience/status/1000000000000000015",
      "impressions": 2,
      "likes": 0,
      "reposts": 0,
