@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.3
+- Wake backoff and per-window cap reset only on a real plug off -> on, or a new off-peak window. Fresh data no
+  longer resets them, and unavailable/unknown readings never count as a transition (SA L4: plug flapping).
+- Hard 10-minute minimum between any two wake presses (monotonic clock, never reset), covering both the stale
+  path and the normal start path.
+- Peak window edges come only from definite readings: a peak sensor flapping unavailable <-> off no longer opens a
+  new window (which would also have reset the notify-once flag and cleared pause).
+- Self-review: the normal start path's wake (car asleep, fresh data) now shares the same per-window cap and
+  backoff as the stale path, so a car that never wakes is not pressed every check forever.
+
 ## 0.1.2
 - Stale-state wake (SA L3): wake is pressed only when the plug is freshly known plugged in, the optional
   `home_entity` says home, it is off-peak (or charge-now is on) and the last known SoC is below target.

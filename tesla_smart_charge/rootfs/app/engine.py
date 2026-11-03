@@ -20,7 +20,7 @@ ENTITY_KEYS = ("charge_switch", "charge_current", "charge_limit", "wake_button",
 
 
 class Engine:
-    def __init__(self, opts, ha, clock=None, sleep=None):
+    def __init__(self, opts, ha, clock=None, sleep=None, mono=None):
         self.o = dict(DEFAULTS, **{k: v for k, v in opts.items() if v not in (None,)})
         self.ha = ha
         self.o["max_amps"] = max(1, min(int(self.o["max_amps"]), HARD_MAX_AMPS))
@@ -29,6 +29,10 @@ class Engine:
                         self.o["min_amps"], self.o["max_amps"])
             self.o["min_amps"] = self.o["max_amps"]
         self.clock = clock or (lambda: datetime.now().astimezone())
+        self.mono = mono or time.monotonic
+        self.last_wake_mono = None  # L4: never reset; hard minimum between any two wake presses
+        self.plug_definite = None  # last definite plug reading (True/False); unavailable/unknown ignored
+        self.peak_definite = None  # last definite peak reading; unknown peak never makes an edge
         self.sleep = sleep or time.sleep
         self.prev = {}
         self.last_plan = None  # monotonic-ish: datetime of last full plan
@@ -37,6 +41,7 @@ class Engine:
         self.notified_window = None
         self.status = {}
         self.wake_count = 0
+        self.plug_on_edge = False
         self.next_wake_at = None
 
     # ---------- inputs ----------
@@ -175,11 +180,19 @@ class Engine:
                                     {"value": int(pct)},
                                     lambda st: core.num(self._st(st, "charge_limit")) == float(int(pct)))
 
-    def wake(self):
+    WAKE_MIN_GAP_S = 600
+
+    def wake(self, now=None):
+        """Every wake press goes through here: hard 10-min minimum gap (monotonic, survives backoff resets)."""
         if not self.o.get("online_sensor"):
-            return
+            return False
         if core.is_on(self._st(self.ha.get_states(), "online_sensor")):
-            return
+            return False
+        if self.last_wake_mono is not None and self.mono() - self.last_wake_mono < self.WAKE_MIN_GAP_S:
+            return False
+        if not self._wake_budget(now or self.clock()):
+            return False
+        self.last_wake_mono = self.mono()
         for key in ("ble_wake_button", "wake_button"):
             if self.o.get(key):
                 self._call("button", "press", {"entity_id": self.o[key]})
@@ -197,11 +210,31 @@ class Engine:
             "trip": self._flag(states, "trip_entity"),
         }
         why = [k for k in cur if k in self.prev and self.prev[k] != cur[k]]
-        peak_off_edge = self.prev.get("peak") is True and cur["peak"] is False
-        if "peak" not in self.prev and not cur["peak"]:
+        # L4: edges only from definite readings. unavailable/unknown never creates a window or plug edge.
+        peak_def = self.peak_definite_now(states, now)
+        peak_off_edge = self.peak_definite is True and peak_def is False
+        if self.peak_definite is None and peak_def is False and self.window_start is None:
             self.window_start = now  # started inside an off-peak window
+        if peak_def is not None:
+            self.peak_definite = peak_def
+        raw = str(cur["plugged"]).strip().lower()
+        plug_def = None if raw in core.BAD else core.is_on(raw)
+        self.plug_on_edge = self.plug_definite is False and plug_def is True
+        if plug_def is not None:
+            self.plug_definite = plug_def
         self.prev = cur
         return why, peak_off_edge
+
+    def peak_definite_now(self, states, now):
+        """True/False from definite readings only; None if the peak sensor is unknown (still treated as peak
+        for charging decisions, but it can never open a new window)."""
+        sched = core.in_schedule(now, self.o.get("peak_schedule"))
+        if self.o.get("peak_sensor"):
+            ps = str(self._st(states, "peak_sensor")).strip().lower()
+            if ps in core.BAD:
+                return True if sched else None
+            return core.is_on(ps) or sched
+        return sched
 
     def inputs_peak(self, states, now):
         o = self.o
@@ -230,8 +263,8 @@ class Engine:
             return None
         self.last_plan = now
         s = self.inputs(states, now)
-        if not s["stale"] or peak_off_edge or "plugged" in why:
-            self.reset_wake_backoff()  # fresh data, new window or plug change
+        if peak_off_edge or self.plug_on_edge:
+            self.reset_wake_backoff()  # L4: only a new off-peak window or a real off->on plug-in
         p = core.plan(s)
         if s["stale"] and p["action"] != "idle":
             p.update(action="stop" if p["action"] == "stop" else "hold", reason="stale_state", amps=None)
@@ -256,7 +289,7 @@ class Engine:
             self._clear(f, states)
         if p["action"] == "hold" and p["reason"] == "stale_state":
             if not dry and self.stale_wake_allowed(s):
-                self.wake()  # waking may refresh stale readings; no charge command
+                self.wake(s["now"])  # waking may refresh stale readings; no charge command
             return
         if p["action"] == "stop":
             if s["charging"] is False:
@@ -267,7 +300,7 @@ class Engine:
         elif p["action"] == "start":
             if dry:
                 return  # dry run never turns charging ON or changes amps
-            self.wake()
+            self.wake(s["now"])  # same cap/backoff/min-gap as the stale path
             self.set_limit(s["target"], states)
             if core.amps_changed(p["amps"], s["amps_now"]):
                 self.set_amps(p["amps"])
@@ -281,7 +314,6 @@ class Engine:
 
     def stale_wake_allowed(self, s):
         """L3: wake a stale car only when it is worth it, with exponential backoff and a per-window cap."""
-        now = s["now"]
         if s.get("last_plugged") is not True:
             return False  # plug must be known plugged-in (fresh reading)
         if s.get("home") is False:
@@ -290,6 +322,10 @@ class Engine:
             return False
         if s.get("last_soc") is None or s.get("target") is None or s["last_soc"] >= s["target"]:
             return False
+        return True
+
+    def _wake_budget(self, now):
+        """Per-window cap + exponential backoff, shared by every wake path. Consumes one wake when True."""
         if self.wake_count >= int(self.o["wake_max_per_window"]):
             return False
         if self.next_wake_at is not None and now < self.next_wake_at:

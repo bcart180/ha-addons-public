@@ -93,6 +93,7 @@ notify_not_charging_min: 20
   then never starts or raises charging; peak safety stops still fire. It presses wake to refresh only when the plug
   is freshly known plugged in, `home_entity` (if set) says home, it is off-peak or charge-now is on, and the last
   known SoC is below target. Wakes back off 10, 20, 40, 80, then every 120 min, at most `wake_max_per_window`
-  (default 5, 0 = never) per window, and reset on fresh data, a plug change or a new off-peak window.
+  (default 5, 0 = never) per window, and reset only on a real plug off -> on or a new off-peak window (unavailable
+  readings never count). Any two wake presses are always at least 10 minutes apart.
 - Writes are limited to `switch.turn_on/off`, `number.set_value`, `button.press` and `input_boolean.turn_off` on the
   entity ids you configured, plus your notify service and the status sensor.

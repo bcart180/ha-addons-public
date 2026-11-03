@@ -286,7 +286,7 @@ def _l3(plug_stale=False, opts=None, now=None, **st):
     ha = StampHA(dict(base, **st), stamps)
     clock = {"t": now}
     o = dict(OPTS, online_sensor="binary_sensor.car_status", wake_button="button.car_wake", **(opts or {}))
-    e = Engine(o, ha, clock=lambda: clock["t"], sleep=lambda s: None)
+    e = Engine(o, ha, clock=lambda: clock["t"], sleep=lambda s: None, mono=lambda: clock["t"].timestamp())
     return e, ha, clock
 
 
@@ -349,7 +349,11 @@ def test_l3_backoff_resets_on_plug_change():
     ha.states["binary_sensor.car_charge_cable"] = "off"
     clock["t"] += timedelta(minutes=1)
     e.tick()
-    assert e.wake_count == 0
+    assert e.wake_count == 1  # unplug alone does not reset
+    ha.states["binary_sensor.car_charge_cable"] = "on"
+    clock["t"] += timedelta(minutes=1)
+    e.tick()
+    assert e.wake_count <= 1 and _wakes(ha) == 1  # real off->on resets, but 10-min gap still holds
 
 
 def test_l3_backoff_sequence_caps_at_120():
@@ -359,7 +363,70 @@ def test_l3_backoff_sequence_caps_at_120():
     gaps, t = [], s["now"]
     for _ in range(6):
         s["now"] = t
-        assert e.stale_wake_allowed(s)
+        assert e.stale_wake_allowed(s) and e._wake_budget(t)
         gaps.append(int((e.next_wake_at - t).total_seconds() // 60))
         t = e.next_wake_at
     assert gaps == [10, 20, 40, 80, 120, 120]
+
+
+def _run(e, ha, clock, minutes, flap=None):
+    start = clock["t"]
+    for m in range(minutes):
+        clock["t"] = start + timedelta(minutes=m)
+        if flap:
+            flap(m, ha)
+        e.tick()
+
+
+def test_l4_plug_flap_unavailable_does_not_reset_cap():
+    e, ha, clock = _l3(opts={"wake_max_per_window": 3})
+
+    def flap(m, ha):
+        ha.states["binary_sensor.car_charge_cable"] = "unavailable" if m % 2 else "on"
+    _run(e, ha, clock, 600, flap)
+    assert _wakes(ha) == 3
+
+
+def test_l4_peak_flap_unavailable_does_not_open_window():
+    e, ha, clock = _l3(opts={"wake_max_per_window": 2})
+
+    def flap(m, ha):
+        ha.states["binary_sensor.utility_peak"] = "unavailable" if m % 2 else "off"
+    _run(e, ha, clock, 600, flap)
+    assert _wakes(ha) == 2
+
+
+def test_l4_fresh_data_does_not_reset_cap():
+    e, ha, clock = _l3(opts={"wake_max_per_window": 2})
+    _run(e, ha, clock, 200)
+    assert _wakes(ha) == 2
+    ha.stamps = {}  # data becomes fresh
+    _run(e, ha, clock, 5)
+    assert e.wake_count == 2
+    ha.stamps = {"sensor.car_battery_level": (clock["t"] - timedelta(minutes=45)).isoformat()}
+    _run(e, ha, clock, 300)
+    assert _wakes(ha) == 2
+
+
+def test_l4_new_window_resets_cap_but_min_gap_holds():
+    e, ha, clock = _l3(opts={"wake_max_per_window": 1})
+    _run(e, ha, clock, 30)
+    assert _wakes(ha) == 1
+    ha.states["binary_sensor.utility_peak"] = "on"
+    clock["t"] += timedelta(minutes=1)
+    e.tick()
+    ha.states["binary_sensor.utility_peak"] = "off"
+    clock["t"] += timedelta(minutes=1)
+    e.tick()
+    assert _wakes(ha) == 2
+
+
+def test_l4_hard_min_gap_between_any_wakes():
+    e, ha, clock = _l3(opts={"wake_max_per_window": 20})
+    e.last_wake_mono = clock["t"].timestamp()
+    e.tick()
+    assert _wakes(ha) == 0  # backoff would allow, min gap blocks
+    clock["t"] += timedelta(minutes=10)
+    e.last_plan = None
+    e.tick()
+    assert _wakes(ha) == 1
