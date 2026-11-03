@@ -296,7 +296,8 @@
       const cb = v.tel && !editMode
         ? `<a class="cb-btn" href="${esc(v.tel)}" title="Call back" aria-label="Call back">${phoneSvg()}</a>`
         : `<span></span>`;
-      const preview = (v.summary && v.summary.reason) || previewText(mapSpeakerText(v.snippet || "")) || "No transcript";
+      // 0.5.5: server-masked preview only; never the raw snippet (a number would show in full).
+      const preview = (v.summary && v.summary.reason) || previewText(v.preview || "") || "No transcript";
       const meta = [v.date_display, v.duration_sec ? fmt(v.duration_sec) : ""].filter(Boolean).map(esc).join(" · ");
       li.innerHTML = `
         ${left}

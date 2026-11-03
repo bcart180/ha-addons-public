@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.5 — 2026-11-03
+
+- Privacy fix: the list preview could show a full phone number when a row had no summary reason (e.g. a snippet that is only a number), because `app.js` fell back to the raw snippet. `/api/voicemails` rows now carry a server-side `preview`: the summary reason, or else `call_summary.fallback_line` (header stripped, numbers masked to last 4). `app.js` uses only that field for the list. The detail view, tap-to-call and the share sheet still show the full number. Display-only; no data, API permission, webhook or dry_run change.
+
 ## 0.5.4 — 2026-11-02
 
 - ReDoS fix (SA M2): `mask_phone_runs` look-alike pass (`_LOOKALIKE_TOKEN`, nested stars, O(n²)) rewritten as a linear maximal-run scan with identical output; masking input is capped at 2,000 chars (a number cut at the cap is dropped, never left unmasked; every caller already truncates to ≤160). Name patterns bounded (`{0,30}` per word) and name/reason/urgency read only the first 4,000 chars. `+` + `(-.`×10k: 4.0 s → 0.001 s; push fallback on 90k: 35 s → 0.03 s. New timing tests (`tests/test_redos_mask.py`, <1 s, incl. 100k inputs). Display-only; no data, API, permission or dry_run change.
