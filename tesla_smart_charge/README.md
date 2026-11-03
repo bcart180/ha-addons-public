@@ -7,7 +7,8 @@ leave instead of letting the pack sit full.
 ## Safe by default
 Installs with `dry_run: true`. In dry run it plans every check and logs what it would do, but it **never turns
 charging on, changes amps, or changes the limit**. Safety stops (peak with no charge-now, unknown sensors) still
-fire, so dry run can only make charging stop, never start. Set `dry_run: false` to go live.
+fire, so dry run can only make charging stop, never start. Note: this means dry run **can stop a charge you
+started by hand during peak** (set `dry_run_safety_off: false` to make dry run send nothing at all). Set `dry_run: false` to go live.
 
 Disable any existing smart-charge automations for the same car before going live, so two controllers don't fight.
 
@@ -86,5 +87,9 @@ notify_not_charging_min: 20
 - `max_amps_entity`: optional helper to lower the cap at runtime (never above `max_amps`).
 - `departure_entity`: optional `input_datetime` that overrides `departure_time`.
 - `dry_run_safety_off` (default true): in dry run, still send safety stops.
+- `min_amps` / `max_amps`: 1–48 A. 48 A is a hard ceiling (also enforced in the engine). If `min_amps` is above
+  `max_amps`, max wins and a warning is logged.
+- `stale_minutes` (default 30): battery level or plug state not reported for this long counts as unknown. The add-on
+  then never starts or raises charging (it may press wake to refresh); peak safety stops still fire.
 - Writes are limited to `switch.turn_on/off`, `number.set_value`, `button.press` and `input_boolean.turn_off` on the
   entity ids you configured, plus your notify service and the status sensor.

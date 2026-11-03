@@ -10,8 +10,9 @@ log = logging.getLogger("tesla_smart_charge")
 DEFAULTS = {"dry_run": True, "dry_run_safety_off": True, "check_interval_min": 10, "tick_s": 30,
             "confirm_s": 20, "battery_kwh": 75, "charge_efficiency": 0.9, "target_soc": 80,
             "departure_time": "07:00", "finish_buffer_min": 30, "min_amps": 5, "max_amps": 32,
-            "fallback_voltage": 240, "peak_schedule": [], "notify_not_charging_min": 20}
-SAFETY_STOPS = ("peak", "plug_state_unavailable", "soc_or_target_unavailable")
+            "fallback_voltage": 240, "stale_minutes": 30, "peak_schedule": [], "notify_not_charging_min": 20}
+HARD_MAX_AMPS = 48
+SAFETY_STOPS = ("stale_state", "peak", "plug_state_unavailable", "soc_or_target_unavailable")
 ENTITY_KEYS = ("charge_switch", "charge_current", "charge_limit", "wake_button", "ble_charge_switch",
                "ble_charge_current", "ble_charge_limit", "ble_wake_button", "charge_now_entity",
                "pause_entity", "trip_entity")
@@ -21,6 +22,11 @@ class Engine:
     def __init__(self, opts, ha, clock=None, sleep=None):
         self.o = dict(DEFAULTS, **{k: v for k, v in opts.items() if v not in (None,)})
         self.ha = ha
+        self.o["max_amps"] = max(1, min(int(self.o["max_amps"]), HARD_MAX_AMPS))
+        if int(self.o["min_amps"]) > self.o["max_amps"]:
+            log.warning("min_amps %s > max_amps %s: using max_amps for both (max wins)",
+                        self.o["min_amps"], self.o["max_amps"])
+            self.o["min_amps"] = self.o["max_amps"]
         self.clock = clock or (lambda: datetime.now().astimezone())
         self.sleep = sleep or time.sleep
         self.prev = {}
@@ -38,6 +44,20 @@ class Engine:
     def _flag(self, states, key):
         eid = self.o.get(key) or ""
         return bool(eid) and core.is_on(self._st(states, key))
+
+    def _stale(self, states, key, now):
+        """True if the entity's last_reported/last_updated is older than stale_minutes. Missing stamp = fresh."""
+        eid = self.o.get(key) or ""
+        st = states.get(eid) or {}
+        ts = st.get("last_reported") or st.get("last_updated")
+        if not ts:
+            return False
+        try:
+            t = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+            n = now if now.tzinfo else now.astimezone()
+            return (n - t) > timedelta(minutes=int(self.o["stale_minutes"]))
+        except (TypeError, ValueError):
+            return True
 
     def configured(self):
         return all(self.o.get(k) for k in ("charge_switch", "charge_current", "battery_level", "plugged_in"))
@@ -59,9 +79,13 @@ class Engine:
         if o.get("max_amps_entity"):
             m = core.num(self._st(states, "max_amps_entity"))
             if m is not None:
-                max_amps = int(max(o["min_amps"], min(m, o["max_amps"])))
+                max_amps = int(max(o["min_amps"], min(m, o["max_amps"], HARD_MAX_AMPS)))
         plug = self._st(states, "plugged_in")
         plugged = None if core.num(plug) is None and str(plug).lower() in core.BAD else core.is_on(plug)
+        soc = core.num(self._st(states, "battery_level"))
+        stale = self._stale(states, "battery_level", now) or self._stale(states, "plugged_in", now)
+        if stale:
+            soc, plugged = None, None  # stale = unknown: never start or raise
         peak = False
         if o.get("peak_sensor"):
             ps = self._st(states, "peak_sensor")
@@ -77,7 +101,7 @@ class Engine:
         else:
             charging = core.is_on(self._st(states, "charge_switch"))
         return {
-            "now": now, "soc": core.num(self._st(states, "battery_level")),
+            "now": now, "soc": soc, "stale": stale,
             "target": core.num(target), "plugged": plugged, "home": home, "peak": peak,
             "enabled": (not o.get("enabled_entity")) or self._flag(states, "enabled_entity"),
             "charge_now": self._flag(states, "charge_now_entity"), "pause": self._flag(states, "pause_entity"),
@@ -201,6 +225,8 @@ class Engine:
         self.last_plan = now
         s = self.inputs(states, now)
         p = core.plan(s)
+        if s["stale"] and p["action"] != "idle":
+            p.update(action="stop" if p["action"] == "stop" else "hold", reason="stale_state", amps=None)
         self.apply(p, s, states)
         self.check_notify(p, s, now)
         self.publish(p["action"], {"reason": p["reason"], "amps": p["amps"], "behind": p["behind"],
@@ -220,6 +246,9 @@ class Engine:
         dry = bool(self.o["dry_run"])
         for f in p["clear"]:
             self._clear(f, states)
+        if p["action"] == "hold" and p["reason"] == "stale_state" and not dry:
+            self.wake()  # waking may refresh stale readings; no charge command
+            return
         if p["action"] == "stop":
             if s["charging"] is False:
                 return

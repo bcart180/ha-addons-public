@@ -1,5 +1,5 @@
 name: Tesla Smart Charge
-version: "0.1.0"
+version: "0.1.1"
 slug: tesla_smart_charge
 description: Lowest-amp off-peak Tesla charging that reaches your target by departure (BLE first, cloud fallback)
 url: https://github.com/bcart180/ha-addons-public/tree/main/tesla_smart_charge
@@ -12,6 +12,8 @@ homeassistant_api: true
 options:
   # SAFE ON INSTALL: dry run (plans and logs only; never turns charging ON). See DOCS.md.
   dry_run: true
+  # Dry run still sends safety stops (peak with no charge-now): it can stop a charge you started by hand in peak.
+  dry_run_safety_off: true
   log_level: info
   check_interval_min: 10
   # No entity ids ship as defaults: set yours in the Configuration tab (example in DOCS.md).
@@ -26,6 +28,7 @@ options:
   finish_buffer_min: 30
   min_amps: 5
   max_amps: 32
+  stale_minutes: 30
   fallback_voltage: 240
   peak_schedule: []
   notify_not_charging_min: 20
@@ -61,7 +64,9 @@ schema:
   departure_entity: match(^input_datetime\.[a-z0-9_]+$)?
   finish_buffer_min: int(0,180)
   min_amps: int(1,48)
-  max_amps: int(1,80)
+  stale_minutes: int(5,1440)
+  # Hard ceiling 48 A (Gen 3 Wall Connector max). The engine also clamps to 48.
+  max_amps: int(1,48)
   max_amps_entity: match(^(input_number|number)\.[a-z0-9_]+$)?
   # Peak: a binary_sensor (on = peak) and/or a weekly schedule. Either one saying peak = peak.
   peak_sensor: match(^binary_sensor\.[a-z0-9_]+$)?

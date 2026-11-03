@@ -160,7 +160,8 @@ def plan(s):
         out.update(action="start", amps=int(s["max_amps"]), reason="past_finish_time", behind=True)
         return out
     amps, kwh = required_amps(soc, target, s["battery_kwh"], s["efficiency"], s["volts"], hours)
-    final = max(int(s["min_amps"]), min(amps, int(s["max_amps"])))
+    # max_amps always wins over min_amps (M1).
+    final = min(max(int(s["min_amps"]), amps), int(s["max_amps"]))
     out.update(action="start", amps=final, behind=amps > int(s["max_amps"]),
                reason="plan %.1f kWh in %.2f h" % (kwh, hours))
     return out

@@ -214,3 +214,63 @@ def test_unconfigured_is_inert():
     ha = FakeHA({})
     e = Engine({"dry_run": False}, ha, clock=lambda: NIGHT, sleep=lambda s: None)
     assert e.tick() is None and ha.calls == []
+
+
+def test_m1_max_wins_over_min():
+    e, ha, _ = mk(NIGHT, opts={"min_amps": 30, "max_amps": 20})
+    assert e.o["min_amps"] == 20
+    p = e.tick()
+    assert p["amps"] <= 20
+    p2 = core.plan(dict(now=NIGHT, soc=79, target=80, plugged=True, home=None, peak=False, charge_now=False,
+                        pause=False, departure=NIGHT + timedelta(hours=9), finish_buffer_min=30, battery_kwh=75,
+                        efficiency=0.9, volts=240, min_amps=30, max_amps=20, schedule=[]))
+    assert p2["amps"] == 20
+
+
+def test_l2_hard_ceiling_48():
+    e, ha, _ = mk(NIGHT, opts={"max_amps": 80, "min_amps": 5})
+    assert e.o["max_amps"] == 48
+    cfg = yaml.safe_load(open(CFG))
+    assert cfg["schema"]["max_amps"] == "int(1,48)" and cfg["options"]["dry_run_safety_off"] is True
+
+
+class StampHA(FakeHA):
+    def __init__(self, states, stamps):
+        super().__init__(states)
+        self.stamps = stamps
+
+    def get_states(self):
+        out = super().get_states()
+        for k, v in self.stamps.items():
+            out[k]["last_reported"] = v
+        return out
+
+
+def _stale_engine(**st):
+    now = datetime(2026, 11, 2, 21, 0).astimezone()
+    old = (now - timedelta(minutes=45)).isoformat()
+    ha = StampHA(dict(BASE, **st), {"sensor.car_battery_level": old})
+    o = dict(OPTS, online_sensor="binary_sensor.car_status", wake_button="button.car_wake")
+    ha.states["binary_sensor.car_status"] = "off"
+    e = Engine(o, ha, clock=lambda: now, sleep=lambda s: None)
+    return e, ha
+
+
+def test_l1_stale_soc_never_starts_but_wakes():
+    e, ha = _stale_engine()
+    p = e.tick()
+    assert p["action"] == "hold" and p["reason"] == "stale_state"
+    assert not [c for c in ha.calls if c[0] in ("switch", "number")]
+    assert ("button", "press", "button.car_wake", None) in ha.calls
+
+
+def test_l1_stale_in_peak_still_stops():
+    e, ha = _stale_engine(**{"binary_sensor.utility_peak": "on", "switch.car_charge": "on"})
+    assert e.tick()["action"] == "stop" and ha.states["switch.car_charge"] == "off"
+
+
+def test_l1_fresh_stamp_plans_normally():
+    now = datetime(2026, 11, 2, 21, 0).astimezone()
+    ha = StampHA(dict(BASE), {"sensor.car_battery_level": (now - timedelta(minutes=5)).isoformat()})
+    e = Engine(dict(OPTS), ha, clock=lambda: now, sleep=lambda s: None)
+    assert e.tick()["action"] == "start"
