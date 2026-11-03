@@ -228,3 +228,16 @@ test("0.6.5 glance: header buttons are at least 48px (Echo Show touch target)", 
   const src = fs.readFileSync(new URL("../smart-hvac-card.js", import.meta.url), "utf8");
   assert.match(src, /\.gh \.btn\{min-height:48px;min-width:48px\}/);
 });
+
+import { buildHeaterRequest, heaterStatus, HEATER, sharedModeRequests as smr } from "../smart-hvac-card.js";
+
+test("0.8.0 heater: own endpoint, 55-75 clamp, heat/off only, never in the split group", () => {
+  assert.deepEqual(buildHeaterRequest("setpoint", 90), { path: "api/heater/spare_bathroom/setpoint", body: { temperature: 75 } });
+  assert.equal(buildHeaterRequest("setpoint", 40).body.temperature, 55);
+  assert.equal(buildHeaterRequest("setpoint", "x"), null);
+  assert.equal(buildHeaterRequest("mode", "cool"), null);
+  assert.deepEqual(buildHeaterRequest("mode", "off").body, { hvac_mode: "off" });
+  assert.ok(smr(DEFAULT_ZONES, "heat").every((r) => !r.path.includes(HEATER.zone)));
+  assert.equal(heaterStatus({ last: { reason: "lockout" } }), "Locked out: 8 h/day limit");
+  assert.equal(heaterStatus({ last: { reason: "dry_run" } }), "Practice mode (plug stays off)");
+});

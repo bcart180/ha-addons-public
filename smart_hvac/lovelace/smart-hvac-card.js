@@ -61,6 +61,28 @@ export function buildRequest(zone, action, value, ctx = {}) {
   return { path: `api/zone/${name}/${what}`, body };
 }
 
+/** 0.8.0 spare bathroom heater (kitten room): its own card, own endpoint, never part of the split mode group. */
+export const HEATER = { zone: "spare_bathroom", entity: "climate.spare_bathroom", min: 55, max: 75 };
+export function buildHeaterRequest(action, value) {
+  if (action === "setpoint") {
+    const t = Number(value);
+    if (!Number.isFinite(t)) return null;
+    return { path: `api/heater/${HEATER.zone}/setpoint`,
+      body: { temperature: Math.max(HEATER.min, Math.min(HEATER.max, Math.round(t * 2) / 2)) } };
+  }
+  if (action === "mode" && ["heat", "off"].includes(value)) return { path: `api/heater/${HEATER.zone}/mode`, body: { hvac_mode: value } };
+  return null;
+}
+const HEATER_REASON = { heating: "Heating", idle: "Holding", satisfied: "Holding", min_off: "Holding (short-cycle guard)",
+  mode_off: "Off", hard_cap: "Off: over 80° cap", cooldown: "Cooldown (2 h run limit)", lockout: "Locked out: 8 h/day limit",
+  no_rise: "Off: heater not warming the room", relay_fault: "Relay fault", sensor_unavailable: "Off: sensor unavailable",
+  door_open: "Paused: door open", dry_run: "Practice mode (plug stays off)", app_off: "App off", exception: "Off: error",
+  startup: "Starting", shutdown: "Stopped", not_configured: "Not set up" };
+export function heaterStatus(h) {
+  const r = h?.last?.reason;
+  return HEATER_REASON[r] || (r ? String(r) : "--");
+}
+
 /** 0.6.0 shared-mode lock: on a mini split, Heat / Cool switch BOTH splits (one outdoor unit); Off is per room. */
 export function modeLabel(m, heatOnly) {
   const t = m[0].toUpperCase() + m.slice(1);
@@ -422,6 +444,42 @@ class SmartHvacCard extends Base {
     this._render();
   }
 
+  _heaterCard(tz) {
+    const hs = this._api?.heater;
+    if (!hs || !hs.configured) return "";
+    const ro = !canWrite(this._hass), L = hs.last || {}, off = hs.mode === "off";
+    const sp = this._hpend ?? hs.setpoint, now = L.temp;
+    const mot = hs.last_motion ? `Motion ${fmtClock(hs.last_motion, tz)}` : hs.motion_sensor ? "No motion seen" : "";
+    return `<div class="card"><div class="zh"><h2>${esc(hs.label)}</h2><span class="dim">Space heater</span></div>
+      <div class="face ${off ? "off" : ""}"><div class="status">${esc(heaterStatus(hs))}</div>
+      <div class="big">${now != null ? Math.round(now) : "--"}</div>
+      <div class="sp"><button class="step" data-h="-0.5" ${off || ro ? "disabled" : ""}>−</button>
+      <div class="pill ${off ? "" : "heat"}">${off ? "Off" : sp}</div>
+      <button class="step" data-h="0.5" ${off || ro ? "disabled" : ""}>+</button></div></div>
+      <div class="chips"><span class="chip">${off ? "Off" : "Heat"}</span><span class="chip">${esc(String(L.on_24h_min ?? 0))} min today</span>${mot ? `<span class="chip">${esc(mot)}</span>` : ""}</div>
+      <div class="row">${["heat", "off"].map((m) => `<button class="btn ${m === hs.mode ? "sel" : ""}" data-hmode="${m}" ${ro ? "disabled" : ""}>${m === "heat" ? "Heat" : "Off"}</button>`).join("")}</div></div>`;
+  }
+
+  async _heater(action, value) {
+    const req = buildHeaterRequest(action, value);
+    if (!req || !canWrite(this._hass)) return;
+    try {
+      const j = await postWrite(this._ing, this._hass, req, { fetch: (...a) => fetch(...a), doc: document });
+      if (j && j.zones) this._api = j;
+      this._msg = "";
+    } catch (e) { this._msg = "Can't change it now: " + e.message; }
+    this._hpend = undefined; this._render();
+  }
+
+  _bindHeater() {
+    this.shadowRoot.querySelectorAll("button[data-hmode]").forEach((b) => b.addEventListener("click", () => this._heater("mode", b.dataset.hmode)));
+    this.shadowRoot.querySelectorAll("button[data-h]").forEach((b) => b.addEventListener("click", () => {
+      const cur = this._hpend ?? this._api?.heater?.setpoint ?? 68;
+      this._hpend = Math.max(HEATER.min, Math.min(HEATER.max, cur + Number(b.dataset.h))); this._render();
+      clearTimeout(this._ht); this._ht = setTimeout(() => this._heater("setpoint", this._hpend), 800);
+    }));
+  }
+
   _renderGlance(vac, tz) {
     const h = this._hass, ro = !canWrite(h), zs = this._cfg.zones;
     const shared = sharedSplitMode(h, zs);
@@ -438,7 +496,7 @@ class SmartHvacCard extends Base {
         <div class="gs"><button class="step" data-i="${i}" data-d="-1" ${r.off || ro ? "disabled" : ""}>−</button><span class="gp ${r.off ? "" : esc(r.mode)}">${r.off ? "Off" : sp != null ? sp + "°" : "--"}</span><button class="step" data-i="${i}" data-d="1" ${r.off || ro ? "disabled" : ""}>+</button></div>
         <div>${r.hold && !ro ? `<button class="btn" data-i="${i}" data-resume="1">Auto</button>` : ""}</div></div>`;
     }).join("");
-    return `<style>${CSS}${GCSS}</style>${banner}${head}<div class="gl">${rows}</div>`;
+    return `<style>${CSS}${GCSS}</style>${banner}${head}<div class="gl">${rows}</div><div class="wrap">${this._heaterCard(tz)}</div>`;
   }
 
   _render() {
@@ -452,6 +510,7 @@ class SmartHvacCard extends Base {
         if (b.dataset.d) this._bump(z, +b.dataset.d);
         else if (b.dataset.resume) this._do(z, "resume");
       }));
+      this._bindHeater();
       return;
     }
     const vac = this._vac(), tz = this._hass.config?.time_zone;
@@ -461,7 +520,8 @@ class SmartHvacCard extends Base {
     const prof = this._api?.profile, ro = !canWrite(this._hass);
     const sel = { home: "home", sleep: "sleep", away: "away", auto: "eco" }[prof];
     const presets = `<div class="pre">${PRESETS.map(([k, l]) => `<button class="btn ${k === sel ? "sel" : ""}" data-preset="${k}" ${ro ? "disabled" : ""}>${l}</button>`).join("")}<span class="dim">${vac ? "Vacation overrides presets" : sel === "eco" ? "Eco: automatic by presence + schedule" : ""}</span></div>`;
-    this.shadowRoot.innerHTML = `<style>${CSS}</style>${banner}${presets}<div class="wrap">${this._cfg.zones.map((z, i) => this._card(z, i, vac, tz)).join("")}</div>`;
+    this.shadowRoot.innerHTML = `<style>${CSS}</style>${banner}${presets}<div class="wrap">${this._cfg.zones.map((z, i) => this._card(z, i, vac, tz)).join("")}${this._heaterCard(tz)}</div>`;
+    this._bindHeater();
     this.shadowRoot.querySelectorAll("button[data-preset]").forEach((b) => b.addEventListener("click", () => this._preset(b.dataset.preset)));
     this.shadowRoot.querySelectorAll("button[data-i]").forEach((b) => b.addEventListener("click", () => {
       const z = this._cfg.zones[+b.dataset.i];

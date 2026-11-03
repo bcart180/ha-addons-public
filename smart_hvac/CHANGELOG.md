@@ -1,3 +1,15 @@
+## 0.8.0 — 2026-11-03
+
+- New, optional **spare bathroom heater** zone (kitten room): smart plug + plain space heater + temperature sensor, published as `climate.spare_bathroom` (heat / off). Disabled until `spare_bathroom.heater_switch` and `spare_bathroom.temp_sensor` are set. Fully independent of the mini splits: it never reads or writes any `climate.*` entity and is never part of the shared-mode group. No presence, eco or away logic: holds 68°F 24/7; manual card changes 55–75°F.
+- Control: on at setpoint −1°F, off at +0.5°F, 5 min minimum on and off; own 30 s loop. Turning on needs `enabled: true` and `dry_run: false`; turning off is always allowed.
+- Safety (in add-on code, each with a phone alert): 80°F hard cap latched until below setpoint; 2 h max run then 20 min cooldown; >8 h in 24 h lockout (reset: Off then Heat); sensor unavailable / unknown / stale 15 min → off; no 1°F rise after 45 min → off (latched); plug on when it should be off → forced off; power draw while off → relay fault (latched); door/window open → paused; plug off at startup, shutdown and on any exception.
+- Low-temp alerts (configurable): warning below 62°F for 10 min; critical below 58°F, repeating every 30 min until recovered. Alerts name any active lockout / fail-off cause.
+- Optional `motion_sensor` is display only (last motion on the card); it never changes heating.
+- Lovelace card: the heater shows as its own card (current, target, Heat/Off, status, runtime today, last motion).
+- HA client: three narrow new write paths (switch on/off for a `switch.*` id, notification, mirror state for `climate.spare_bathroom` only). Split logic unchanged.
+- DOCS: watchdog automation that turns the plug off if the add-on stops updating.
+- DOCS: **heater preflight checklist (REQUIRED)**. The heater must not go live (`dry_run: false`) without both (a) the DOCS watchdog automation installed and tested and (b) an on-device auto-off timer of 2 h or less on the smart plug that works without HA (SA M1). Docs only; no code change.
+
 ## 0.7.8 — 2026-11-02
 
 - Remove '(new)' name suffix; no functional change.
