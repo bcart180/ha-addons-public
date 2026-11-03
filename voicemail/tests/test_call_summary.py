@@ -420,3 +420,27 @@ def test_hangup_header_not_in_reason_or_fallback():
     assert out["reason"] == "Silver Star Service Center" and out["urgency"] == "urgent"
     assert cs.fallback_line({"transcript": t}) == "Silver Star Service Center"
     assert cs.strip_header("Please call me back about Source: the invoice") == "Please call me back about Source: the invoice"
+
+
+def test_caller_number_header_line_stripped():
+    t = "Caller: +15555550100\nSource: CallCatch\nDuration: 14 seconds\nTRANSCRIPT\nSilver Star Service Center."
+    assert cs.extract_summary(t, "+15555550100")["reason"] == "Silver Star Service Center"
+    t2 = "Caller: Unknown\nWhen: 7:59 AM ET\nCall ID: abc\n\nTRANSCRIPT\nCaller: Hi, please call back about the invoice."
+    assert not cs.extract_summary(t2, "")["reason"].startswith(("Unknown", "•", "When", "Call"))
+    assert cs.strip_header("Caller: Hi there\nmore") == "Caller: Hi there\nmore"
+
+
+def test_strip_header_redos_bounded():
+    import time
+    for hostile in ("Caller:" + " " * 100_000, ("Caller: 5 \t(" * 10_000) + "x" * 20_000,
+                    "Duration: " + "1 " * 50_000, "•" * 100_000):
+        t0 = time.perf_counter()
+        cs.strip_header(hostile)
+        cs.extract_summary(hostile, "+15555550100")
+        assert time.perf_counter() - t0 < 1.0
+
+
+def test_when_after_transcript_kept():
+    t = "Caller: Unknown\nTRANSCRIPT:\nWhen: I get home call me\nok"
+    assert cs.strip_header(t) == "When: I get home call me\nok"
+    assert cs.extract_summary(t, "")["reason"].startswith("When: I get home")

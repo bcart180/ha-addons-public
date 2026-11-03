@@ -63,9 +63,9 @@ assert "555-0101" in example and "555-0102" in example and "555-0103" in example
 
 config = (ROOT / "config.yaml").read_text()
 assert "slug: voicemail" in config
-assert 'version: "0.5.2"' in config
+assert 'version: "0.5.3"' in config
 assert "image:" not in config
-assert mod.VERSION == "0.5.2"
+assert mod.VERSION == "0.5.3"
 
 GREETING = "House: Hi, you've reached the house. This is the assistant. How may I help you?"
 MAPPED = "Assistant: Hi, you've reached the house. This is the assistant. How may I help you?"
