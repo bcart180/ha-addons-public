@@ -127,7 +127,12 @@ class SpareHeater:
 
     @property
     def can_heat(self):
-        return bool(self.opts.get("enabled")) and not self.opts.get("dry_run", True)
+        """0.8.1: ON needs the global gate (enabled + dry_run off) AND the heater-only gate
+        (spare_bathroom.enabled true + spare_bathroom.dry_run false) AND both ids set."""
+        sb = (self.opts.get("spare_bathroom") or {}) if isinstance(self.opts.get("spare_bathroom"), dict) else {}
+        global_ok = bool(self.opts.get("enabled")) and self.opts.get("dry_run", True) is False
+        heater_ok = sb.get("enabled", False) is True and sb.get("dry_run", True) is False
+        return global_ok and heater_ok and self.configured
 
     # ---------- card writes ----------
     def set_mode(self, mode):
@@ -265,7 +270,12 @@ class SpareHeater:
             self.last_motion = now
         reason, want = self._decide(now, temp, stale, is_on, sp, states)
         if want and not self.can_heat:
-            want, reason = False, "dry_run" if self.opts.get("enabled") else "app_off"
+            sb = self.opts.get("spare_bathroom") if isinstance(self.opts.get("spare_bathroom"), dict) else {}
+            if not (self.opts.get("enabled") and (sb or {}).get("enabled") is True):
+                reason = "app_off"
+            else:
+                reason = "dry_run"
+            want = False
 
         if want and not is_on:
             self._switch(True)

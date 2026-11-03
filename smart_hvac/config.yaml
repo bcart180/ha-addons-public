@@ -1,5 +1,5 @@
 name: Smart HVAC
-version: "0.8.0"
+version: "0.8.1"
 slug: smart_hvac
 description: Smart thermostat for multi-zone mini-split systems. All heads share one outdoor unit, so they are always kept in the same heat/cool mode. Presence-, weather- and sun-aware, plus radiant floor (Ingress panel)
 url: https://github.com/bcart180/ha-addons-public/tree/main/smart_hvac
@@ -49,6 +49,9 @@ options:
   zones: []
   # 0.8.0 spare bathroom heater (smart plug + space heater). Blank = zone disabled. Independent of the splits.
   spare_bathroom:
+    # 0.8.1 heater-only gates, independent of the global ones. ON needs all four to allow it.
+    enabled: false
+    dry_run: true
     heater_switch: ""
     temp_sensor: ""
     power_sensor: ""
@@ -111,6 +114,8 @@ schema:
       sleep: float(50,80)?
       away: float(45,75)?
   spare_bathroom:
+    enabled: bool?
+    dry_run: bool?
     heater_switch: str?
     temp_sensor: str?
     power_sensor: str?

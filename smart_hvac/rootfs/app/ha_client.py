@@ -1,7 +1,9 @@
 """Minimal Home Assistant client over the Supervisor proxy (homeassistant_api: true)."""
 import json
+import logging
 import os
 import re
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -16,6 +18,8 @@ def excluded(entity_id):
 # On/off uses set_hvac_mode (off / heat|cool), so climate.turn_on/turn_off are NOT allowed.
 ALLOWED_SERVICES = ("set_hvac_mode", "set_temperature", "set_fan_mode")
 
+log = logging.getLogger("smart_hvac.ha")
+
 BASE = os.environ.get("SH_HA_URL", "http://supervisor/core/api")
 
 
@@ -29,8 +33,13 @@ class HAClient:
         data = None if body is None else json.dumps(body).encode()
         req = urllib.request.Request(self.base + path, data=data, method=method, headers={
             "Authorization": "Bearer " + self.token, "Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=self.timeout) as r:
-            return json.loads(r.read() or b"null")
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                return json.loads(r.read() or b"null")
+        except urllib.error.HTTPError as e:
+            # 0.8.1: status code + method + path only (query dropped). Never the body or headers.
+            log.warning("HA %s %s -> HTTP %s", method, path.split("?", 1)[0], e.code)
+            raise
 
     def get_states(self):
         return self._req("GET", "/states")

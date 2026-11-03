@@ -66,6 +66,7 @@ def mk(temp=65.0, power=None, door=None, live=True, **cfg):
         sb["power_sensor"] = PW
     if door is not None:
         sb["door_sensor"] = DR
+    sb.update({"enabled": True, "dry_run": not live})  # 0.8.1 heater-only gates
     sb.update(cfg)
     opts = {"enabled": True, "dry_run": not live, "spare_bathroom": sb}
     return H.SpareHeater(opts, ha, None, clock=c), ha, c

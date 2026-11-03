@@ -179,7 +179,7 @@ spare_bathroom:
 Safety (fixed in code): 80°F cap (latched until below setpoint), 2 h max run + 20 min cooldown, 8 h / 24 h lockout
 (reset with Off then Heat), sensor unavailable or stale 15 min → off, no 1°F rise in 45 min → off, plug on
 unexpectedly → forced off, power draw while off → relay fault, door open → pause, plug off at start/stop/error.
-Practice mode (`dry_run: true`) never turns the plug on.
+Practice mode never turns the plug on. Since 0.8.1 the heater has its own gates: `spare_bathroom.enabled` (default `false`) and `spare_bathroom.dry_run` (default `true`), independent of the global ones. The plug turns ON only when global `enabled: true` + `dry_run: false` AND `spare_bathroom.enabled: true` + `spare_bathroom.dry_run: false` AND both entity ids are set.
 
 ### Heater preflight checklist (REQUIRED before `dry_run: false`)
 The add-on cannot turn the plug off if it hangs or Home Assistant is down. **Do not take the heater live

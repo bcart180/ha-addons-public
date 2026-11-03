@@ -1,3 +1,9 @@
+## 0.8.1 — 2026-11-03
+
+- Fix: a failed `set_temperature` write no longer aborts the whole control cycle. It is wrapped like the mode write: the zone is marked `setpoint_write_failed`, the other zones finish, and state is saved. Mode-lock / split opposite-mode logic is unchanged.
+- HA client logs `HTTP <code>` with the method and path (query dropped) on HTTP errors. Never the body or headers.
+- Heater-only gates `spare_bathroom.enabled` (default `false`) and `spare_bathroom.dry_run` (default `true`), independent of the global `enabled` / `dry_run`. The plug can turn ON only when the global gate, the heater gate and both entity ids allow it. OFF is always allowed.
+
 ## 0.8.0 — 2026-11-03
 
 - New, optional **spare bathroom heater** zone (kitten room): smart plug + plain space heater + temperature sensor, published as `climate.spare_bathroom` (heat / off). Disabled until `spare_bathroom.heater_switch` and `spare_bathroom.temp_sensor` are set. Fully independent of the mini splits: it never reads or writes any `climate.*` entity and is never part of the shared-mode group. No presence, eco or away logic: holds 68°F 24/7; manual card changes 55–75°F.

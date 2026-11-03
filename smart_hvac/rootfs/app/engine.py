@@ -749,11 +749,15 @@ class Engine:
                         self.st["app_off"] = sorted(set(self.st["app_off"]) | {name})
                     else:
                         self.st["app_off"] = [n for n in self.st["app_off"] if n != name]
+                sp_ok = True
                 if r["mode"] != "off" and r["setpoint"] is not None:
-                    self.ha.call("climate", "set_temperature",
-                                 {"entity_id": z["climate"], "temperature": r["setpoint"]})
-                self.st["last_cmd"][name] = {"mode": r["mode"], "setpoint": r["setpoint"]}
-                applied = True
+                    sp_ok = self._call_setpoint(z["climate"], r["setpoint"])
+                if sp_ok:
+                    self.st["last_cmd"][name] = {"mode": r["mode"], "setpoint": r["setpoint"]}
+                    applied = True
+                else:  # 0.8.1: one failed setpoint write no longer aborts the cycle (state still saved)
+                    self.st["last_cmd"][name] = {"mode": r["mode"], "setpoint": None}
+                    r = dict(r, reason="setpoint_write_failed")
             results[name] = dict(r, applied=applied)
             results[name].update(self._live(cl, cattr, indoor, hum))
             if applied:  # reflect what the app just wrote, not the pre-write read (card showed stale setpoint)
@@ -793,6 +797,16 @@ class Engine:
                                   "weather": w, "radiant_timeout": rt, "zones": results}
         self.save()
         return results
+
+    def _call_setpoint(self, entity_id, temperature):
+        """One set_temperature write; False (logged, no raise) when it fails (0.8.1)."""
+        try:
+            self.ha.call("climate", "set_temperature", {"entity_id": entity_id, "temperature": temperature})
+            return True
+        except Exception as e:  # noqa: BLE001 - fail safe, the cycle finishes and saves state
+            log.warning("setpoint write failed for %s: %s%s", entity_id, type(e).__name__,
+                        " %s" % e.code if hasattr(e, "code") else "")
+            return False
 
     def _call_mode(self, entity_id, mode):
         """One set_hvac_mode write; False (logged, no raise) when it fails."""
