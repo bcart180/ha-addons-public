@@ -41,6 +41,7 @@ DAY_LIMIT_S, DAY_S = 8 * 3600, 24 * 3600
 STALE_MIN_DEFAULT, STALE_MIN_LO, STALE_MIN_HI = 75, 15, 120  # 0.8.2: Zooz ZSE11 reports hourly or on 1 F change
 STALE_S = STALE_MIN_DEFAULT * 60
 FUTURE_SKEW_S = 60  # timestamps further ahead than this are rejected
+CLOCK_JUMP_S = 60  # 0.8.5 (SA M1b): wall clock back > 60 s, or off from monotonic elapsed by > 60 s = clock jump
 NO_RISE_S, NO_RISE_F = 45 * 60, 1.0
 POWER_FAULT_W = 5.0
 BAD = ("unavailable", "unknown", "none", "")
@@ -96,8 +97,14 @@ def config(opts):
 
 
 class SpareHeater:
-    def __init__(self, opts, ha, state_path=None, clock=time.time):
+    def __init__(self, opts, ha, state_path=None, clock=time.time, mono=None):
         self.opts, self.ha, self.path, self.clock = opts or {}, ha, state_path, clock
+        # 0.8.5 (SA M1b): every in-process duration (2 h max run, satisfied / min on-off, 8 h / 24 h, no_rise,
+        # cooldown) runs on a monotonic timeline anchored to the wall clock once at startup, so a wall clock jump
+        # mid-run cannot stretch or shrink a timer. Tests that inject only a fake wall clock reuse it as monotonic.
+        self.mono = mono or (time.monotonic if clock is time.time else clock)
+        self._w0, self._m0 = clock(), self.mono()
+        self._prev = None           # (wall, mono) at the previous tick, for clock-jump detection
         self.cfg = config(self.opts)
         self.configured = bool(self.cfg["heater_switch"] and self.cfg["temp_sensor"])
         self.st = {"mode": "heat", "setpoint": SP_DEFAULT}
@@ -141,7 +148,7 @@ class SpareHeater:
             if not isinstance(d, dict):
                 raise ValueError("not an object")
         except (OSError, ValueError, UnicodeDecodeError):
-            self.cooldown_until = self.clock() + COOLDOWN_S
+            self.cooldown_until = self._now() + COOLDOWN_S
             self.last = dict(self.last, reason="state_unreadable")
             if self.configured:
                 self._notify("state_unreadable", "Heater state file unreadable. Plug off, 20 min cooldown.")
@@ -155,7 +162,7 @@ class SpareHeater:
             self.latched = d["latched"]
         self.cap_latched = d.get("cap_latched") is True
         # 0.8.4 (SA M1): sanitize timestamps against now; anything > 60 s in the future or invalid is dropped
-        now = self.clock()
+        now = self._now()
 
         def ok(v):
             v = _num(v)
@@ -256,7 +263,8 @@ class SpareHeater:
     def _cause(self):
         r = (self.last or {}).get("reason")
         c = self.latched or ("hard_cap" if self.cap_latched else None) or (
-            r if r in ("sensor_unavailable", "cooldown", "door_open", "exception", "dry_run", "app_off", "mode_off")
+            r if r in ("sensor_unavailable", "cooldown", "clock_jump", "door_open", "exception", "dry_run",
+                       "app_off", "mode_off")
             else None)
         return " Cause: %s." % c.replace("_", " ") if c else ""
 
@@ -290,7 +298,7 @@ class SpareHeater:
         try:
             self._switch(False)
         finally:
-            self._end_run(self.clock())
+            self._end_run(self._now())
             self.last = dict(self.last, on=False, reason=why)
             self._save()
 
@@ -324,15 +332,30 @@ class SpareHeater:
                 pass
             return self.last
 
+    def _now(self):
+        """Monotonic timeline in epoch seconds (wall time at startup + monotonic elapsed)."""
+        return self._w0 + (self.mono() - self._m0)
+
+    def _clock_jump(self, wall, m):
+        """0.8.5 (SA M1b): True when the wall clock went back > 60 s since the last tick, or its step differs
+        from the monotonic step by > 60 s (either direction)."""
+        prev, self._prev = self._prev, (wall, m)
+        if prev is None:
+            return False
+        dw, dm = wall - prev[0], m - prev[1]
+        return dw < -CLOCK_JUMP_S or abs(dw - dm) > CLOCK_JUMP_S
+
     def _tick(self):
-        now = self.clock()
+        wall, m = self.clock(), self.mono()
+        now = self._w0 + (m - self._m0)
+        jumped = self._clock_jump(wall, m)
         states = {s["entity_id"]: s for s in self.ha.get_states() or []}
         sw = states.get(self.cfg["heater_switch"]) or {}
         is_on = sw.get("state") == "on"
         ts = states.get(self.cfg["temp_sensor"]) or {}
         temp = _num(ts.get("state")) if str(ts.get("state", "")).lower() not in BAD else None
-        seen = self._seen(ts, states, now)
-        stale = seen is None or now - seen >= self.cfg["stale_minutes"] * 60
+        seen = self._seen(ts, states, wall)  # HA timestamps are wall clock
+        stale = seen is None or wall - seen >= self.cfg["stale_minutes"] * 60
         sp = self.st["setpoint"]
 
         # observed-state bookkeeping
@@ -356,8 +379,14 @@ class SpareHeater:
 
         mo = (states.get(self.cfg["motion_sensor"]) or {}) if self.cfg["motion_sensor"] else {}
         if mo.get("state") == "on":  # display only: never read by _decide
-            self.last_motion = now
-        reason, want = self._decide(now, temp, stale, is_on, sp, states)
+            self.last_motion = wall
+        if jumped:  # 0.8.5 (SA M1b): plug off now + 20 min cooldown, whatever else is going on
+            self.cooldown_until = max(self.cooldown_until, now + COOLDOWN_S)
+            self.notified.discard("clock_jump")
+            self._notify("clock_jump", "System clock jumped. Heater off, 20 min cooldown.")
+            reason, want = "clock_jump", False
+        else:
+            reason, want = self._decide(now, temp, stale, is_on, sp, states)
         self._save()  # latches / cooldown persisted before any switch write
         if want and not self.can_heat:
             sb = self.opts.get("spare_bathroom") if isinstance(self.opts.get("spare_bathroom"), dict) else {}
@@ -380,7 +409,7 @@ class SpareHeater:
         on = want
         self.last = {"reason": reason, "on": on, "temp": temp, "setpoint": sp, "mode": self.st["mode"],
                      "on_24h_min": round(self._on_seconds_24h(now) / 60), "latched": self.latched,
-                     "cooldown_until": self.cooldown_until or None, "ts": now,
+                     "cooldown_until": self.cooldown_until or None, "ts": wall,
                      "motion": mo.get("state") if mo else None, "last_motion": self.last_motion}
         self._low_alerts(now, temp)
         self._save()

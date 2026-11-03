@@ -1,3 +1,10 @@
+## 0.8.5 — 2026-11-03
+
+- Heater safety (SA M1b): every in-process heater duration (2 h max run, satisfied stop / 5 min min on-off, 8 h in 24 h lockout, 45 min no-rise, 20 min cooldown) now runs on `time.monotonic()`, anchored to the wall clock once at startup. A wall clock jump mid-run can no longer stretch or shorten any timer.
+- Clock-jump guard: every cycle, if the wall clock went backward by more than 60 s, or its step differs from the monotonic step by more than 60 s (either direction), the plug turns OFF, a 20 min cooldown starts (reason `clock_jump`) and a phone alert is sent.
+- Persisted `/data/heater.json` timestamps are still sanitized on load as in 0.8.4. Sensor staleness and the watchdog heartbeat still use wall time (they are compared with HA timestamps).
+- Version 0.8.5. Split logic and mode lock unchanged.
+
 ## 0.8.4 — 2026-11-03
 
 - Heater safety (SA R1): the safety state (no-rise / lockout / relay-fault latch, hard-cap latch, cooldown end, progress checkpoint, current run start, last off time, 24 h run history) is now persisted in `/data/heater.json` with an atomic write (tmp + fsync + `os.replace`) on every change and restored on load. A restart no longer re-arms a latched heater, cuts a cooldown short or forgets run time. Missing file = first run. Unreadable / corrupt file = fail safe: plug off and a 20 min cooldown; a latch is restored only if the file says so.
