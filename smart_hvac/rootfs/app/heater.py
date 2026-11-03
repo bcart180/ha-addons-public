@@ -38,8 +38,9 @@ MIN_ON_S = MIN_OFF_S = 300
 HARD_CAP = 80.0
 MAX_RUN_S, COOLDOWN_S = 2 * 3600, 20 * 60
 DAY_LIMIT_S, DAY_S = 8 * 3600, 24 * 3600
-STALE_MIN_DEFAULT, STALE_MIN_LO, STALE_MIN_HI = 75, 15, 180  # 0.8.2: Zooz ZSE11 reports hourly or on 1 F change
+STALE_MIN_DEFAULT, STALE_MIN_LO, STALE_MIN_HI = 75, 15, 120  # 0.8.2: Zooz ZSE11 reports hourly or on 1 F change
 STALE_S = STALE_MIN_DEFAULT * 60
+FUTURE_SKEW_S = 60  # timestamps further ahead than this are rejected
 NO_RISE_S, NO_RISE_F = 45 * 60, 1.0
 POWER_FAULT_W = 5.0
 BAD = ("unavailable", "unknown", "none", "")
@@ -65,6 +66,17 @@ def _ts(iso):
         return datetime.fromisoformat(str(iso).replace("Z", "+00:00")).timestamp()
     except ValueError:
         return None
+
+
+def _aware_ts(iso):
+    """Epoch seconds for a timezone-aware ISO timestamp; naive or unparsable -> None."""
+    if iso is None:
+        return None
+    try:
+        d = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return d.timestamp() if d.tzinfo is not None and d.utcoffset() is not None else None
 
 
 def config(opts):
@@ -246,7 +258,7 @@ class SpareHeater:
         is_on = sw.get("state") == "on"
         ts = states.get(self.cfg["temp_sensor"]) or {}
         temp = _num(ts.get("state")) if str(ts.get("state", "")).lower() not in BAD else None
-        seen = self._seen(ts, states)
+        seen = self._seen(ts, states, now)
         stale = seen is None or now - seen >= self.cfg["stale_minutes"] * 60
         sp = self.st["setpoint"]
 
@@ -297,16 +309,21 @@ class SpareHeater:
         self.publish()
         return self.last
 
-    def _seen(self, ts, states):
-        """0.8.2: newest of the temp entity's last_reported / last_updated and (optional) a last-seen sensor
-        whose state is an ISO timestamp (e.g. Z-Wave JS 'last seen'). None when nothing is known."""
-        cands = [_ts(ts.get("last_reported") or ""), _ts(ts.get("last_updated") or "")]
+    def _seen(self, ts, states, now):
+        """0.8.2: the temperature entity's own last_reported / last_updated is the authority. The optional
+        last-seen sensor can only TIGHTEN it (min of the two), never make a reading fresher. Timestamps must be
+        timezone-aware and not more than 60 s in the future; anything else is ignored. None = stale."""
+        own = [t for t in (_aware_ts(ts.get("last_reported")), _aware_ts(ts.get("last_updated")))
+               if t is not None and t <= now + FUTURE_SKEW_S]
+        if not own:
+            return None
+        seen = max(own)
         if self.cfg.get("last_seen_sensor"):
             ls = states.get(self.cfg["last_seen_sensor"]) or {}
-            if str(ls.get("state", "")).lower() not in BAD:
-                cands.append(_ts(ls.get("state")))
-        cands = [c for c in cands if c is not None]
-        return max(cands) if cands else None
+            t = _aware_ts(ls.get("state")) if str(ls.get("state", "")).lower() not in BAD else None
+            if t is not None and t <= now + FUTURE_SKEW_S:
+                seen = min(seen, t)
+        return seen
 
     def _decide(self, now, temp, stale, is_on, sp, states):
         """(reason, want_on). Safety checks first; each returns off."""

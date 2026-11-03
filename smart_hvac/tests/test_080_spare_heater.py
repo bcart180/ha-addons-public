@@ -264,22 +264,63 @@ def test_sensor_stale_minutes_option():
     assert ha.sw == "off" and h.last["reason"] == "sensor_unavailable"
 
 
-@pytest.mark.parametrize("raw,want", [(None, 75), (5, 15), (999, 180), ("x", 75), (90, 90)])
+@pytest.mark.parametrize("raw,want", [(None, 75), (5, 15), (999, 120), (180, 120), ("x", 75), (90, 90)])
 def test_stale_minutes_clamped(raw, want):
     assert H.config({"spare_bathroom": {"stale_minutes": raw}})["stale_minutes"] == want
 
 
-def test_last_seen_sensor_keeps_fresh():
-    """An old temp entity timestamp is fine when the Zooz last-seen sensor says the node checked in recently."""
-    LS = "sensor.fake_last_seen_555"
-    h, ha, c = mk(temp=60, last_seen_sensor=LS)
+LS = "sensor.fake_last_seen_555"
+
+
+def _with_ls(ha, value_fn):
     base = ha.get_states
-    ha.get_states = lambda: base() + [{"entity_id": LS, "state": iso(c.t - 60)}]
+    ha.get_states = lambda: base() + [{"entity_id": LS, "state": value_fn()}]
+
+
+def test_future_last_seen_cannot_freshen_old_reading():
+    h, ha, c = mk(temp=60, last_seen_sensor=LS)
+    h.tick()
+    assert ha.sw == "on"
+    ha.seen = c.t
+    _with_ls(ha, lambda: "2036-01-01T00:00:00+00:00")
+    run(h, c, 500 * 60, step=300)
+    assert ha.sw == "off" and h.last["reason"] == "sensor_unavailable"
+
+
+def test_fresh_last_seen_with_frozen_temp_is_stale():
+    h, ha, c = mk(temp=60, last_seen_sensor=LS)
     h.tick()
     ha.seen = c.t
-    run(h, c, 120 * 60)
-    assert h.last["reason"] != "sensor_unavailable"
-    ha.get_states = lambda: base() + [{"entity_id": LS, "state": "unavailable"}]
+    _with_ls(ha, lambda: iso(c.t - 30))
+    run(h, c, 500 * 60, step=300)
+    assert ha.sw == "off" and h.last["reason"] == "sensor_unavailable"
+
+
+def test_old_last_seen_tightens():
+    h, ha, c = mk(temp=60, last_seen_sensor=LS)
+    _with_ls(ha, lambda: iso(c.t - 200 * 60))  # temp entity fresh, node not seen in 200 min
+    h.tick()
+    assert ha.sw == "off" and h.last["reason"] == "sensor_unavailable"
+
+
+def test_naive_last_seen_ignored_temp_decides():
+    h, ha, c = mk(temp=60, last_seen_sensor=LS)
+    _with_ls(ha, lambda: "2036-01-01T00:00:00")  # naive -> ignored
+    h.tick()
+    assert ha.sw == "on"                          # fresh temp entity still rules
+    ha.seen = c.t
+    run(h, c, 500 * 60, step=300)
+    assert ha.sw == "off" and h.last["reason"] == "sensor_unavailable"
+
+
+def test_naive_or_future_temp_timestamp_is_stale():
+    h, ha, c = mk(temp=60)
+    base = ha.get_states
+    naive = "2026-11-03T09:00:00"
+    ha.get_states = lambda: [dict(x, last_reported=naive) if x["entity_id"] == TS else x for x in base()]
+    h.tick()
+    assert ha.sw == "off" and h.last["reason"] == "sensor_unavailable"
+    ha.get_states = lambda: [dict(x, last_reported=iso(c.t + 3600)) if x["entity_id"] == TS else x for x in base()]
     h.tick()
     assert ha.sw == "off" and h.last["reason"] == "sensor_unavailable"
 

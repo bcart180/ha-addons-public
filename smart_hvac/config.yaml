@@ -125,7 +125,7 @@ schema:
     door_sensor: str?
     notify_service: str?
     motion_sensor: str?
-    stale_minutes: int(15,180)?
+    stale_minutes: int(15,120)?
     last_seen_sensor: str?
     low_warn_f: float(50,70)?
     low_warn_min: int(1,120)?

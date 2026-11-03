@@ -171,7 +171,7 @@ spare_bathroom:
   door_sensor: binary_sensor.example_bath_door     # optional: pause while open
   notify_service: notify.mobile_app_example_phone  # optional: phone alerts (persistent notification always)
   motion_sensor: binary_sensor.example_bath_motion # optional: display only
-  stale_minutes: 75                                # 0.8.2: 15-180; minutes without a report before fail-off
+  stale_minutes: 75                                # 0.8.2: 15-120; minutes without a report before fail-off
   last_seen_sensor: sensor.example_node_last_seen  # 0.8.2 optional: Z-Wave "last seen" timestamp sensor
   low_warn_f: 62
   low_warn_min: 10
@@ -184,10 +184,11 @@ unexpectedly → forced off, power draw while off → relay fault, door open →
 Practice mode never turns the plug on. Since 0.8.1 the heater has its own gates: `spare_bathroom.enabled` (default `false`) and `spare_bathroom.dry_run` (default `true`), independent of the global ones. The plug turns ON only when global `enabled: true` + `dry_run: false` AND `spare_bathroom.enabled: true` + `spare_bathroom.dry_run: false` AND both entity ids are set.
 
 **Stale sensor (0.8.2).** A battery sensor such as the Zooz ZSE11 reports only on a 1°F change or once an hour,
-so the cutoff is `stale_minutes` (default 75, range 15–180) instead of a fixed 15 minutes. Freshness is the newest of
-the temperature entity's `last_reported` / `last_updated` and, if set, the `last_seen_sensor` state (an ISO
-timestamp; Z-Wave JS exposes one per node as a disabled-by-default "Last seen" sensor). If that sensor is
-unavailable it is ignored and the temperature entity's own timestamps decide.
+so the cutoff is `stale_minutes` (default 75, range 15–120) instead of a fixed 15 minutes. The temperature
+entity's own `last_reported` / `last_updated` decides the age. If `last_seen_sensor` is set (an ISO timestamp; Z-Wave
+JS exposes one per node as a disabled-by-default "Last seen" sensor), it can only make the check stricter: an old
+last-seen turns the heater off, a recent one never rescues an old reading. Timestamps without a time zone or more
+than 60 s in the future are ignored; a bad temperature timestamp counts as stale.
 
 **Card placement (0.8.2).** The heater card shows only on a `custom:smart-hvac-card` that asks for it, so
 several cards on one dashboard no longer each repeat it:
