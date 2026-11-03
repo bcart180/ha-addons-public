@@ -36,13 +36,21 @@ PHONE_RUN_RE = re.compile(r"\+?\d(?:" + _SEP + r"\d){6,}")
 # Callback detection stays strict (spoken numbers with plain separators).
 SPOKEN_RUN_RE = re.compile(r"\+?\d(?:[^\w]{0,3}\d|_{1,3}\d){6,}(?:\s*(?:x|ext\.?)\s*\d+)?", re.I)
 # Number-like tokens (digits mixed with O/o/I/l and punctuation only).
-_LOOKALIKE_TOKEN = re.compile(r"(?<![^\W\d_])[\dOoIl().\-+/]*\d[\dOoIl().\-+/]*(?![^\W\d_])")
+# Matched as maximal runs only (linear); token boundaries are resolved in
+# Python, see _fix_lookalikes. The old nested-star form was O(n^2) (ReDoS).
+_LOOKALIKE_CHARS = "0123456789OoIl().-+/"
+_LOOKALIKE_RUN = re.compile(r"[\dOoIl().\-+/]+")
+# Display text is capped before any masking regex runs (ReDoS guard). Every
+# caller truncates its output to <= 160 chars, so nothing past this is shown.
+MASK_MAX = 2000
+# Name / reason / urgency only need the start of the message.
+EXTRACT_MAX = 4000
 EXT_SPLIT_RE = re.compile(r"\s*(?:x|ext\.?)\s*\d+$", re.I)
 
 _NAME_PATTERNS = (
-    re.compile(r"\bmy name is\s+([A-Z][\w'’.-]*(?:\s+(?:[A-Z][\w'’.-]*|&|and|of)){0,4})"),
-    re.compile(r"\b(?:this is|it'?s|it is)\s+([A-Z][\w'’.-]*(?:\s+(?:[A-Z][\w'’.-]*|&|and|of)){0,4})(?=\s+(?:from|with|calling|at|here)\b|[,.!?]|$)"),
-    re.compile(r"\b([A-Z][\w'’.-]*(?:\s+[A-Z][\w'’.-]*){0,2})\s+(?:here|calling)\b"),
+    re.compile(r"\bmy name is\s+([A-Z][\w'’.-]{0,30}(?:\s+(?:[A-Z][\w'’.-]{0,30}|&|and|of)){0,4})"),
+    re.compile(r"\b(?:this is|it'?s|it is)\s+([A-Z][\w'’.-]{0,30}(?:\s+(?:[A-Z][\w'’.-]{0,30}|&|and|of)){0,4})(?=\s+(?:from|with|calling|at|here)\b|[,.!?]|$)"),
+    re.compile(r"\b([A-Z][\w'’.-]{0,30}(?:\s+[A-Z][\w'’.-]{0,30}){0,2})\s+(?:here|calling)\b"),
 )
 _NOT_NAMES = {
     "i", "hi", "hey", "hello", "yes", "yeah", "no", "ok", "okay", "just", "so", "um", "uh",
@@ -127,19 +135,44 @@ def mask_number(num: Any) -> str:
 
 def _fix_lookalikes(text: str) -> str:
     """'54O-555-O177' / 'l-555-0177': inside a number-like token, letter O/o
-    reads as 0 and I/l as 1. Tokens that also hold other letters are left."""
+    reads as 0 and I/l as 1. Tokens that also hold other letters are left.
+
+    A token is a span of number-like characters with a digit, not touching a
+    letter on either side (O/o/I/l count as letters at the edges). Resolved
+    per maximal run in linear time."""
+    table = str.maketrans("OoIl", "0011")
 
     def fix(m: re.Match) -> str:
-        tok = m.group(0)
-        if sum(ch.isdigit() for ch in tok) < 3:
-            return tok
-        return tok.translate(str.maketrans("OoIl", "0011"))
+        run, a, b, n = m.group(0), m.start(), m.end(), len(m.group(0))
+        # Leftmost start not touching a letter, longest end not touching one.
+        i = next((k for k in range(n) if not (text[a - 1].isalpha() if k == 0 and a > 0 else k > 0 and run[k - 1].isalpha())), n)
+        e = next((k for k in range(n, 0, -1) if not (text[b].isalpha() if k == n and b < len(text) else k < n and run[k].isalpha())), 0)
+        d = next((k for k in range(i, n) if run[k].isdigit()), n)
+        if d >= e:
+            return run
+        tok = run[i:e]
+        if sum(ch.isdigit() for ch in tok) >= 3:
+            tok = tok.translate(table)
+        return run[:i] + tok + run[e:]
 
-    return _LOOKALIKE_TOKEN.sub(fix, text)
+    return _LOOKALIKE_RUN.sub(fix, text)
+
+
+def _cap(text: str, limit: int) -> str:
+    """Cut to ``limit`` chars without leaving half a number at the cut: a
+    trailing partial digit run is dropped so it can never show unmasked."""
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    k = len(cut)
+    while k > 0 and limit - k < 64 and (cut[k - 1].isdigit() or not cut[k - 1].isalnum()):
+        k -= 1
+    return cut[:k].rstrip() + "…"
 
 
 def mask_phone_runs(text: Any) -> str:
-    s = re.sub(r"\s+", " ", strip_format(text))
+    raw = str(text or "")[: MASK_MAX * 4]  # bound strip_format work first
+    s = _cap(re.sub(r"\s+", " ", strip_format(raw)), MASK_MAX)
     s = _fix_lookalikes(s)
 
     def mask(m: re.Match) -> str:
@@ -305,7 +338,7 @@ def valid_callback(d: str) -> bool:
 
 def extract_summary(transcript: Any, caller: Any = "") -> dict:
     transcript = strip_format(transcript)
-    text = caller_text(transcript)
+    text = _cap(caller_text(transcript), EXTRACT_MAX)
     cd = digits(caller)
     if not text.strip():
         return {
