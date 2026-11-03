@@ -101,8 +101,8 @@ class SpareHeater:
         self.cfg = config(self.opts)
         self.configured = bool(self.cfg["heater_switch"] and self.cfg["temp_sensor"])
         self.st = {"mode": "heat", "setpoint": SP_DEFAULT}
-        self._load()
-        # runtime bookkeeping (in memory; a restart starts with the plug off, which is the safe state)
+        # runtime bookkeeping. 0.8.4 (SA R1): the safety fields are persisted in heater.json and restored on load,
+        # so a restart never re-arms a latched / cooling-down heater or forgets the 24 h run history.
         self.on_since = None        # when the plug was last seen/commanded on
         self.off_since = None       # when it was last turned off (min-off)
         self.cooldown_until = 0.0
@@ -116,30 +116,73 @@ class SpareHeater:
         self.crit_last = None       # last critical alert time
         self.last_motion = None     # display only
         self.last = {"reason": "not_configured" if not self.configured else "starting", "on": False}
+        self._written = None
+        self._load()
 
-    # ---------- persistence (mode + setpoint only) ----------
+    # ---------- persistence (0.8.4: mode, setpoint + safety state) ----------
+    def _state(self):
+        rr = self.rise_ref
+        return {"mode": self.st["mode"], "setpoint": self.st["setpoint"], "latched": self.latched,
+                "cap_latched": self.cap_latched, "cooldown_until": self.cooldown_until,
+                "rise_ref": list(rr) if rr else None, "on_since": self.on_since, "off_since": self.off_since,
+                "runs": [list(x) for x in self.runs]}
+
     def _load(self):
+        """Restore persisted state. Missing file = first run (defaults). Unreadable / corrupt file = fail safe:
+        plug stays off (startup safe_off) and a 20 min cooldown starts. Bad individual fields are dropped."""
         if not self.path or not os.path.exists(self.path):
             return
         try:
             with open(self.path) as f:
                 d = json.load(f)
-            if d.get("mode") in ("heat", "off"):
-                self.st["mode"] = d["mode"]
-            sp = _num(d.get("setpoint"))
-            if sp is not None:
-                self.st["setpoint"] = min(SP_MAX, max(SP_MIN, sp))
-        except (OSError, ValueError, AttributeError):
-            pass
+            if not isinstance(d, dict):
+                raise ValueError("not an object")
+        except (OSError, ValueError, UnicodeDecodeError):
+            self.cooldown_until = self.clock() + COOLDOWN_S
+            self.last = dict(self.last, reason="state_unreadable")
+            log.warning("spare bathroom: heater state unreadable; 20 min cooldown")
+            return
+        if d.get("mode") in ("heat", "off"):
+            self.st["mode"] = d["mode"]
+        sp = _num(d.get("setpoint"))
+        if sp is not None and not isinstance(d.get("setpoint"), bool):
+            self.st["setpoint"] = min(SP_MAX, max(SP_MIN, sp))
+        if d.get("latched") in ("lockout", "no_rise", "relay_fault"):
+            self.latched = d["latched"]
+        self.cap_latched = d.get("cap_latched") is True
+        cu = _num(d.get("cooldown_until"))
+        if cu is not None:
+            self.cooldown_until = cu
+        rr = d.get("rise_ref")
+        if isinstance(rr, list) and len(rr) == 2 and _num(rr[0]) is not None:
+            self.rise_ref = (_num(rr[0]), _num(rr[1]))
+        for k in ("on_since", "off_since"):
+            v = _num(d.get(k))
+            if v is not None:
+                setattr(self, k, v)
+        runs = d.get("runs")
+        if isinstance(runs, list):
+            self.runs = [(_num(x[0]), _num(x[1])) for x in runs if isinstance(x, list) and len(x) == 2
+                         and _num(x[0]) is not None and _num(x[1]) is not None]
+        self._written = self._state()
 
     def _save(self):
+        """Atomic write (tmp + fsync + os.replace) whenever the persisted state changed."""
         if not self.path:
             return
+        cur = self._state()
+        if cur == self._written:
+            return
+        tmp = self.path + ".tmp"
         try:
-            with open(self.path, "w") as f:
-                json.dump(self.st, f)
-        except OSError:
-            pass
+            with open(tmp, "w") as f:
+                json.dump(cur, f)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, self.path)
+            self._written = cur
+        except OSError as e:
+            log.warning("heater state save failed: %s", type(e).__name__)
 
     @property
     def can_heat(self):
@@ -221,6 +264,7 @@ class SpareHeater:
         finally:
             self._end_run(self.clock())
             self.last = dict(self.last, on=False, reason=why)
+            self._save()
 
     def _end_run(self, now):
         if self.on_since is not None:
@@ -285,6 +329,7 @@ class SpareHeater:
         if mo.get("state") == "on":  # display only: never read by _decide
             self.last_motion = now
         reason, want = self._decide(now, temp, stale, is_on, sp, states)
+        self._save()  # latches / cooldown persisted before any switch write
         if want and not self.can_heat:
             sb = self.opts.get("spare_bathroom") if isinstance(self.opts.get("spare_bathroom"), dict) else {}
             if not (self.opts.get("enabled") and (sb or {}).get("enabled") is True):
@@ -306,6 +351,7 @@ class SpareHeater:
                      "cooldown_until": self.cooldown_until or None, "ts": now,
                      "motion": mo.get("state") if mo else None, "last_motion": self.last_motion}
         self._low_alerts(now, temp)
+        self._save()
         self.publish()
         return self.last
 
@@ -355,10 +401,12 @@ class SpareHeater:
             return "cooldown", False
         if now < self.cooldown_until:
             return "cooldown", False
-        # 0.8.2 (SA M2): progress checkpoint. Each further >= 1 F rise (or reaching the setpoint) restarts the
-        # 45 min window, so a reading that rises once and then sticks still trips no_rise 45 min after the last rise.
+        # 0.8.3 (SA M2): progress checkpoint. Each further >= 1 F rise restarts the 45 min window, so a reading
+        # that rises once and then sticks still trips no_rise 45 min after the last rise.
+        # 0.8.4 (SA L1): reaching the setpoint resets the checkpoint ONCE (on crossing), it does not exempt the
+        # run: a reading frozen at / above the setpoint while on still trips no_rise after 45 min.
         if is_on and self.rise_ref and self.rise_ref[1] is not None and temp is not None and \
-                (temp >= self.rise_ref[1] + NO_RISE_F or temp >= sp):
+                (temp >= self.rise_ref[1] + NO_RISE_F or (temp >= sp > self.rise_ref[1])):
             self.rise_ref = (now, temp)
         if is_on and self.rise_ref and now - self.rise_ref[0] >= NO_RISE_S and \
                 (self.rise_ref[1] is None or temp < self.rise_ref[1] + NO_RISE_F):

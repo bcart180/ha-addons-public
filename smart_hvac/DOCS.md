@@ -179,7 +179,7 @@ spare_bathroom:
   low_crit_repeat_min: 30
 ```
 Safety (fixed in code): 80°F cap (latched until below setpoint), 2 h max run + 20 min cooldown, 8 h / 24 h lockout
-(reset with Off then Heat), sensor unavailable or stale (`stale_minutes`, default 75) → off, no further 1°F rise (or setpoint reached) within 45 min of the last 1°F rise → off (0.8.3), plug on
+(reset with Off then Heat), sensor unavailable or stale (`stale_minutes`, default 75) → off, no further 1°F rise (or setpoint reached) within 45 min of the last checkpoint → off (0.8.3; reaching the setpoint resets the checkpoint once but does not exempt the run, 0.8.4). Latches, cooldown, checkpoint and 24 h run history persist across restarts in `/data/heater.json` (0.8.4; corrupt file → off + 20 min cooldown), plug on
 unexpectedly → forced off, power draw while off → relay fault, door open → pause, plug off at start/stop/error.
 Practice mode never turns the plug on. Since 0.8.1 the heater has its own gates: `spare_bathroom.enabled` (default `false`) and `spare_bathroom.dry_run` (default `true`), independent of the global ones. The plug turns ON only when global `enabled: true` + `dry_run: false` AND `spare_bathroom.enabled: true` + `spare_bathroom.dry_run: false` AND both entity ids are set.
 

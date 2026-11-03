@@ -1,3 +1,9 @@
+## 0.8.4 — 2026-11-03
+
+- Heater safety (SA R1): the safety state (no-rise / lockout / relay-fault latch, hard-cap latch, cooldown end, progress checkpoint, current run start, last off time, 24 h run history) is now persisted in `/data/heater.json` with an atomic write (tmp + fsync + `os.replace`) on every change and restored on load. A restart no longer re-arms a latched heater, cuts a cooldown short or forgets run time. Missing file = first run. Unreadable / corrupt file = fail safe: plug off and a 20 min cooldown; a latch is restored only if the file says so.
+- Heater safety (SA L1): reaching the setpoint resets the 45 min progress checkpoint once, on crossing, and no longer exempts the run. A reading frozen at or above the setpoint while the plug is on trips `no_rise` after 45 min instead of running a blind 2 h.
+- Version 0.8.4. Split logic and mode lock unchanged.
+
 ## 0.8.3 — 2026-11-03
 
 - Heater safety (SA M2): the no-rise check now uses a progress checkpoint. While the plug is on, the room must rise a further 1°F (from the last checkpoint) or reach the setpoint every 45 min; each 1°F rise resets the checkpoint. A reading that rises once and then sticks (HA reports a repeated identical value as fresh) now trips `no_rise` 45 min after the last rise: plug off, alert, latched (reset with Off then Heat), same as before.
