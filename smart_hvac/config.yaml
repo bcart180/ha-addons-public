@@ -1,5 +1,5 @@
 name: Smart HVAC
-version: "0.8.1"
+version: "0.8.2"
 slug: smart_hvac
 description: Smart thermostat for multi-zone mini-split systems. All heads share one outdoor unit, so they are always kept in the same heat/cool mode. Presence-, weather- and sun-aware, plus radiant floor (Ingress panel)
 url: https://github.com/bcart180/ha-addons-public/tree/main/smart_hvac
@@ -58,6 +58,9 @@ options:
     door_sensor: ""
     notify_service: ""
     motion_sensor: ""
+    # 0.8.2: minutes without a sensor report before the heater fails off. Optional last_seen_sensor (Z-Wave last seen).
+    stale_minutes: 75
+    last_seen_sensor: ""
     low_warn_f: 62
     low_warn_min: 10
     low_crit_f: 58
@@ -122,6 +125,8 @@ schema:
     door_sensor: str?
     notify_service: str?
     motion_sensor: str?
+    stale_minutes: int(15,120)?
+    last_seen_sensor: str?
     low_warn_f: float(50,70)?
     low_warn_min: int(1,120)?
     low_crit_f: float(45,65)?

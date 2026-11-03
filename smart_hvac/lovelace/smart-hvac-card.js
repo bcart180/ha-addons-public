@@ -14,6 +14,10 @@
  *   weather: weather.home
  *   hours: 24
  *   layout: glance    # 0.6.5: one compact card (rows + one shared split mode); default = full cards
+ *   show_heater: true # 0.8.2: also show the spare bathroom heater card here (default false: only where set)
+ *
+ *   type: custom:smart-hvac-card
+ *   layout: heater    # 0.8.2: ONLY the spare bathroom heater card (no zones needed)
  */
 export const ADDON_SLUG = "47b3c4e5_smart_hvac";
 export const RADIANT_CAP = 85;
@@ -78,6 +82,12 @@ const HEATER_REASON = { heating: "Heating", idle: "Holding", satisfied: "Holding
   no_rise: "Off: heater not warming the room", relay_fault: "Relay fault", sensor_unavailable: "Off: sensor unavailable",
   door_open: "Paused: door open", dry_run: "Practice mode (plug stays off)", app_off: "App off", exception: "Off: error",
   startup: "Starting", shutdown: "Stopped", not_configured: "Not set up" };
+/** 0.8.2: the heater card renders only on a card that asks for it (show_heater: true or layout: heater),
+ * so several smart-hvac-card instances on one dashboard no longer each repeat it. */
+export function showHeater(cfg) {
+  return !!cfg && (cfg.layout === "heater" || cfg.show_heater === true);
+}
+
 export function heaterStatus(h) {
   const r = h?.last?.reason;
   return HEATER_REASON[r] || (r ? String(r) : "--");
@@ -330,7 +340,7 @@ const GCSS = `.gl{color:#e6edf3;display:flex;flex-direction:column;gap:6px}.gr{d
 const Base = typeof HTMLElement !== "undefined" ? HTMLElement : class {};
 class SmartHvacCard extends Base {
   setConfig(config) {
-    const zones = (config && config.zones) || DEFAULT_ZONES;
+    const zones = config && config.layout === "heater" ? [] : (config && config.zones) || DEFAULT_ZONES;
     for (const z of zones) {
       if (!z.entity || String(z.entity).startsWith("climate.p3arl2_")) throw new Error("smart-hvac-card: zone entity not allowed");
       if (!/^[a-z0-9_]+$/.test(String(z.zone || ""))) throw new Error("smart-hvac-card: each zone needs the add-on zone name");
@@ -364,7 +374,7 @@ class SmartHvacCard extends Base {
 
   async _maybeHistory() {
     const now = Date.now() / 1000;
-    if (!this._hass?.callWS || now - this._histAt < 300 || this._cfg.layout === "glance") return;
+    if (!this._hass?.callWS || now - this._histAt < 300 || this._cfg.layout === "glance" || this._cfg.layout === "heater") return;
     this._histAt = now;
     const start = now - this._cfg.hours * 3600;
     const ents = [...new Set(this._cfg.zones.flatMap((z) => [z.entity, z.indoor]).concat(this._cfg.weather).filter(Boolean))];
@@ -446,7 +456,7 @@ class SmartHvacCard extends Base {
 
   _heaterCard(tz) {
     const hs = this._api?.heater;
-    if (!hs || !hs.configured) return "";
+    if (!showHeater(this._cfg) || !hs || !hs.configured) return "";
     const ro = !canWrite(this._hass), L = hs.last || {}, off = hs.mode === "off";
     const sp = this._hpend ?? hs.setpoint, now = L.temp;
     const mot = hs.last_motion ? `Motion ${fmtClock(hs.last_motion, tz)}` : hs.motion_sensor ? "No motion seen" : "";
@@ -501,6 +511,12 @@ class SmartHvacCard extends Base {
 
   _render() {
     if (!this._hass || !this._cfg || !this.shadowRoot) return;
+    if (this._cfg.layout === "heater") {
+      const banner = !canWrite(this._hass) ? `<div class="ro">View only — admins can change it.</div>` : this._msg ? `<div class="ro">${esc(this._msg)}</div>` : "";
+      this.shadowRoot.innerHTML = `<style>${CSS}</style>${banner}<div class="wrap">${this._heaterCard(this._hass.config?.time_zone)}</div>`;
+      this._bindHeater();
+      return;
+    }
     if (this._cfg.layout === "glance") {
       this.shadowRoot.innerHTML = this._renderGlance(this._vac(), this._hass.config?.time_zone);
       this.shadowRoot.querySelectorAll("button[data-shared]").forEach((b) => b.addEventListener("click", () => this._shared(b.dataset.shared)));

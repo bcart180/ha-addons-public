@@ -241,3 +241,41 @@ test("0.8.0 heater: own endpoint, 55-75 clamp, heat/off only, never in the split
   assert.equal(heaterStatus({ last: { reason: "lockout" } }), "Locked out: 8 h/day limit");
   assert.equal(heaterStatus({ last: { reason: "dry_run" } }), "Practice mode (plug stays off)");
 });
+
+import { showHeater } from "../smart-hvac-card.js";
+
+test("0.8.2 heater card: only where show_heater: true or layout: heater (no duplicate per instance)", () => {
+  assert.equal(showHeater({}), false);
+  assert.equal(showHeater({ layout: "glance" }), false);
+  assert.equal(showHeater({ show_heater: "yes" }), false);
+  assert.equal(showHeater({ show_heater: true }), true);
+  assert.equal(showHeater({ layout: "glance", show_heater: true }), true);
+  assert.equal(showHeater({ layout: "heater" }), true);
+  assert.match(SRC, /if \(!showHeater\(this\._cfg\) \|\| !hs \|\| !hs\.configured\) return "";/);
+});
+
+test("0.8.2 render: heater card once, only on the card that asks for it", async () => {
+  let Cls;
+  globalThis.window = globalThis.window || {};
+  const prev = globalThis.customElements;
+  globalThis.customElements = { get: () => undefined, define: (_n, c) => { Cls = c; } };
+  await import("../smart-hvac-card.js?render082");
+  globalThis.customElements = prev;
+  const api = { zones: [], heater: { configured: true, label: "Kitten room 555", mode: "heat", setpoint: 68, last: { reason: "dry_run", temp: 66 } } };
+  const mk = (cfg) => {
+    const el = new Cls();
+    el.attachShadow = () => { el.shadowRoot = { innerHTML: "", querySelectorAll: () => [] }; };
+    el.setConfig(cfg);
+    el._api = api; el._hass = { user: { is_admin: true }, states: {}, config: {} };
+    el._render();
+    return el.shadowRoot.innerHTML;
+  };
+  const count = (h) => (h.match(/Kitten room 555/g) || []).length;
+  assert.equal(count(mk({})), 0);
+  assert.equal(count(mk({ layout: "glance" })), 0);
+  assert.equal(count(mk({ layout: "glance", show_heater: true })), 1);
+  assert.equal(count(mk({ show_heater: true })), 1);
+  const only = mk({ layout: "heater" });
+  assert.equal(count(only), 1);
+  assert.doesNotMatch(only, /Room A|data-preset|data-shared/);
+});

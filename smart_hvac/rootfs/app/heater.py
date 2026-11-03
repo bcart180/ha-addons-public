@@ -9,7 +9,7 @@ Safety (all enforced here, every tick):
   * hard cap: off at >= 80 F, latched until the room is below the setpoint
   * 2 h max continuous run, then a 20 min cooldown
   * > 8 h on in the last 24 h: lockout + notify (cleared by turning the zone off and back to heat)
-  * temp sensor unavailable / unknown / non-numeric / stale 15 min: off now + notify
+  * temp sensor unavailable / unknown / non-numeric / stale (spare_bathroom.stale_minutes, default 75): off now + notify
   * no 1 F rise after 45 min of heating: off + notify (latched like the lockout)
   * plug on while it should be off: forced off + notify; power draw while off: relay fault + notify
   * door / window open (optional sensor): paused (off)
@@ -38,13 +38,16 @@ MIN_ON_S = MIN_OFF_S = 300
 HARD_CAP = 80.0
 MAX_RUN_S, COOLDOWN_S = 2 * 3600, 20 * 60
 DAY_LIMIT_S, DAY_S = 8 * 3600, 24 * 3600
-STALE_S = 15 * 60
+STALE_MIN_DEFAULT, STALE_MIN_LO, STALE_MIN_HI = 75, 15, 120  # 0.8.2: Zooz ZSE11 reports hourly or on 1 F change
+STALE_S = STALE_MIN_DEFAULT * 60
+FUTURE_SKEW_S = 60  # timestamps further ahead than this are rejected
 NO_RISE_S, NO_RISE_F = 45 * 60, 1.0
 POWER_FAULT_W = 5.0
 BAD = ("unavailable", "unknown", "none", "")
 RX = {"heater_switch": r"^switch\.[a-z0-9_]+$", "temp_sensor": r"^sensor\.[a-z0-9_]+$",
       "power_sensor": r"^sensor\.[a-z0-9_]+$", "door_sensor": r"^binary_sensor\.[a-z0-9_]+$",
-      "notify_service": r"^notify\.[a-z0-9_]+$", "motion_sensor": r"^binary_sensor\.[a-z0-9_]+$"}
+      "notify_service": r"^notify\.[a-z0-9_]+$", "motion_sensor": r"^binary_sensor\.[a-z0-9_]+$",
+      "last_seen_sensor": r"^sensor\.[a-z0-9_]+$"}
 # Low-temp alerts (kitten room). Option keys and defaults; values are clamped to these ranges.
 LOW = {"low_warn_f": (62.0, 50.0, 70.0), "low_warn_min": (10, 1, 120),
        "low_crit_f": (58.0, 45.0, 65.0), "low_crit_repeat_min": (30, 5, 240)}
@@ -65,6 +68,17 @@ def _ts(iso):
         return None
 
 
+def _aware_ts(iso):
+    """Epoch seconds for a timezone-aware ISO timestamp; naive or unparsable -> None."""
+    if iso is None:
+        return None
+    try:
+        d = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return d.timestamp() if d.tzinfo is not None and d.utcoffset() is not None else None
+
+
 def config(opts):
     """Valid entity ids from opts['spare_bathroom'] (anything else is treated as unset)."""
     raw = (opts or {}).get("spare_bathroom") or {}
@@ -76,6 +90,8 @@ def config(opts):
     for k, (d, lo, hi) in LOW.items():
         v = _num(raw.get(k))
         out[k] = d if v is None else min(hi, max(lo, v))
+    v = _num(raw.get("stale_minutes"))
+    out["stale_minutes"] = STALE_MIN_DEFAULT if v is None else min(STALE_MIN_HI, max(STALE_MIN_LO, v))
     return out
 
 
@@ -242,8 +258,8 @@ class SpareHeater:
         is_on = sw.get("state") == "on"
         ts = states.get(self.cfg["temp_sensor"]) or {}
         temp = _num(ts.get("state")) if str(ts.get("state", "")).lower() not in BAD else None
-        seen = _ts(ts.get("last_reported") or ts.get("last_updated") or "")
-        stale = seen is None or now - seen >= STALE_S
+        seen = self._seen(ts, states, now)
+        stale = seen is None or now - seen >= self.cfg["stale_minutes"] * 60
         sp = self.st["setpoint"]
 
         # observed-state bookkeeping
@@ -292,6 +308,22 @@ class SpareHeater:
         self._low_alerts(now, temp)
         self.publish()
         return self.last
+
+    def _seen(self, ts, states, now):
+        """0.8.2: the temperature entity's own last_reported / last_updated is the authority. The optional
+        last-seen sensor can only TIGHTEN it (min of the two), never make a reading fresher. Timestamps must be
+        timezone-aware and not more than 60 s in the future; anything else is ignored. None = stale."""
+        own = [t for t in (_aware_ts(ts.get("last_reported")), _aware_ts(ts.get("last_updated")))
+               if t is not None and t <= now + FUTURE_SKEW_S]
+        if not own:
+            return None
+        seen = max(own)
+        if self.cfg.get("last_seen_sensor"):
+            ls = states.get(self.cfg["last_seen_sensor"]) or {}
+            t = _aware_ts(ls.get("state")) if str(ls.get("state", "")).lower() not in BAD else None
+            if t is not None and t <= now + FUTURE_SKEW_S:
+                seen = min(seen, t)
+        return seen
 
     def _decide(self, now, temp, stale, is_on, sp, states):
         """(reason, want_on). Safety checks first; each returns off."""

@@ -1,3 +1,9 @@
+## 0.8.2 — 2026-11-03
+
+- Heater: new `spare_bathroom.stale_minutes` (default 75, schema 15–120) replaces the fixed 15 min stale cutoff. The Zooz ZSE11 reports only hourly or on a 1°F change, so 15 min failed the heater off between normal reports. Freshness = the temp entity's own `last_reported` / `last_updated` (authority). The optional `spare_bathroom.last_seen_sensor` (ISO timestamp state, e.g. Z-Wave JS "Last seen") can only tighten it, never make a reading fresher. Timestamps must be timezone-aware and no more than 60 s in the future; naive, future or unavailable values are ignored (a bad temp timestamp = stale = off). All other safety items unchanged.
+- Card: the spare bathroom heater card no longer renders inside every `custom:smart-hvac-card`. It shows only with `show_heater: true` (default false) or the new `layout: heater` (heater card only, no zones). Existing configs keep working; add one of those to the card that should show the heater.
+- Version 0.8.2. Split logic and mode lock unchanged.
+
 ## 0.8.1 — 2026-11-03
 
 - Fix: a failed `set_temperature` write no longer aborts the whole control cycle. It is wrapped like the mode write: the zone is marked `setpoint_write_failed`, the other zones finish, and state is saved. Mode-lock / split opposite-mode logic is unchanged.
@@ -72,7 +78,7 @@
 - Presence departure debounce (`away_delay_min`, new option, 0-120, **0 by default** = 0.6.1 behaviour, no state kept). When set (suggested 15): arriving home counts at once; the house only counts as away after every readable phone has been away that long without a break. A tracker that is `unavailable` is ignored (as before), and if no phone is readable the app still holds. Evidence: person_b's iPhone (device_tracker.person_b_phone) flipped unavailable / not_home every few seconds on 28 Oct around 1 AM. Occupants stay person_a + person_b via `presence_entities`; another phone (e.g. person_c's, not linked yet) is just one more list entry.
 
 ## 0.6.1
-- Learned warm-up (`learned_preheat`, new option, **off by default**; off = byte-identical to 0.6.0, proven by the defrost golden test). When on, each split zone records its own completed recovery runs (unit actively heating or cooling toward a setpoint at least 1°F away, finished within 0.5°F, at least 15 min and 1°F of change) as °F per hour against the outdoor temp at the start, keeping the last 20 per mode. The pre-wake lead becomes gap ÷ learned rate (+10% and 5 min margin), clamped to 15-180 min, with a linear fit on outdoor temp (never extrapolated more than 5°F past what was seen). Fewer than 3 runs = the old fixed 45 min. The radiant floor is not included. Evidence: 31 Oct at 53°F outside, the fixed 45 min lead started at 5:45 AM and the living room reached 71 only around 8:30 AM.
+- Learned warm-up (`learned_preheat`, new option, **off by default**; off = byte-identical to 0.6.0, proven by the defrost golden test). When on, each split zone records its own completed recovery runs (unit actively heating or cooling toward a setpoint at least 1°F away, finished within 0.5°F, at least 15 min and 1°F of change) as °F per hour against the outdoor temp at the start, keeping the last 20 per mode. The pre-wake lead becomes gap ÷ learned rate (+10% and 5 min margin), clamped to 15-120 min, with a linear fit on outdoor temp (never extrapolated more than 5°F past what was seen). Fewer than 3 runs = the old fixed 45 min. The radiant floor is not included. Evidence: 31 Oct at 53°F outside, the fixed 45 min lead started at 5:45 AM and the living room reached 71 only around 8:30 AM.
 - `/api/state` zone results gain `preheat_lead_min` when the option is on. A wrong-shape `warmup` state entry is reset; removed zones are pruned.
 
 ## 0.6.0
