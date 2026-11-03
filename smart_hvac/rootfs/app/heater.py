@@ -10,7 +10,7 @@ Safety (all enforced here, every tick):
   * 2 h max continuous run, then a 20 min cooldown
   * > 8 h on in the last 24 h: lockout + notify (cleared by turning the zone off and back to heat)
   * temp sensor unavailable / unknown / non-numeric / stale (spare_bathroom.stale_minutes, default 75): off now + notify
-  * no 1 F rise after 45 min of heating: off + notify (latched like the lockout)
+  * no further 1 F rise (or setpoint reached) within 45 min of the last checkpoint while on: off + notify (latched)
   * plug on while it should be off: forced off + notify; power draw while off: relay fault + notify
   * door / window open (optional sensor): paused (off)
   * off at startup, shutdown and on any exception
@@ -109,7 +109,7 @@ class SpareHeater:
         self.cap_latched = False
         self.latched = None         # "lockout" | "no_rise" | "relay_fault": off until mode off -> heat
         self.runs = []              # [(start, end)] on-intervals, pruned to 24 h
-        self.rise_ref = None        # (ts, temp) when this heating run started
+        self.rise_ref = None        # (ts, temp) last progress checkpoint (run start, then each 1 F rise)
         self.commanded = False      # what we last asked for
         self.notified = set()
         self.low_since = None       # first tick below low_warn_f
@@ -355,6 +355,11 @@ class SpareHeater:
             return "cooldown", False
         if now < self.cooldown_until:
             return "cooldown", False
+        # 0.8.2 (SA M2): progress checkpoint. Each further >= 1 F rise (or reaching the setpoint) restarts the
+        # 45 min window, so a reading that rises once and then sticks still trips no_rise 45 min after the last rise.
+        if is_on and self.rise_ref and self.rise_ref[1] is not None and temp is not None and \
+                (temp >= self.rise_ref[1] + NO_RISE_F or temp >= sp):
+            self.rise_ref = (now, temp)
         if is_on and self.rise_ref and now - self.rise_ref[0] >= NO_RISE_S and \
                 (self.rise_ref[1] is None or temp < self.rise_ref[1] + NO_RISE_F):
             self.latched = "no_rise"

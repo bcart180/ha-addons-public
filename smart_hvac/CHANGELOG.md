@@ -1,3 +1,7 @@
+## 0.8.3 — 2026-11-03
+
+- Heater safety (SA M2): the no-rise check now uses a progress checkpoint. While the plug is on, the room must rise a further 1°F (from the last checkpoint) or reach the setpoint every 45 min; each 1°F rise resets the checkpoint. A reading that rises once and then sticks (HA reports a repeated identical value as fresh) now trips `no_rise` 45 min after the last rise: plug off, alert, latched (reset with Off then Heat), same as before.
+
 ## 0.8.2 — 2026-11-03
 
 - Heater: new `spare_bathroom.stale_minutes` (default 75, schema 15–120) replaces the fixed 15 min stale cutoff. The Zooz ZSE11 reports only hourly or on a 1°F change, so 15 min failed the heater off between normal reports. Freshness = the temp entity's own `last_reported` / `last_updated` (authority). The optional `spare_bathroom.last_seen_sensor` (ISO timestamp state, e.g. Z-Wave JS "Last seen") can only tighten it, never make a reading fresher. Timestamps must be timezone-aware and no more than 60 s in the future; naive, future or unavailable values are ignored (a bad temp timestamp = stale = off). All other safety items unchanged.
