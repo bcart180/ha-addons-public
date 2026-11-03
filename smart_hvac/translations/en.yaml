@@ -8,4 +8,5 @@ configuration:
   sleep_coast_max_min: {name: Sleep coast, description: "0 (default) = sleep target starts at sleep_start. Up to this many minutes earlier, so the room has drifted down to the sleep target by bedtime (learned per room)."}
   forecast_anticipation: {name: Forecast, description: "Off (default) = current outdoor temp only. On = reads the hourly forecast (read-only) to blend the next 6 h, guard the season with the 12 h high, and size the learned warm-up for the temperature at wake time."}
   zones: {name: Zones}
+  spare_bathroom: {name: Spare bathroom heater, description: "heater_switch (switch.*) + temp_sensor (sensor.*) turn it on; power_sensor, door_sensor (binary_sensor.*) and notify_service (notify.*) are optional. Blank = disabled. Never linked to the mini splits."}
   profiles: {name: Profiles}

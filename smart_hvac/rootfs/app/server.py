@@ -9,10 +9,13 @@ from aiohttp import web
 
 import core
 from engine import Engine
+from heater import SpareHeater
 from ha_client import HAClient
 
 OPTIONS = os.environ.get("SH_OPTIONS", "/data/options.json")
 STATE = os.environ.get("SH_STATE", "/data/state.json")
+HEATER_STATE = os.environ.get("SH_HEATER_STATE", "/data/heater.json")
+HEATER_TICK_S = 30
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 INGRESS_IP = "172.30.32.2"
 log = logging.getLogger("smart_hvac")
@@ -37,8 +40,10 @@ async def ingress_only(request, handler):
 PRESETS = {"home": "home", "sleep": "sleep", "away": "away", "eco": "auto"}
 
 
-def make_app(engine, interval=300):
+def make_app(engine, interval=300, heater=None, heater_tick=HEATER_TICK_S):
     app = web.Application(middlewares=[ingress_only])
+    if heater is not None:
+        engine.heater = heater
     lock = asyncio.Lock()
 
     async def run_once():
@@ -328,8 +333,54 @@ def make_app(engine, interval=300):
     app.router.add_post("/api/zone/{zone}/hold", api_hold)
     app.router.add_post("/api/zone/{zone}/resume", api_resume)
     app.router.add_get("/api/zone/{zone}/history", api_history)
+    async def heater_loop(_app):
+        """0.8.0 spare bathroom heater: own 30 s loop, independent of the split cycle. Plug off at start and stop."""
+        if heater is None:
+            yield
+            return
+        run = asyncio.get_running_loop().run_in_executor
+        try:
+            await run(None, heater.safe_off, "startup")
+        except Exception as e:
+            log.warning("heater startup off failed: %s", type(e).__name__)
+
+        async def _t():
+            while True:
+                await run(None, heater.tick)
+                await asyncio.sleep(heater_tick)
+        task = asyncio.create_task(_t())
+        yield
+        task.cancel()
+        try:
+            await run(None, heater.safe_off, "shutdown")
+        except Exception as e:
+            log.warning("heater shutdown off failed: %s", type(e).__name__)
+
+    async def api_heater(r):
+        if heater is None or r.match_info["zone"] != "spare_bathroom" or not heater.configured:
+            return web.json_response({"error": "no zone"}, status=404)
+        body = await read_json(r)
+        if body is None:
+            return web.json_response({"error": "bad request"}, status=400)
+        try:
+            if r.match_info["what"] == "mode":
+                heater.set_mode(body.get("hvac_mode"))
+            elif r.match_info["what"] == "setpoint":
+                t = body.get("temperature")
+                if isinstance(t, bool):
+                    raise ValueError
+                heater.set_setpoint(t)
+            else:
+                return web.json_response({"error": "bad request"}, status=400)
+        except ValueError:
+            return web.json_response({"error": "bad value"}, status=400)
+        await asyncio.get_running_loop().run_in_executor(None, heater.tick)
+        return web.json_response(engine.snapshot())
+
     app.router.add_get("/thermostat", thermostat)
+    app.router.add_post("/api/heater/{zone}/{what}", api_heater)
     app.cleanup_ctx.append(loop)
+    app.cleanup_ctx.append(heater_loop)
     return app
 
 
@@ -352,7 +403,10 @@ def main():
     eng = Engine(opts, HAClient(), STATE)
     log.info("Smart HVAC start: enabled=%s dry_run=%s zones=%d", eng.enabled, eng.dry_run,
              len(opts.get("zones", [])))
-    web.run_app(make_app(eng, int(opts.get("interval_s", 300))), host="0.0.0.0", port=8099)
+    ha = eng.ha
+    heater = SpareHeater(opts, ha, HEATER_STATE)
+    log.info("Spare bathroom heater: %s", "configured" if heater.configured else "not configured (disabled)")
+    web.run_app(make_app(eng, int(opts.get("interval_s", 300)), heater=heater), host="0.0.0.0", port=8099)
 
 
 if __name__ == "__main__":

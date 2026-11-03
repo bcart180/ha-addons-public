@@ -156,3 +156,58 @@ type: custom:smart-hvac-card
 layout: glance
 ```
 One row per room (now, -/+ target, why). The Heat/Cool/Off control sets each mini split in turn, one request after another; the add-on turns a split running the other direction off first, so the pair (one outdoor unit) is never heat and cool at once. Changes are holds that revert to automatic after `override_hours`; tap Auto to resume now.
+
+## Spare bathroom heater (0.8.0)
+Kitten room: a smart plug drives a plain space heater from a temperature sensor. Shown as its own card and as
+`climate.spare_bathroom` (heat / off; a mirror state the add-on publishes). It is never linked to the mini splits
+and has no presence / away / eco logic: it holds the setpoint (68°F default, 55–75°F from the card) all day.
+
+Options (Configuration → `spare_bathroom`; blank = zone disabled):
+```yaml
+spare_bathroom:
+  heater_switch: switch.example_heater_plug        # required
+  temp_sensor: sensor.example_spare_bath_temp      # required
+  power_sensor: sensor.example_heater_plug_power   # optional: relay-fault check
+  door_sensor: binary_sensor.example_bath_door     # optional: pause while open
+  notify_service: notify.mobile_app_example_phone  # optional: phone alerts (persistent notification always)
+  motion_sensor: binary_sensor.example_bath_motion # optional: display only
+  low_warn_f: 62
+  low_warn_min: 10
+  low_crit_f: 58
+  low_crit_repeat_min: 30
+```
+Safety (fixed in code): 80°F cap (latched until below setpoint), 2 h max run + 20 min cooldown, 8 h / 24 h lockout
+(reset with Off then Heat), sensor unavailable or stale 15 min → off, no 1°F rise in 45 min → off, plug on
+unexpectedly → forced off, power draw while off → relay fault, door open → pause, plug off at start/stop/error.
+Practice mode (`dry_run: true`) never turns the plug on.
+
+### Watchdog automation (recommended; plain HA, outside the add-on)
+Turns the plug off if the add-on stops publishing (heartbeat older than 3 minutes) or the add-on is not running.
+Replace the example entity ids.
+```yaml
+alias: Spare bathroom heater watchdog
+mode: single
+triggers:
+  - trigger: time_pattern
+    minutes: "/1"
+  - trigger: state
+    entity_id: binary_sensor.smart_hvac_running
+    to: "off"
+conditions:
+  - condition: state
+    entity_id: switch.example_heater_plug
+    state: "on"
+  - condition: template
+    value_template: >
+      {% set hb = state_attr('climate.spare_bathroom', 'heartbeat') %}
+      {{ hb is none or (as_timestamp(now()) - hb | float(0)) > 180
+         or is_state('binary_sensor.smart_hvac_running', 'off') }}
+actions:
+  - action: switch.turn_off
+    target:
+      entity_id: switch.example_heater_plug
+  - action: persistent_notification.create
+    data:
+      title: Spare bathroom heater
+      message: Smart HVAC is not responding. Watchdog turned the heater plug off.
+```

@@ -933,4 +933,6 @@ class Engine:
                            "history": self.st["history"].get(z["name"], []),
                            "events": self.events(z["name"], self.clock() - 86400)}
                           for z in self.opts.get("zones", []) or []],
-                "last": self.st.get("last_result", {})}
+                "last": self.st.get("last_result", {}),
+                # 0.8.0: independent spare bathroom heater (None when the add-on runs without it)
+                "heater": self.heater.snapshot() if getattr(self, "heater", None) else None}

@@ -1,6 +1,7 @@
 """Minimal Home Assistant client over the Supervisor proxy (homeassistant_api: true)."""
 import json
 import os
+import re
 import urllib.parse
 import urllib.request
 
@@ -55,3 +56,22 @@ class HAClient:
         if not str(data.get("entity_id", "")).startswith("climate.") or excluded(data.get("entity_id")):
             raise PermissionError("entity not allowed")
         return self._req("POST", "/services/%s/%s" % (domain, service), data)
+
+    # ---- 0.8.0 spare bathroom heater: narrow, separate write paths (never climate.*) ----
+    def heater_switch(self, entity_id, on):
+        """switch.turn_on / turn_off on the configured heater plug only (caller passes the configured id)."""
+        if not re.match(r"^switch\.[a-z0-9_]+$", str(entity_id or "")):
+            raise PermissionError("entity not allowed")
+        return self._req("POST", "/services/switch/%s" % ("turn_on" if on else "turn_off"), {"entity_id": entity_id})
+
+    def heater_notify(self, title, message, service=""):
+        self._req("POST", "/services/persistent_notification/create",
+                  {"title": title, "message": message, "notification_id": "smart_hvac_spare_bathroom"})
+        if re.match(r"^notify\.[a-z0-9_]+$", str(service or "")):
+            self._req("POST", "/services/notify/%s" % service.split(".", 1)[1], {"title": title, "message": message})
+
+    def publish_state(self, entity_id, state, attrs):
+        """Mirror state for climate.spare_bathroom only (read by the card and the watchdog automation)."""
+        if entity_id != "climate.spare_bathroom":
+            raise PermissionError("entity not allowed")
+        return self._req("POST", "/states/%s" % entity_id, {"state": state, "attributes": attrs})
