@@ -409,3 +409,14 @@ def test_blueprint_without_raw_caller_has_no_number_actions():
 def test_readme_documents_recorder_exclude():
     text = (ROOT / "README.md").read_text(encoding="utf-8")
     assert "recorder:" in text and "exclude:" in text and "- sensor.inbound_voicemails" in text
+
+
+def test_hangup_header_not_in_reason_or_fallback():
+    t = "•••0100\nSource: CallCatch\nDuration: 14 seconds\nTRANSCRIPT\nSilver Star Service Center"
+    assert cs.extract_summary(t, "+15555550100")["reason"] == "Silver Star Service Center"
+    flat = "•••0100 Source: CallCatch Duration_s: 14.2 TRANSCRIPT Silver Star Service Center"
+    saved = {"summary": {"urgency": "urgent", "reason": flat}, "transcript": t}
+    out = cs.stored_or_extract(saved)
+    assert out["reason"] == "Silver Star Service Center" and out["urgency"] == "urgent"
+    assert cs.fallback_line({"transcript": t}) == "Silver Star Service Center"
+    assert cs.strip_header("Please call me back about Source: the invoice") == "Please call me back about Source: the invoice"
