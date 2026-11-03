@@ -1,0 +1,216 @@
+import os
+import sys
+from datetime import datetime, timedelta
+
+import yaml
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "rootfs", "app"))
+import core  # noqa: E402
+from engine import Engine  # noqa: E402
+
+CFG = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
+SCHED = [{"days": "mon-fri", "start": "07:00", "end": "11:00"},
+         {"days": "mon-fri", "start": "17:00", "end": "21:00"}]
+
+
+class FakeHA:
+    def __init__(self, states):
+        self.states = dict(states)
+        self.calls = []
+        self.notes = []
+        self.ble_works = True
+
+    def get_states(self):
+        return {k: {"entity_id": k, "state": v} for k, v in self.states.items()}
+
+    def call(self, domain, service, data):
+        eid = data["entity_id"]
+        self.calls.append((domain, service, eid, data.get("value")))
+        if eid.startswith("switch.ble") or eid.startswith("number.ble"):
+            if not self.ble_works:
+                return
+        if domain == "switch":
+            self.states["switch.car_charge"] = "on" if service == "turn_on" else "off"
+        elif domain == "number" and "current" in eid:
+            self.states["number.car_charge_current"] = str(data["value"])
+        elif domain == "number" and "limit" in eid:
+            self.states["number.car_charge_limit"] = str(data["value"])
+        elif domain == "input_boolean":
+            self.states[eid] = "off"
+
+    def notify(self, t, m):
+        self.notes.append(m)
+
+    def set_status(self, s, a):
+        pass
+
+
+OPTS = {"dry_run": False, "confirm_s": 5, "charge_switch": "switch.car_charge",
+        "charge_current": "number.car_charge_current", "charge_limit": "number.car_charge_limit",
+        "battery_level": "sensor.car_battery_level", "plugged_in": "binary_sensor.car_charge_cable",
+        "peak_sensor": "binary_sensor.utility_peak", "charge_now_entity": "input_boolean.charge_now",
+        "pause_entity": "input_boolean.charge_pause", "trip_entity": "input_boolean.trip_mode",
+        "trip_target_soc": 100, "trip_departure_time": "05:00",
+        "battery_kwh": 100, "target_soc": 80, "departure_time": "06:00", "finish_buffer_min": 30,
+        "min_amps": 5, "max_amps": 40, "fallback_voltage": 240, "check_interval_min": 10,
+        "notify_service": "notify.example_phone", "notify_not_charging_min": 20}
+BASE = {"switch.car_charge": "off", "number.car_charge_current": "16", "number.car_charge_limit": "80",
+        "sensor.car_battery_level": "50", "binary_sensor.car_charge_cable": "on",
+        "binary_sensor.utility_peak": "off", "input_boolean.charge_now": "off",
+        "input_boolean.charge_pause": "off", "input_boolean.trip_mode": "off"}
+
+
+def mk(t, opts=None, **st):
+    ha = FakeHA(dict(BASE, **st))
+    clock = {"t": t}
+    e = Engine(dict(OPTS, **(opts or {})), ha, clock=lambda: clock["t"], sleep=lambda s: None)
+    return e, ha, clock
+
+
+NIGHT = datetime(2026, 11, 2, 21, 0)  # Monday
+
+
+def test_lowest_amps_to_target():
+    a, kwh = core.required_amps(50, 80, 100, 0.9, 240, 8.5)
+    assert round(kwh, 2) == 33.33 and a == 17  # ceil(33333/(240*8.5)) = 17
+
+
+def test_plan_starts_with_lowest_amps_and_clamps():
+    e, ha, _ = mk(NIGHT)
+    p = e.tick()
+    assert p["action"] == "start" and p["amps"] == 17
+    assert ("number", "set_value", "number.car_charge_current", 17) in ha.calls
+    assert ha.states["switch.car_charge"] == "on"
+
+
+def test_only_commands_on_1a_change():
+    e, ha, _ = mk(NIGHT, **{"number.car_charge_current": "17", "switch.car_charge": "on"})
+    e.tick()
+    assert not [c for c in ha.calls if c[0] == "number" and "current" in c[2]]
+
+
+def test_dry_run_never_turns_on():
+    e, ha, _ = mk(NIGHT, opts={"dry_run": True})
+    p = e.tick()
+    assert p["action"] == "start" and ha.calls == []
+
+
+def test_dry_run_safety_off_still_fires_in_peak():
+    e, ha, _ = mk(NIGHT, opts={"dry_run": True}, **{"binary_sensor.utility_peak": "on", "switch.car_charge": "on"})
+    p = e.tick()
+    assert p["action"] == "stop" and ("switch", "turn_off", "switch.car_charge", None) in ha.calls
+    assert not [c for c in ha.calls if c[1] == "turn_on"]
+
+
+def test_never_charges_in_peak_unless_charge_now():
+    e, ha, _ = mk(NIGHT, **{"binary_sensor.utility_peak": "on"})
+    assert e.tick()["action"] == "stop"
+    e2, ha2, _ = mk(NIGHT, **{"binary_sensor.utility_peak": "on", "input_boolean.charge_now": "on"})
+    p = e2.tick()
+    assert p["action"] == "start" and p["amps"] == 40 and ha2.states["switch.car_charge"] == "on"
+
+
+def test_unknown_peak_sensor_fails_safe():
+    e, ha, _ = mk(NIGHT, **{"binary_sensor.utility_peak": "unavailable", "switch.car_charge": "on"})
+    assert e.tick()["action"] == "stop"
+
+
+def test_nan_soc_guard():
+    for bad in ("unavailable", "unknown", "nan", "inf", ""):
+        e, ha, _ = mk(NIGHT, **{"sensor.car_battery_level": bad})
+        p = e.tick()
+        assert p["action"] in ("hold", "stop") and not [c for c in ha.calls if c[1] == "turn_on"]
+
+
+def test_peak_off_edge_starts_immediately():
+    e, ha, clock = mk(datetime(2026, 11, 2, 20, 59), **{"binary_sensor.utility_peak": "on"})
+    e.tick()
+    clock["t"] = datetime(2026, 11, 2, 21, 0, 1)
+    ha.states["binary_sensor.utility_peak"] = "off"
+    p = e.tick()  # well inside the 10-min interval: edge triggers the plan
+    assert p["action"] == "start" and ha.states["switch.car_charge"] == "on"
+
+
+def test_charge_now_auto_clears_on_complete_and_unplug():
+    e, ha, _ = mk(NIGHT, **{"input_boolean.charge_now": "on", "sensor.car_battery_level": "80"})
+    e.tick()
+    assert ha.states["input_boolean.charge_now"] == "off"
+    e, ha, _ = mk(NIGHT, **{"input_boolean.charge_now": "on", "binary_sensor.car_charge_cable": "off"})
+    e.tick()
+    assert ha.states["input_boolean.charge_now"] == "off"
+
+
+def test_pause_holds_until_next_window():
+    e, ha, clock = mk(NIGHT, **{"input_boolean.charge_pause": "on", "switch.car_charge": "on"})
+    assert e.tick()["action"] == "stop" and ha.states["switch.car_charge"] == "off"
+    clock["t"] = NIGHT + timedelta(minutes=10)
+    assert e.tick()["action"] == "stop"  # the next check does NOT restart it
+    ha.states["binary_sensor.utility_peak"] = "on"
+    clock["t"] = NIGHT + timedelta(hours=10)
+    e.tick()
+    ha.states["binary_sensor.utility_peak"] = "off"
+    clock["t"] = NIGHT + timedelta(hours=20)
+    p = e.tick()
+    assert ha.states["input_boolean.charge_pause"] == "off" and p["action"] == "start"
+
+
+def test_trip_mode_overrides_target_and_departure():
+    e, ha, _ = mk(NIGHT, **{"input_boolean.trip_mode": "on"})
+    s = e.inputs(ha.get_states(), NIGHT)
+    assert s["target"] == 100 and s["departure"] == datetime(2026, 11, 3, 5, 0)
+
+
+def test_ble_first_then_cloud_fallback():
+    o = {"ble_charge_switch": "switch.ble_charger", "ble_charge_current": "number.ble_charging_amps"}
+    e, ha, _ = mk(NIGHT, opts=o)
+    e.tick()
+    assert [c[2] for c in ha.calls if c[0] == "switch"] == ["switch.ble_charger"]
+    e, ha, _ = mk(NIGHT, opts=o)
+    ha.ble_works = False
+    e.tick()
+    assert [c[2] for c in ha.calls if c[0] == "switch"] == ["switch.ble_charger", "switch.car_charge"]
+
+
+def test_notify_once_if_not_charging():
+    e, ha, clock = mk(NIGHT)
+    ha.call = lambda *a, **k: None  # car ignores every command
+    e.tick()
+    clock["t"] = NIGHT + timedelta(minutes=25)
+    e.tick()
+    clock["t"] = NIGHT + timedelta(minutes=35)
+    e.tick()
+    assert len(ha.notes) == 1
+
+
+def test_voltage_sane_range():
+    assert core.clamp_voltage("120", 240) == 240 and core.clamp_voltage("nan", 240) == 240
+    assert core.clamp_voltage("208", 240) == 208
+
+
+def test_schedule_and_offpeak_hours():
+    assert core.in_schedule(datetime(2026, 11, 2, 18, 0), SCHED)
+    assert not core.in_schedule(datetime(2026, 11, 7, 18, 0), SCHED)  # Saturday
+    assert core.in_schedule(datetime(2026, 11, 3, 1, 0), [{"days": "mon", "start": "23:00", "end": "02:00"}])
+    h = core.offpeak_hours(datetime(2026, 11, 2, 16, 0), datetime(2026, 11, 2, 22, 0), SCHED)
+    assert abs(h - 2.0) < 1e-6
+
+
+def test_past_finish_uses_max():
+    p = core.plan(dict(now=datetime(2026, 11, 3, 5, 45), soc=70, target=80, plugged=True, home=None, peak=False,
+                       charge_now=False, pause=False, departure=datetime(2026, 11, 3, 6, 0), finish_buffer_min=30,
+                       battery_kwh=75, efficiency=0.9, volts=240, min_amps=5, max_amps=32, schedule=[]))
+    assert p["action"] == "start" and p["amps"] == 32 and p["behind"]
+
+
+def test_public_defaults_safe_and_generic():
+    cfg = yaml.safe_load(open(CFG))
+    o = cfg["options"]
+    assert o["dry_run"] is True and o["check_interval_min"] == 10 and o["charge_efficiency"] == 0.9
+    for k in ("charge_switch", "charge_current", "battery_level", "plugged_in"):
+        assert o[k] == ""
+
+
+def test_unconfigured_is_inert():
+    ha = FakeHA({})
+    e = Engine({"dry_run": False}, ha, clock=lambda: NIGHT, sleep=lambda s: None)
+    assert e.tick() is None and ha.calls == []

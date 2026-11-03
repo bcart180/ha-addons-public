@@ -1,0 +1,14 @@
+configuration:
+  dry_run: {name: Dry run, description: "On (default) = plan and log only. Never turns charging on or changes amps; safety stops in peak still fire."}
+  check_interval_min: {name: Check interval, description: "Minutes between re-plans (default 10). Edges (peak end, helper toggles, plug) re-plan at once."}
+  charge_switch: {name: Charge switch (cloud), description: "e.g. switch.my_car_charge"}
+  charge_current: {name: Charge current (cloud), description: "e.g. number.my_car_charge_current"}
+  battery_level: {name: Battery level, description: "e.g. sensor.my_car_battery_level"}
+  plugged_in: {name: Plugged in, description: "e.g. binary_sensor.my_car_charge_cable"}
+  ble_charge_switch: {name: BLE charge switch, description: "Optional ESPHome Tesla BLE switch; tried first."}
+  peak_sensor: {name: Peak sensor, description: "binary_sensor that is on during peak rates. Unknown = treated as peak."}
+  peak_schedule: {name: Peak schedule, description: "Weekly peak blocks (days mon-fri, start, end). Also used to count off-peak hours left."}
+  departure_time: {name: Departure time, description: "HH:MM. Charging aims to finish finish_buffer_min before this."}
+  charge_now_entity: {name: Charge now helper, description: "input_boolean. On = charge at max amps now, even in peak. Clears itself at target or unplug."}
+  pause_entity: {name: Pause helper, description: "input_boolean. On = stop and stay stopped until the next off-peak window."}
+  trip_entity: {name: Trip mode helper, description: "input_boolean. On = use trip_target_soc and trip_departure_time. Clears on unplug."}
