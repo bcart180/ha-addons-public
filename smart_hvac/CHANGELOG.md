@@ -1,3 +1,10 @@
+## 0.8.6 — 2026-11-03
+
+- Fix: split setpoint writes failed with HTTP 400 every cycle. The `set_temperature` data is now built from the target entity's own attributes: `supported_features` bit 1 (single setpoint) sends `temperature` only; a range-only entity (bit 2) sends `target_temp_low` (heat) or `target_temp_high` (cool/dry) and keeps the other bound at its current value, or one step inside `min_temp`/`max_temp` when it is unknown (an edge value like 88 °F becomes 31.11 °C and fails a device whose native max is 31.0 °C). `hvac_mode` is never sent with a setpoint.
+- The setpoint is clamped to `min_temp`/`max_temp` and rounded (half up) to `target_temp_step`. A write that would not change the entity's current setpoint is skipped (counts as applied).
+- New optional zone option `setpoint_climate`: the climate entity that receives setpoint writes (default: the zone's `climate`). Use it when a wrapper/proxy climate entity cannot forward a setpoint; modes, reads and the shared-mode lock still use `climate`. Card setpoint writes use the same path.
+- Version 0.8.6. Split mode logic, mode lock and spare bathroom heater unchanged.
+
 ## 0.8.5 — 2026-11-03
 
 - Heater safety (SA M1b): every in-process heater duration (2 h max run, satisfied stop / 5 min min on-off, 8 h in 24 h lockout, 45 min no-rise, 20 min cooldown) now runs on `time.monotonic()`, anchored to the wall clock once at startup. A wall clock jump mid-run can no longer stretch or shorten any timer.

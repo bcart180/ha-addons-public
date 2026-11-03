@@ -150,7 +150,14 @@ def make_app(engine, interval=300, heater=None, heater_tick=HEATER_TICK_S):
         if not 55 <= t <= hi:
             return web.json_response({"error": "out of range"}, status=400)
         async with lock:
-            await call("set_temperature", {"entity_id": zone["climate"], "temperature": t})
+            states = await asyncio.get_running_loop().run_in_executor(
+                None, lambda: {x.get("entity_id"): x for x in engine.ha.get_states() or []})
+            cl, _ = engine._get(states, zone.get("climate"))
+            data, t, why = engine.setpoint_data(zone, states, cl, t)  # 0.8.6: capability-aware payload
+            if data is None and why != "unchanged":
+                return web.json_response({"error": "setpoint not supported: %s" % why}, status=409)
+            if data is not None:
+                await call("set_temperature", data)
         return done(zone, setpoint=t)
 
     async def try_mode(zone, mode):
