@@ -751,7 +751,9 @@ class Engine:
                         self.st["app_off"] = [n for n in self.st["app_off"] if n != name]
                 sp_ok = True
                 if r["mode"] != "off" and r["setpoint"] is not None:
-                    sp_ok = self._call_setpoint(z["climate"], r["setpoint"])
+                    sp_ok, snapped = self._write_setpoint(z, states, r["mode"], r["setpoint"])
+                    if snapped is not None:
+                        r = dict(r, setpoint=snapped)
                 if sp_ok:
                     self.st["last_cmd"][name] = {"mode": r["mode"], "setpoint": r["setpoint"]}
                     applied = True
@@ -797,6 +799,34 @@ class Engine:
                                   "weather": w, "radiant_timeout": rt, "zones": results}
         self.save()
         return results
+
+    def setpoint_target(self, zone):
+        """0.8.6: entity that receives set_temperature (zone `setpoint_climate`, default the zone's `climate`)."""
+        eid = zone.get("setpoint_climate") or zone.get("climate")
+        return eid if str(eid or "").startswith("climate.") and not excluded(eid) else zone.get("climate")
+
+    def setpoint_data(self, zone, states, mode, temperature):
+        """0.8.6: (data incl. entity_id or None, snapped setpoint, reason) built from the target's capabilities."""
+        eid = self.setpoint_target(zone)
+        st, attrs = self._get(states, eid)
+        data, t, why = core.setpoint_payload(attrs, mode or st, temperature)
+        return (dict(data, entity_id=eid) if data else None), t, why
+
+    def _write_setpoint(self, zone, states, mode, temperature):
+        """Returns (ok, snapped setpoint). Unchanged = ok without a write; unsupported = not ok, no write."""
+        data, t, why = self.setpoint_data(zone, states, mode, temperature)
+        if data is None:
+            if why == "unchanged":
+                return True, t
+            log.warning("setpoint not written for %s: %s", zone.get("name"), why)
+            return False, t
+        try:
+            self.ha.call("climate", "set_temperature", data)
+            return True, t
+        except Exception as e:  # noqa: BLE001 - fail safe, the cycle finishes and saves state
+            log.warning("setpoint write failed for %s: %s%s", data["entity_id"], type(e).__name__,
+                        " %s" % e.code if hasattr(e, "code") else "")
+            return False, t
 
     def _call_setpoint(self, entity_id, temperature):
         """One set_temperature write; False (logged, no raise) when it fails (0.8.1)."""

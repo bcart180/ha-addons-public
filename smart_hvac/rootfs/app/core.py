@@ -462,3 +462,70 @@ def forecast_summary(fc, now, wake_ts=None, hours=6):
         at = t if abs(ts - wake_ts) <= 5400 else None
     return {"mean": round(sum(near) / len(near), 1) if near else None,
             "high": max(hi) if hi else None, "at_wake": at}
+
+
+# ---- 0.8.6: set_temperature payload from the entity's own capabilities ----
+FEAT_TARGET_TEMPERATURE = 1        # ClimateEntityFeature.TARGET_TEMPERATURE
+FEAT_TARGET_TEMPERATURE_RANGE = 2  # ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+
+
+def _f(x):
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    return v if v == v and v not in (float("inf"), float("-inf")) else None
+
+
+def snap_setpoint(t, attrs):
+    """Clamp t to the entity's min_temp/max_temp and round it to target_temp_step (half up).
+    Missing attributes are skipped (no clamp / no rounding)."""
+    attrs = attrs or {}
+    lo, hi, step = _f(attrs.get("min_temp")), _f(attrs.get("max_temp")), _f(attrs.get("target_temp_step"))
+    if step is not None and step > 0:
+        t = math.floor(t / step + 0.5) * step
+        t = round(t, 4)
+    if lo is not None and t < lo:
+        t = lo
+    if hi is not None and t > hi:
+        t = hi
+    return float(t)
+
+
+def setpoint_payload(attrs, mode, t):
+    """Build the climate.set_temperature data (without entity_id) for one setpoint t in the HA display unit.
+    Returns (data or None, snapped t, reason). data None = do not write (reason says why).
+      - TARGET_TEMPERATURE (bit 1): {"temperature": t}
+      - only TARGET_TEMPERATURE_RANGE (bit 2): heat -> target_temp_low=t, cool/dry -> target_temp_high=t;
+        the other bound keeps its current value, or (unknown / invalid) sits one step inside min/max, because
+        an edge value can fail the device's native range after unit conversion (e.g. 88 F -> 31.11 C > 31.0 C).
+      - neither bit: no write. No supported_features attribute at all = legacy single setpoint.
+    Unchanged value (already the entity's current setpoint) = no write (reason "unchanged")."""
+    attrs = attrs or {}
+    t = snap_setpoint(float(t), attrs)
+    raw = attrs.get("supported_features")
+    feats = FEAT_TARGET_TEMPERATURE if raw is None else int(_f(raw) or 0)
+    if feats & FEAT_TARGET_TEMPERATURE:
+        if _f(attrs.get("temperature")) == t:
+            return None, t, "unchanged"
+        return {"temperature": t}, t, "ok"
+    if feats & FEAT_TARGET_TEMPERATURE_RANGE:
+        lo_b, hi_b = _f(attrs.get("min_temp")), _f(attrs.get("max_temp"))
+        step = _f(attrs.get("target_temp_step")) or 1.0
+        cur_lo, cur_hi = _f(attrs.get("target_temp_low")), _f(attrs.get("target_temp_high"))
+        if mode in ("cool", "dry"):
+            if cur_hi == t:
+                return None, t, "unchanged"
+            low = cur_lo if cur_lo is not None and cur_lo <= t else None
+            if low is None:
+                low = min(t, (lo_b + step) if lo_b is not None else t)
+            return {"target_temp_low": low, "target_temp_high": t}, t, "ok"
+        if mode == "heat":
+            if cur_lo == t:
+                return None, t, "unchanged"
+            high = cur_hi if cur_hi is not None and cur_hi >= t else None
+            if high is None:
+                high = max(t, (hi_b - step) if hi_b is not None else t)
+            return {"target_temp_low": t, "target_temp_high": high}, t, "ok"
+        return None, t, "range_mode_unsupported"
+    return None, t, "no_setpoint_feature"
