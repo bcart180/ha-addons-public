@@ -243,14 +243,49 @@ def test_sensor_bad_state_off_immediately_with_notify(bad):
     assert len(ha.notes) == 1      # notify once per episode
 
 
-def test_sensor_stale_15_min():
+def test_sensor_stale_default_75_min():
+    """0.8.2: default cutoff is 75 min (Zooz ZSE11 reports hourly or on a 1 F change)."""
     h, ha, c = mk(temp=60)
     h.tick()
     ha.seen = c.t
-    run(h, c, 14 * 60)
+    run(h, c, 74 * 60)
+    assert h.last["reason"] != "sensor_unavailable"
+    run(h, c, 60)
+    assert ha.sw == "off" and h.last["reason"] == "sensor_unavailable"
+
+
+def test_sensor_stale_minutes_option():
+    h, ha, c = mk(temp=60, stale_minutes=20)
+    h.tick()
+    ha.seen = c.t
+    run(h, c, 19 * 60)
     assert ha.sw == "on"
     run(h, c, 60)
     assert ha.sw == "off" and h.last["reason"] == "sensor_unavailable"
+
+
+@pytest.mark.parametrize("raw,want", [(None, 75), (5, 15), (999, 180), ("x", 75), (90, 90)])
+def test_stale_minutes_clamped(raw, want):
+    assert H.config({"spare_bathroom": {"stale_minutes": raw}})["stale_minutes"] == want
+
+
+def test_last_seen_sensor_keeps_fresh():
+    """An old temp entity timestamp is fine when the Zooz last-seen sensor says the node checked in recently."""
+    LS = "sensor.fake_last_seen_555"
+    h, ha, c = mk(temp=60, last_seen_sensor=LS)
+    base = ha.get_states
+    ha.get_states = lambda: base() + [{"entity_id": LS, "state": iso(c.t - 60)}]
+    h.tick()
+    ha.seen = c.t
+    run(h, c, 120 * 60)
+    assert h.last["reason"] != "sensor_unavailable"
+    ha.get_states = lambda: base() + [{"entity_id": LS, "state": "unavailable"}]
+    h.tick()
+    assert ha.sw == "off" and h.last["reason"] == "sensor_unavailable"
+
+
+def test_last_seen_sensor_bad_id_ignored():
+    assert H.config({"spare_bathroom": {"last_seen_sensor": "switch.nope"}})["last_seen_sensor"] == ""
 
 
 def test_sensor_missing_entirely():

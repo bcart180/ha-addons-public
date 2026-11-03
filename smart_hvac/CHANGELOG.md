@@ -1,3 +1,9 @@
+## 0.8.2 — 2026-11-03
+
+- Heater: new `spare_bathroom.stale_minutes` (default 75, schema 15–180) replaces the fixed 15 min stale cutoff. The Zooz ZSE11 reports only hourly or on a 1°F change, so 15 min failed the heater off between normal reports. Freshness = newest of the temp entity's `last_reported` / `last_updated` and the optional `spare_bathroom.last_seen_sensor` (ISO timestamp state, e.g. Z-Wave JS "Last seen"); an unavailable last-seen sensor is ignored. All other safety items unchanged.
+- Card: the spare bathroom heater card no longer renders inside every `custom:smart-hvac-card`. It shows only with `show_heater: true` (default false) or the new `layout: heater` (heater card only, no zones). Existing configs keep working; add one of those to the card that should show the heater.
+- Version 0.8.2. Split logic and mode lock unchanged.
+
 ## 0.8.1 — 2026-11-03
 
 - Fix: a failed `set_temperature` write no longer aborts the whole control cycle. It is wrapped like the mode write: the zone is marked `setpoint_write_failed`, the other zones finish, and state is saved. Mode-lock / split opposite-mode logic is unchanged.
