@@ -354,12 +354,44 @@ def test_no_1F_rise_in_45_min_off_and_latched():
     assert ha.sw == "on"
 
 
-def test_1F_rise_keeps_heating():
+def test_rise_1F_then_stick_off_45_min_after_last_rise():
+    """SA M2: HA reports a repeated identical value as fresh; one rise then a stuck reading must still trip."""
     h, ha, c = mk(temp=60)
     h.tick()
-    ha.temp = 61
-    run(h, c, 50 * 60)
+    run(h, c, 20 * 60)
+    ha.temp = 61                       # one 1 F rise at ~20 min, then stuck
+    run(h, c, 30)
+    rise_t = c.t
+    run(h, c, 44 * 60)
     assert ha.sw == "on"
+    run(h, c, 60)
+    assert c.t - rise_t <= 45 * 60 + 30
+    assert ha.sw == "off" and h.last["reason"] == "no_rise" and h.latched == "no_rise"
+    assert any("rise" in n for n in ha.notes)
+
+
+def test_steady_rises_stay_on_until_2h_max():
+    h, ha, c = mk(temp=55)
+    h.st["setpoint"] = 75.0
+    h.tick()
+    t0 = c.t
+    for _ in range(2):                 # +1 F every 40 min, never at setpoint
+        run(h, c, 40 * 60)
+        ha.temp += 1
+    run(h, c, 30 * 60)                 # 110 min: well past 45 min from start, still progressing
+    assert ha.sw == "on" and h.last["reason"] != "no_rise"
+    run(h, c, t0 + 2 * 3600 + 60 - c.t)
+    assert ha.sw == "off" and h.latched is None and h.last["reason"] != "no_rise"
+
+
+def test_reaching_setpoint_is_normal_off():
+    h, ha, c = mk(temp=66)
+    h.tick()
+    assert ha.sw == "on"
+    run(h, c, 20 * 60)
+    ha.temp = 68.6                     # setpoint 68 + 0.5 -> normal off
+    run(h, c, 30)
+    assert ha.sw == "off" and h.latched is None and h.last["reason"] != "no_rise"
 
 
 # ---------- plug / relay ----------
