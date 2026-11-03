@@ -169,22 +169,39 @@ def _same_number(a: str, b: str) -> bool:
 # "When:", "Call ID:", "Source: CallCatch",
 # "Duration: 14 seconds" / "Duration_s: 14.2", "TRANSCRIPT"). It is metadata,
 # not speech: strip it from the front so reason/preview start with the caller.
+_HEADER_SCAN = 1024  # header lives at the very front; never regex the whole body
+_HEADER_MAX_TOKENS = 16
+# Every quantifier is bounded so a hostile transcript cannot trigger
+# super-linear backtracking (ReDoS). Matched with .match() at the front only.
 _HEADER_HEAD = re.compile(
-    r"^(?:[•*·]{2,}\s*\d{2,4}\b|Source:\s*\S+|"
-    r"Caller:[ \t]*(?:\+?[\d \t().-]{7,}|[•*·]{2,}\d{2,4}|Unknown)[ \t]*(?=\r?\n)|"
-    r"(?:When|Call ID):[^\r\n]*(?=\r?\n)|"
-    r"Duration(?:_s)?:\s*(?:[0-9.]+(?:\s*(?:minutes?|seconds?|s)\b)?\s*)+|TRANSCRIPT\b:?)\s*",
+    r"(?:[•*·]{2,4}[ \t]{0,4}\d{2,4}\b"
+    r"|Source:[ \t]{0,8}[^\s]{1,40}"
+    r"|Caller:[ \t]{0,8}(?:\+?[\d().-][\d \t().-]{6,39}|[•*·]{2,4}\d{2,4}|Unknown)[ \t]{0,8}(?=\r?\n)"
+    r"|(?:When|Call ID):[^\r\n]{0,120}(?=\r?\n)"
+    r"|Duration(?:_s)?:[ \t]{0,8}[0-9.]{1,8}(?:[ \t]{0,4}(?:minutes?|seconds?|s)\b)?"
+    r"(?:[ \t]{1,4}[0-9.]{1,8}[ \t]{0,4}(?:minutes?|seconds?|s)\b)?)"
+    r"\s{0,8}",
     re.I,
 )
+_TRANSCRIPT_MARK = re.compile(r"TRANSCRIPT\b:?\s{0,8}", re.I)
 
 
 def strip_header(text: Any) -> str:
-    s = str(text or "").lstrip()
-    prev = None
-    while s and s != prev:
-        prev = s
-        s = _HEADER_HEAD.sub("", s, count=1)
-    return s
+    """Drop the leading hangup header only. Scans the first 1,024 chars, stops
+    at the first non-header token, and stops after the TRANSCRIPT marker, so
+    anything after the marker (e.g. a spoken "When: ...") is kept."""
+    s = str(text or "")
+    head, tail = s[:_HEADER_SCAN].lstrip(), s[_HEADER_SCAN:]
+    for _ in range(_HEADER_MAX_TOKENS):
+        m = _TRANSCRIPT_MARK.match(head)
+        if m:
+            head = head[m.end():]
+            break
+        m = _HEADER_HEAD.match(head)
+        if not m or not m.end():
+            break
+        head = head[m.end():]
+    return head + tail
 
 
 def caller_text(transcript: Any) -> str:
