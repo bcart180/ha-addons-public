@@ -181,7 +181,18 @@ Safety (fixed in code): 80°F cap (latched until below setpoint), 2 h max run + 
 unexpectedly → forced off, power draw while off → relay fault, door open → pause, plug off at start/stop/error.
 Practice mode (`dry_run: true`) never turns the plug on.
 
-### Watchdog automation (recommended; plain HA, outside the add-on)
+### Heater preflight checklist (REQUIRED before `dry_run: false`)
+The add-on cannot turn the plug off if it hangs or Home Assistant is down. **Do not take the heater live
+(`dry_run: false`) until both items below are done and checked.** Leave `dry_run: true` until then.
+- [ ] **(a) Watchdog automation installed** in Home Assistant (YAML below, with the real plug id), enabled, and
+  tested once (stop the add-on with the plug on → plug turns off within ~3 minutes).
+- [ ] **(b) On-device auto-off timer set on the smart plug, 2 hours or less**, configured in the plug's own app or
+  firmware so it runs on the plug itself and works **without Home Assistant** (test: turn the plug on with HA
+  unreachable; it must switch off by itself within 2 hours).
+
+If either item is missing, the heater must stay in practice mode.
+
+### Watchdog automation (REQUIRED before `dry_run: false`; plain HA, outside the add-on)
 Turns the plug off if the add-on stops publishing (heartbeat older than 3 minutes) or the add-on is not running.
 Replace the example entity ids.
 ```yaml

@@ -8,6 +8,7 @@
 - Lovelace card: the heater shows as its own card (current, target, Heat/Off, status, runtime today, last motion).
 - HA client: three narrow new write paths (switch on/off for a `switch.*` id, notification, mirror state for `climate.spare_bathroom` only). Split logic unchanged.
 - DOCS: watchdog automation that turns the plug off if the add-on stops updating.
+- DOCS: **heater preflight checklist (REQUIRED)**. The heater must not go live (`dry_run: false`) without both (a) the DOCS watchdog automation installed and tested and (b) an on-device auto-off timer of 2 h or less on the smart plug that works without HA (SA M1). Docs only; no code change.
 
 ## 0.7.8 — 2026-11-02
 
