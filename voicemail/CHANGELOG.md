@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.4 — 2026-11-02
+
+- ReDoS fix (SA M2): `mask_phone_runs` look-alike pass (`_LOOKALIKE_TOKEN`, nested stars, O(n²)) rewritten as a linear maximal-run scan with identical output; masking input is capped at 2,000 chars (a number cut at the cap is dropped, never left unmasked; every caller already truncates to ≤160). Name patterns bounded (`{0,30}` per word) and name/reason/urgency read only the first 4,000 chars. `+` + `(-.`×10k: 4.0 s → 0.001 s; push fallback on 90k: 35 s → 0.03 s. New timing tests (`tests/test_redos_mask.py`, <1 s, incl. 100k inputs). Display-only; no data, API, permission or dry_run change.
+
 ## 0.5.3 — 2026-11-02
 
 - Follow-up to 0.5.2: the live hangup header starts with a `Caller: <number>` line (and may carry `When:` / `Call ID:`), which the summary extractor read as a Caller speaker turn, so the reason still began with the masked number. Those header-only lines are now stripped too. A `Caller:` line with real speech is kept. Header stripping scans only the first 1,024 characters, uses bounded patterns (no ReDoS), and stops at the TRANSCRIPT marker, so lines after it (e.g. a spoken "When: …") are kept. Display-only.
