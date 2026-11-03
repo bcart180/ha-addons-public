@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2 — 2026-11-02
+
+- List rows / push fallback: the hangup header (masked number, "Source: CallCatch", "Duration: N seconds", "TRANSCRIPT") is no longer baked into the caller summary or the first-line push fallback, so the preview starts with what the caller said. Saved summaries are cleaned at read time. Urgency and duration metadata unchanged; display-only, no data, API or dry_run change.
+
 ## 0.5.1 — 2026-11-02
 
 - Remove '(new)' name suffix; no functional change.

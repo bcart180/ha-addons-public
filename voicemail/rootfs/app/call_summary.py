@@ -165,10 +165,29 @@ def _same_number(a: str, b: str) -> bool:
     return a[-10:] == b[-10:] if len(a) >= 10 and len(b) >= 10 else a[-7:] == b[-7:]
 
 
+# Hangup header the ingest path prepends (masked number, "Source: CallCatch",
+# "Duration: 14 seconds" / "Duration_s: 14.2", "TRANSCRIPT"). It is metadata,
+# not speech: strip it from the front so reason/preview start with the caller.
+_HEADER_HEAD = re.compile(
+    r"^(?:[•*·]{2,}\s*\d{2,4}\b|Source:\s*\S+|"
+    r"Duration(?:_s)?:\s*(?:[0-9.]+(?:\s*(?:minutes?|seconds?|s)\b)?\s*)+|TRANSCRIPT\b:?)\s*",
+    re.I,
+)
+
+
+def strip_header(text: Any) -> str:
+    s = str(text or "").lstrip()
+    prev = None
+    while s and s != prev:
+        prev = s
+        s = _HEADER_HEAD.sub("", s, count=1)
+    return s
+
+
 def caller_text(transcript: Any) -> str:
     """Caller-side speech. Labelled transcripts keep only Caller lines (and
     unlabelled continuation lines that follow one); unlabelled text is all caller."""
-    text = str(transcript or "")
+    text = strip_header(transcript)
     lines = [ln for ln in re.split(r"\r\n|\n|\r", text) if ln.strip()]
     if not any(_SPEAKER.match(ln) for ln in lines):
         return " ".join(ln.strip() for ln in lines)
@@ -310,7 +329,7 @@ def stored_or_extract(item: dict) -> dict:
     if isinstance(saved, dict) and saved.get("urgency") in URGENCY:
         return {
             "name": _clean(saved.get("name"), NAME_MAX),
-            "reason": _clean(mask_phone_runs(plain_text(saved.get("reason"))), REASON_MAX),
+            "reason": _clean(mask_phone_runs(plain_text(strip_header(saved.get("reason")))), REASON_MAX),
             "callback": cb if valid_callback(cb := digits(saved.get("callback"))) else "",
             "urgency": saved["urgency"],
             "source": saved.get("source") if saved.get("source") in ("voice", "local") else "local",
@@ -339,7 +358,7 @@ def fallback_line(item: dict) -> str:
     through the same strip_format + plain_text + mask_phone_runs path, so a
     lock-screen alert never shows more than the last 4 digits of a number.
     plain_text runs before masking so removed markup cannot join digit runs."""
-    raw = strip_format(item.get("transcript") or item.get("snippet") or "")
+    raw = strip_header(strip_format(item.get("transcript") or item.get("snippet") or ""))
     line = next((ln for ln in re.split(r"\r\n|\n|\r", raw) if ln.strip()), "")
     return _clean(mask_phone_runs(plain_text(line)), FALLBACK_MAX)
 
