@@ -165,11 +165,14 @@ def _same_number(a: str, b: str) -> bool:
     return a[-10:] == b[-10:] if len(a) >= 10 and len(b) >= 10 else a[-7:] == b[-7:]
 
 
-# Hangup header the ingest path prepends (masked number, "Source: CallCatch",
+# Hangup header the ingest path prepends ("Caller: <number>" line, masked number,
+# "When:", "Call ID:", "Source: CallCatch",
 # "Duration: 14 seconds" / "Duration_s: 14.2", "TRANSCRIPT"). It is metadata,
 # not speech: strip it from the front so reason/preview start with the caller.
 _HEADER_HEAD = re.compile(
     r"^(?:[•*·]{2,}\s*\d{2,4}\b|Source:\s*\S+|"
+    r"Caller:[ \t]*(?:\+?[\d \t().-]{7,}|[•*·]{2,}\d{2,4}|Unknown)[ \t]*(?=\r?\n)|"
+    r"(?:When|Call ID):[^\r\n]*(?=\r?\n)|"
     r"Duration(?:_s)?:\s*(?:[0-9.]+(?:\s*(?:minutes?|seconds?|s)\b)?\s*)+|TRANSCRIPT\b:?)\s*",
     re.I,
 )

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.3 — 2026-11-02
+
+- Follow-up to 0.5.2: the live hangup header starts with a `Caller: <number>` line (and may carry `When:` / `Call ID:`), which the summary extractor read as a Caller speaker turn, so the reason still began with the masked number. Those header-only lines are now stripped too. A `Caller:` line with real speech is kept. Display-only.
+
 ## 0.5.2 — 2026-11-02
 
 - List rows / push fallback: the hangup header (masked number, "Source: CallCatch", "Duration: N seconds", "TRANSCRIPT") is no longer baked into the caller summary or the first-line push fallback, so the preview starts with what the caller said. Saved summaries are cleaned at read time. Urgency and duration metadata unchanged; display-only, no data, API or dry_run change.

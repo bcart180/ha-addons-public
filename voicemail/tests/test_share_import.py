@@ -177,7 +177,7 @@ def test_server_hook_allow_list_and_diag_fields(tmp_path, monkeypatch):
     monkeypatch.setenv("VM_MOCK", "1")
     import server  # noqa: PLC0415
 
-    assert server.VERSION == "0.5.2"
+    assert server.VERSION == "0.5.3"
     assert set(server.SHARE_IMPORT_ALLOW) == {"inbox.json", "legacy_import.json", "drive_queue.json"}
     assert "options.json" not in server.SHARE_IMPORT_ALLOW
     root = tmp_path / "stage"
