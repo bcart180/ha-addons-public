@@ -10,7 +10,8 @@ log = logging.getLogger("tesla_smart_charge")
 DEFAULTS = {"dry_run": True, "dry_run_safety_off": True, "check_interval_min": 10, "tick_s": 30,
             "confirm_s": 20, "battery_kwh": 75, "charge_efficiency": 0.9, "target_soc": 80,
             "departure_time": "07:00", "finish_buffer_min": 30, "min_amps": 5, "max_amps": 32,
-            "fallback_voltage": 240, "stale_minutes": 30, "peak_schedule": [], "notify_not_charging_min": 20}
+            "fallback_voltage": 240,
+            "stale_minutes": 30, "wake_max_per_window": 5, "peak_schedule": [], "notify_not_charging_min": 20}
 HARD_MAX_AMPS = 48
 SAFETY_STOPS = ("stale_state", "peak", "plug_state_unavailable", "soc_or_target_unavailable")
 ENTITY_KEYS = ("charge_switch", "charge_current", "charge_limit", "wake_button", "ble_charge_switch",
@@ -35,6 +36,8 @@ class Engine:
         self.window_start = None
         self.notified_window = None
         self.status = {}
+        self.wake_count = 0
+        self.next_wake_at = None
 
     # ---------- inputs ----------
     def _st(self, states, key):
@@ -83,6 +86,8 @@ class Engine:
         plug = self._st(states, "plugged_in")
         plugged = None if core.num(plug) is None and str(plug).lower() in core.BAD else core.is_on(plug)
         soc = core.num(self._st(states, "battery_level"))
+        last_soc, last_plugged = soc, plugged
+        plug_fresh = not self._stale(states, "plugged_in", now)
         stale = self._stale(states, "battery_level", now) or self._stale(states, "plugged_in", now)
         if stale:
             soc, plugged = None, None  # stale = unknown: never start or raise
@@ -101,7 +106,8 @@ class Engine:
         else:
             charging = core.is_on(self._st(states, "charge_switch"))
         return {
-            "now": now, "soc": soc, "stale": stale,
+            "now": now, "soc": soc, "stale": stale, "last_soc": last_soc,
+            "last_plugged": last_plugged if plug_fresh else None,
             "target": core.num(target), "plugged": plugged, "home": home, "peak": peak,
             "enabled": (not o.get("enabled_entity")) or self._flag(states, "enabled_entity"),
             "charge_now": self._flag(states, "charge_now_entity"), "pause": self._flag(states, "pause_entity"),
@@ -224,6 +230,8 @@ class Engine:
             return None
         self.last_plan = now
         s = self.inputs(states, now)
+        if not s["stale"] or peak_off_edge or "plugged" in why:
+            self.reset_wake_backoff()  # fresh data, new window or plug change
         p = core.plan(s)
         if s["stale"] and p["action"] != "idle":
             p.update(action="stop" if p["action"] == "stop" else "hold", reason="stale_state", amps=None)
@@ -246,8 +254,9 @@ class Engine:
         dry = bool(self.o["dry_run"])
         for f in p["clear"]:
             self._clear(f, states)
-        if p["action"] == "hold" and p["reason"] == "stale_state" and not dry:
-            self.wake()  # waking may refresh stale readings; no charge command
+        if p["action"] == "hold" and p["reason"] == "stale_state":
+            if not dry and self.stale_wake_allowed(s):
+                self.wake()  # waking may refresh stale readings; no charge command
             return
         if p["action"] == "stop":
             if s["charging"] is False:
@@ -264,6 +273,31 @@ class Engine:
                 self.set_amps(p["amps"])
             if not s["charging"]:
                 self.set_switch(True)
+
+    WAKE_BACKOFF_MIN = (10, 20, 40, 80, 120)
+
+    def reset_wake_backoff(self):
+        self.wake_count, self.next_wake_at = 0, None
+
+    def stale_wake_allowed(self, s):
+        """L3: wake a stale car only when it is worth it, with exponential backoff and a per-window cap."""
+        now = s["now"]
+        if s.get("last_plugged") is not True:
+            return False  # plug must be known plugged-in (fresh reading)
+        if s.get("home") is False:
+            return False
+        if s.get("peak") and not s.get("charge_now"):
+            return False
+        if s.get("last_soc") is None or s.get("target") is None or s["last_soc"] >= s["target"]:
+            return False
+        if self.wake_count >= int(self.o["wake_max_per_window"]):
+            return False
+        if self.next_wake_at is not None and now < self.next_wake_at:
+            return False
+        delay = self.WAKE_BACKOFF_MIN[min(self.wake_count, len(self.WAKE_BACKOFF_MIN) - 1)]
+        self.wake_count += 1
+        self.next_wake_at = now + timedelta(minutes=delay)
+        return True
 
     def check_notify(self, p, s, now):
         mins = int(self.o["notify_not_charging_min"])

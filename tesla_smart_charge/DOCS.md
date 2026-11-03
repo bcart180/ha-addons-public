@@ -90,6 +90,9 @@ notify_not_charging_min: 20
 - `min_amps` / `max_amps`: 1–48 A. 48 A is a hard ceiling (also enforced in the engine). If `min_amps` is above
   `max_amps`, max wins and a warning is logged.
 - `stale_minutes` (default 30): battery level or plug state not reported for this long counts as unknown. The add-on
-  then never starts or raises charging (it may press wake to refresh); peak safety stops still fire.
+  then never starts or raises charging; peak safety stops still fire. It presses wake to refresh only when the plug
+  is freshly known plugged in, `home_entity` (if set) says home, it is off-peak or charge-now is on, and the last
+  known SoC is below target. Wakes back off 10, 20, 40, 80, then every 120 min, at most `wake_max_per_window`
+  (default 5, 0 = never) per window, and reset on fresh data, a plug change or a new off-peak window.
 - Writes are limited to `switch.turn_on/off`, `number.set_value`, `button.press` and `input_boolean.turn_off` on the
   entity ids you configured, plus your notify service and the status sensor.

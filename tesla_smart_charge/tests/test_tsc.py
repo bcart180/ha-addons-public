@@ -274,3 +274,92 @@ def test_l1_fresh_stamp_plans_normally():
     ha = StampHA(dict(BASE), {"sensor.car_battery_level": (now - timedelta(minutes=5)).isoformat()})
     e = Engine(dict(OPTS), ha, clock=lambda: now, sleep=lambda s: None)
     assert e.tick()["action"] == "start"
+
+
+def _l3(plug_stale=False, opts=None, now=None, **st):
+    now = now or datetime(2026, 11, 2, 21, 0).astimezone()
+    old = (now - timedelta(minutes=45)).isoformat()
+    stamps = {"sensor.car_battery_level": old}
+    if plug_stale:
+        stamps["binary_sensor.car_charge_cable"] = old
+    base = dict(BASE, **{"binary_sensor.car_status": "off"})
+    ha = StampHA(dict(base, **st), stamps)
+    clock = {"t": now}
+    o = dict(OPTS, online_sensor="binary_sensor.car_status", wake_button="button.car_wake", **(opts or {}))
+    e = Engine(o, ha, clock=lambda: clock["t"], sleep=lambda s: None)
+    return e, ha, clock
+
+
+def _wakes(ha):
+    return len([c for c in ha.calls if c[0] == "button"])
+
+
+def test_l3_gate_plug_must_be_fresh_plugged():
+    e, ha, _ = _l3(plug_stale=True)
+    e.tick()
+    assert _wakes(ha) == 0
+    e, ha, _ = _l3(**{"binary_sensor.car_charge_cable": "off"})
+    e.tick()
+    assert _wakes(ha) == 0
+
+
+def test_l3_gate_home():
+    e, ha, _ = _l3(opts={"home_entity": "device_tracker.car_location"},
+                   **{"device_tracker.car_location": "not_home"})
+    e.tick()
+    assert _wakes(ha) == 0
+    e, ha, _ = _l3(opts={"home_entity": "device_tracker.car_location"}, **{"device_tracker.car_location": "home"})
+    e.tick()
+    assert _wakes(ha) == 1
+
+
+def test_l3_gate_peak_unless_charge_now():
+    e, ha, _ = _l3(**{"binary_sensor.utility_peak": "on"})
+    e.tick()
+    assert _wakes(ha) == 0
+    e, ha, _ = _l3(**{"binary_sensor.utility_peak": "on", "input_boolean.charge_now": "on"})
+    e.tick()
+    assert _wakes(ha) == 1
+
+
+def test_l3_gate_soc_below_target():
+    e, ha, _ = _l3(**{"sensor.car_battery_level": "85"})
+    e.tick()
+    assert _wakes(ha) == 0
+
+
+def test_l3_backoff_and_cap():
+    e, ha, clock = _l3(opts={"wake_max_per_window": 3})
+    start = clock["t"]
+    times = []
+    for m in range(0, 400, 10):
+        clock["t"] = start + timedelta(minutes=m)
+        before = _wakes(ha)
+        e.last_plan = None
+        e.tick()
+        if _wakes(ha) > before:
+            times.append(m)
+    assert times == [0, 10, 30]  # 10 then 20 min apart, capped at 3
+
+
+def test_l3_backoff_resets_on_plug_change():
+    e, ha, clock = _l3()
+    e.tick()
+    assert e.wake_count == 1
+    ha.states["binary_sensor.car_charge_cable"] = "off"
+    clock["t"] += timedelta(minutes=1)
+    e.tick()
+    assert e.wake_count == 0
+
+
+def test_l3_backoff_sequence_caps_at_120():
+    e, _, _ = _l3(opts={"wake_max_per_window": 20})
+    s = {"now": datetime(2026, 11, 2, 21, 0), "last_plugged": True, "home": None, "peak": False,
+         "charge_now": False, "last_soc": 50, "target": 80}
+    gaps, t = [], s["now"]
+    for _ in range(6):
+        s["now"] = t
+        assert e.stale_wake_allowed(s)
+        gaps.append(int((e.next_wake_at - t).total_seconds() // 60))
+        t = e.next_wake_at
+    assert gaps == [10, 20, 40, 80, 120, 120]

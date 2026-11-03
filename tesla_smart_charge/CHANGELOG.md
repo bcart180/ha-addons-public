@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2
+- Stale-state wake (SA L3): wake is pressed only when the plug is freshly known plugged in, the optional
+  `home_entity` says home, it is off-peak (or charge-now is on) and the last known SoC is below target.
+  Exponential backoff 10, 20, 40, 80, then 120 min (cap); at most `wake_max_per_window` (default 5) wakes per
+  window; resets on fresh data, plug change or a new off-peak window.
+
 ## 0.1.1
 - max_amps always wins over min_amps (startup warning; min is lowered to max). Hard 48 A ceiling in schema and engine.
 - Stale guard: battery level or plug state older than `stale_minutes` (default 30, from last_reported/last_updated)
