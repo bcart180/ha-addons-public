@@ -122,7 +122,7 @@ def test_m1_future_timestamps_dropped_and_cooldown_clamped(tmp_path):
     write(tmp_path, {"mode": "heat", "setpoint": 68, "on_since": c.t + 3600, "off_since": c.t + 999,
                      "cooldown_until": c.t + 10 * 86400, "rise_ref": [c.t + 3600, 60],
                      "runs": [[c.t - 100, c.t - 200], [c.t - 500, c.t + 9999], [c.t - 900, c.t - 600]]})
-    h, ha, _ = mkp(tmp_path, clock=c)
+    h, _ha, _ = mkp(tmp_path, clock=c)
     assert h.on_since is None and h.off_since is None and h.rise_ref is None
     assert h.cooldown_until == c.t + H.COOLDOWN_S
     assert h.runs == [(c.t - 900, c.t - 600)]
@@ -149,7 +149,7 @@ def test_l2_restart_loop_keeps_max_run_timer(tmp_path):
     h.tick()
     assert ha.sw == "on"
     t0 = c.t
-    for k in range(5):  # restart every ~25 min while heating, temp keeps rising 1 F per restart
+    for _ in range(5):  # restart every ~25 min while heating, temp keeps rising 1 F per restart
         B.run(h, c, 25 * 60)
         ha.temp += 1.0
         h = restart(tmp_path, c, ha)
@@ -175,5 +175,5 @@ def test_l3_corrupt_file_alerts(tmp_path):
     (tmp_path / "heater.json").write_text("\x00garbage")
     c = B.Clock()
     ha = B.FakeHA(c, 60.0)
-    h = restart(tmp_path, c, ha)
+    restart(tmp_path, c, ha)
     assert any("unreadable" in n for n in ha.notes) and ha.sw == "off"
