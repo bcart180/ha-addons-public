@@ -106,6 +106,8 @@ class SpareHeater:
         self.on_since = None        # when the plug was last seen/commanded on
         self.off_since = None       # when it was last turned off (min-off)
         self.cooldown_until = 0.0
+        self.run_start = None       # 0.8.4 (SA L2): start of the current run for the 2 h max-run timer
+        self.carry = None           # (run_start, off_ts): run interrupted by a restart, resumed if back on in 20 min
         self.cap_latched = False
         self.latched = None         # "lockout" | "no_rise" | "relay_fault": off until mode off -> heat
         self.runs = []              # [(start, end)] on-intervals, pruned to 24 h
@@ -125,7 +127,8 @@ class SpareHeater:
         return {"mode": self.st["mode"], "setpoint": self.st["setpoint"], "latched": self.latched,
                 "cap_latched": self.cap_latched, "cooldown_until": self.cooldown_until,
                 "rise_ref": list(rr) if rr else None, "on_since": self.on_since, "off_since": self.off_since,
-                "runs": [list(x) for x in self.runs]}
+                "runs": [list(x) for x in self.runs], "run_start": self.run_start,
+                "carry": list(self.carry) if self.carry else None}
 
     def _load(self):
         """Restore persisted state. Missing file = first run (defaults). Unreadable / corrupt file = fail safe:
@@ -140,7 +143,8 @@ class SpareHeater:
         except (OSError, ValueError, UnicodeDecodeError):
             self.cooldown_until = self.clock() + COOLDOWN_S
             self.last = dict(self.last, reason="state_unreadable")
-            log.warning("spare bathroom: heater state unreadable; 20 min cooldown")
+            if self.configured:
+                self._notify("state_unreadable", "Heater state file unreadable. Plug off, 20 min cooldown.")
             return
         if d.get("mode") in ("heat", "off"):
             self.st["mode"] = d["mode"]
@@ -150,20 +154,36 @@ class SpareHeater:
         if d.get("latched") in ("lockout", "no_rise", "relay_fault"):
             self.latched = d["latched"]
         self.cap_latched = d.get("cap_latched") is True
+        # 0.8.4 (SA M1): sanitize timestamps against now; anything > 60 s in the future or invalid is dropped
+        now = self.clock()
+
+        def ok(v):
+            v = _num(v)
+            return v if v is not None and v > 0 and v <= now + FUTURE_SKEW_S else None
+
         cu = _num(d.get("cooldown_until"))
-        if cu is not None:
-            self.cooldown_until = cu
+        if cu is not None and cu > 0:
+            self.cooldown_until = min(cu, now + COOLDOWN_S)  # far-future cooldown clamped to 20 min
         rr = d.get("rise_ref")
-        if isinstance(rr, list) and len(rr) == 2 and _num(rr[0]) is not None:
-            self.rise_ref = (_num(rr[0]), _num(rr[1]))
-        for k in ("on_since", "off_since"):
-            v = _num(d.get(k))
-            if v is not None:
-                setattr(self, k, v)
+        if isinstance(rr, list) and len(rr) == 2 and ok(rr[0]) is not None:
+            self.rise_ref = (ok(rr[0]), _num(rr[1]))
+        for k in ("on_since", "off_since", "run_start"):
+            setattr(self, k, ok(d.get(k)))
+        c = d.get("carry")
+        if isinstance(c, list) and len(c) == 2 and ok(c[0]) is not None and ok(c[1]) is not None:
+            self.carry = (ok(c[0]), ok(c[1]))
         runs = d.get("runs")
         if isinstance(runs, list):
-            self.runs = [(_num(x[0]), _num(x[1])) for x in runs if isinstance(x, list) and len(x) == 2
-                         and _num(x[0]) is not None and _num(x[1]) is not None]
+            self.runs = [(ok(x[0]), ok(x[1])) for x in runs if isinstance(x, list) and len(x) == 2
+                         and ok(x[0]) is not None and ok(x[1]) is not None and ok(x[1]) >= ok(x[0])]
+        # SA L2: a run interrupted by a restart keeps its start, so a crash loop cannot reset the 2 h timer
+        if self.on_since is not None:
+            start = min(t for t in (self.run_start, self.on_since) if t is not None)
+            if now - start >= MAX_RUN_S:
+                self.cooldown_until = max(self.cooldown_until, now + COOLDOWN_S)
+                self.carry = None
+            else:
+                self.carry = (start, now)
         self._written = self._state()
 
     def _save(self):
@@ -180,6 +200,14 @@ class SpareHeater:
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp, self.path)
+            try:  # SA L3: fsync the directory so the rename is durable
+                fd = os.open(os.path.dirname(os.path.abspath(self.path)), os.O_RDONLY)
+                try:
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
+            except OSError:
+                pass
             self._written = cur
         except OSError as e:
             log.warning("heater state save failed: %s", type(e).__name__)
@@ -268,16 +296,17 @@ class SpareHeater:
 
     def _end_run(self, now):
         if self.on_since is not None:
-            self.runs.append((self.on_since, now))
+            self.runs.append((min(self.on_since, now), now))  # never a negative run
             self.off_since = now
         self.on_since = None
+        self.run_start = None
         self.rise_ref = None
 
     def _on_seconds_24h(self, now):
         self.runs = [(a, b) for a, b in self.runs if b > now - DAY_S]
-        tot = sum(b - max(a, now - DAY_S) for a, b in self.runs)
+        tot = sum(max(0.0, b - max(a, now - DAY_S)) for a, b in self.runs)
         if self.on_since is not None:
-            tot += now - max(self.on_since, now - DAY_S)
+            tot += max(0.0, now - max(self.on_since, now - DAY_S))
         return tot
 
     # ---------- main loop ----------
@@ -341,6 +370,9 @@ class SpareHeater:
         if want and not is_on:
             self._switch(True)
             self.on_since = now
+            c = self.carry
+            self.run_start = c[0] if c and 0 <= now - c[1] < COOLDOWN_S else now
+            self.carry = None
             self.rise_ref = (now, temp)
         elif not want and (is_on or self.commanded):
             self._switch(False)
@@ -394,7 +426,8 @@ class SpareHeater:
             self.latched = "lockout"
             self._notify("lockout", "Heater ran over 8 h in 24 h. Locked out: set Off then Heat to reset.")
             return "lockout", False
-        if is_on and self.on_since is not None and now - self.on_since >= MAX_RUN_S:
+        rs = self.run_start if self.run_start is not None else self.on_since
+        if is_on and rs is not None and now - min(rs, self.on_since or rs) >= MAX_RUN_S:
             self.cooldown_until = now + COOLDOWN_S
             self.notified.discard("cooldown")
             self._notify("cooldown", "Heater ran 2 h straight. 20 min cooldown, then it resumes.")
@@ -410,6 +443,8 @@ class SpareHeater:
             self.rise_ref = (now, temp)
         if is_on and self.rise_ref and now - self.rise_ref[0] >= NO_RISE_S and \
                 (self.rise_ref[1] is None or temp < self.rise_ref[1] + NO_RISE_F):
+            if temp >= sp:  # SA: at / above setpoint a frozen reading is not a fault: plain off, no latch
+                return "holding", False
             self.latched = "no_rise"
             self._notify("no_rise", "No 1 F rise after 45 min of heating. Heater off: check it is plugged in and on.")
             return "no_rise", False
