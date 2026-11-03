@@ -137,7 +137,7 @@ jobs:
       - name: pytest
         run: pytest -q
       - name: Safe default (dry run)
-        run: grep -qx '  dry_run: true' config.yaml
+        run: "grep -qx '  dry_run: true' config.yaml"
       - name: Home Assistant add-on lint
         uses: frenck/action-addon-linter@b9cfd1bc62ba60d2c4fc96317b5f7ada5923f4a7 # v2.21.1
         with:
