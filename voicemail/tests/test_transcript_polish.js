@@ -139,7 +139,8 @@ eq(
 
 const detail = appJs.indexOf('linkPhones(polishTranscript(v.transcript || v.snippet || "No transcript"))');
 if (detail < 0) failures.push("detail transcript does not polish before linkPhones");
-if (!appJs.includes("mapSpeakerText(v.snippet")) failures.push("list preview does not map speaker labels");
+if (!appJs.includes("previewText(v.preview")) failures.push("list preview must use the server-masked v.preview");
+if (/const preview = [^\n]*v\.snippet/.test(appJs)) failures.push("list preview must never use the raw snippet (0.5.5)");
 const share = appJs.slice(appJs.indexOf('id="btn-share"') === -1 ? appJs.indexOf("btn-share") : 0);
 if (
   !share.includes("current.transcript || current.snippet") ||
@@ -149,12 +150,12 @@ if (
   failures.push("share sheet should keep the stored transcript");
 }
 if (!/^slug:\s*voicemail\s*$/m.test(config)) failures.push("slug must stay voicemail");
-if (!/^version:\s*"0\.5\.4"\s*$/m.test(config)) failures.push("config version must be 0.5.4");
-if (!changelog.startsWith("# Changelog\n\n## 0.5.4 — 2026-11-02\n")) failures.push("changelog missing 0.5.4 entry");
+if (!/^version:\s*"0\.5\.5"\s*$/m.test(config)) failures.push("config version must be 0.5.5");
+if (!changelog.startsWith("# Changelog\n\n## 0.5.5 — 2026-11-03\n")) failures.push("changelog missing 0.5.5 entry");
 if (!/## 0\.1\.9 — 2026-10-29\n/.test(changelog)) failures.push("changelog must keep the 0.1.9 entry");
 if (!/## 0\.1\.8 — 2026-10-29\n/.test(changelog)) failures.push("changelog must keep the 0.1.8 packaging entry");
 if (!/## 0\.1\.7 — 2026-10-28\n/.test(changelog)) failures.push("changelog must keep the 0.1.7 entry");
-if (!/VERSION = "0\.5\.4"/.test(server)) failures.push("server.py VERSION must match 0.5.4");
+if (!/VERSION = "0\.5\.5"/.test(server)) failures.push("server.py VERSION must match 0.5.5");
 if (/^image:/m.test(config)) failures.push("config must not set an image field");
 if (!/^ingress_panel:\s*true\s*$/m.test(config)) failures.push("ingress_panel must stay true");
 if (/bedroom_homepod|HomePod/.test([server, config, appJs, indexHtml].join("\n"))) {

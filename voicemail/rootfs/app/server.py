@@ -35,7 +35,7 @@ import share_import
 APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC = APP_DIR / "static"
 EXAMPLE = APP_DIR / "example_voicemails.json"
-VERSION = "0.5.4"
+VERSION = "0.5.5"
 AUDIO_LIMIT = 25 * 1024 * 1024
 SENSOR_RE = re.compile(r"sensor\.[a-z0-9_]+")
 RT = web.AppKey("rt", dict)
@@ -324,6 +324,7 @@ def normalize_item(raw: dict) -> dict:
     has_audio = bool(raw.get("has_audio")) or bool(audio_url) or bool(cid and audio_file_for(cid))
     snippet_raw = raw.get("snippet") or ""
     transcript_raw = raw.get("transcript") or snippet_raw or ""
+    summary = call_summary.for_display(call_summary.stored_or_extract(raw))
     return {
         "voicemail_id": raw.get("voicemail_id") or raw.get("message_id") or cid,
         "caller_title": str(caller),
@@ -345,7 +346,11 @@ def normalize_item(raw: dict) -> dict:
         "short_id": raw.get("short_id") or "",
         "stir": inbox_store.stir_summary(raw.get("stir_verstat")),
         "trust_verdict": raw.get("trust_verdict") or "",
-        "summary": call_summary.for_display(call_summary.stored_or_extract(raw)),
+        "summary": summary,
+        # 0.5.5: list preview is always masked server-side (never the raw snippet). Detail keeps full text.
+        "preview": (summary.get("reason") or "")
+        or call_summary.fallback_line({"snippet": map_speaker_text(snippet_raw) if isinstance(snippet_raw, str) else ""})
+        or call_summary.fallback_line({"transcript": map_speaker_text(transcript_raw) if isinstance(transcript_raw, str) else ""}),
     }
 
 
