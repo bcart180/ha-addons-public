@@ -1,5 +1,5 @@
 name: Smart HVAC
-version: "0.8.7"
+version: "0.8.8"
 slug: smart_hvac
 description: Smart thermostat for multi-zone mini-split systems. All heads share one outdoor unit, so they are always kept in the same heat/cool mode. Presence-, weather- and sun-aware, plus radiant floor (Ingress panel)
 url: https://github.com/bcart180/ha-addons-public/tree/main/smart_hvac
