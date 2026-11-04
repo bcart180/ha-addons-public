@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.6 — 2026-11-03
+
+- Privacy contract locked by tests (no behavior change): full caller numbers appear only in the admin-only ingress panel (`panel_admin: true`; list title and detail). Every shared output (`sensor.inbound_voicemails` attributes `caller_masked`, `caller_label_masked`, `summary_callback`, `summary_*`, `summary_fallback`, and the blueprint push built from them) stays last-4 only (`•••1234`). There is deliberately no option to unmask shared outputs. New `tests/test_full_numbers_admin_only.py`. No data, API permission, webhook or dry_run change.
+
 ## 0.5.5 — 2026-11-03
 
 - Privacy fix: the list preview could show a full phone number when a row had no summary reason (e.g. a snippet that is only a number), because `app.js` fell back to the raw snippet. `/api/voicemails` rows now carry a server-side `preview`: the summary reason, or else `call_summary.fallback_line` (header stripped, numbers masked to last 4). `app.js` uses only that field for the list. The detail view, tap-to-call and the share sheet still show the full number. Display-only; no data, API permission, webhook or dry_run change.
