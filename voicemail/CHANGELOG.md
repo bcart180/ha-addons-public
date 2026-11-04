@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.6 — 2026-11-03
+
+- New option `show_full_numbers` (default `false`). When on, the caller-number fields on the shared sensor and push (`caller_masked`, `caller_label_masked`, `summary_callback`) carry the full formatted number, e.g. `(555) 555-0142`, instead of `•••0142`; a contact title with a masked number gets the full number swapped in. Transcript-derived text (`summary_reason`, `summary_name`, `summary_fallback`, list preview) stays masked. Default behavior is unchanged. No data, API permission, webhook or dry_run change.
+
 ## 0.5.5 — 2026-11-03
 
 - Privacy fix: the list preview could show a full phone number when a row had no summary reason (e.g. a snippet that is only a number), because `app.js` fell back to the raw snippet. `/api/voicemails` rows now carry a server-side `preview`: the summary reason, or else `call_summary.fallback_line` (header stripped, numbers masked to last 4). `app.js` uses only that field for the list. The detail view, tap-to-call and the share sheet still show the full number. Display-only; no data, API permission, webhook or dry_run change.

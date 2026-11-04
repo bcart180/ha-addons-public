@@ -63,7 +63,7 @@ assert "555-0101" in example and "555-0102" in example and "555-0103" in example
 
 config = (ROOT / "config.yaml").read_text()
 assert "slug: voicemail" in config
-assert 'version: "0.5.5"' in config
+assert 'version: "0.5.6"' in config
 assert "image:" not in config
 assert mod.VERSION == "0.5.5"
 

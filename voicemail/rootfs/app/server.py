@@ -35,7 +35,7 @@ import share_import
 APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC = APP_DIR / "static"
 EXAMPLE = APP_DIR / "example_voicemails.json"
-VERSION = "0.5.5"
+VERSION = "0.5.6"
 AUDIO_LIMIT = 25 * 1024 * 1024
 SENSOR_RE = re.compile(r"sensor\.[a-z0-9_]+")
 RT = web.AppKey("rt", dict)
@@ -53,6 +53,8 @@ def load_options() -> dict:
 
 
 OPTS = load_options()
+# Opt-in full caller numbers on the shared sensor / push (default off).
+call_summary.SHOW_FULL_NUMBERS = OPTS.get("show_full_numbers") is True
 PORT = int(os.environ.get("VM_PORT", "8099"))
 MOCK = bool(OPTS.get("mock")) or os.environ.get("VM_MOCK") == "1"
 SENSOR = (OPTS.get("sensor_entity") or "sensor.inbound_voicemails").strip()

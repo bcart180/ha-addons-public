@@ -122,6 +122,22 @@ def digits(value: Any) -> str:
     return re.sub(r"\D", "", str(value or ""))
 
 
+# 0.5.6: opt-in (option show_full_numbers, default off). When on, the caller
+# number fields on the shared sensor / push (caller_masked,
+# caller_label_masked, summary_callback) carry the full formatted number.
+# Numbers spoken inside transcript text stay masked either way.
+SHOW_FULL_NUMBERS = False
+
+
+def caller_number(num: Any) -> str:
+    """Caller-number field: last 4 by default, full when SHOW_FULL_NUMBERS."""
+    if SHOW_FULL_NUMBERS:
+        d = digits(num)
+        if len(d) >= 7:
+            return pretty_number(d)
+    return mask_number(num)
+
+
 def mask_number(num: Any) -> str:
     """'+1 (555) 555-0199' -> '•••0199' (same as the pyscript sensor)."""
     s = str(num or "").strip()
@@ -401,7 +417,7 @@ def for_sensor(summary: dict) -> dict:
     return {
         "summary_name": _clean(mask_phone_runs(plain_text(summary.get("name") or "")), NAME_MAX),
         "summary_reason": _clean(mask_phone_runs(plain_text(summary.get("reason") or "")), REASON_MAX),
-        "summary_callback": mask_number(summary.get("callback") or ""),
+        "summary_callback": caller_number(summary.get("callback") or ""),
         "urgency": summary.get("urgency") or "normal",
     }
 
@@ -419,7 +435,11 @@ def fallback_line(item: dict) -> str:
 def caller_label(item: dict) -> str:
     """Push title: a contact name stays, any number in it shows last 4 only."""
     title = _clean(mask_phone_runs(plain_text(item.get("caller_title") or "")), NAME_MAX)
-    if title and not set(title) <= set("•0123456789+()-. "):
-        return title
     num = item.get("caller") or item.get("caller_pretty") or ""
-    return mask_number(strip_format(num)) if digits(strip_format(num)) else ""
+    shown = caller_number(strip_format(num)) if digits(strip_format(num)) else ""
+    if title and not set(title) <= set("•0123456789+()-. "):
+        if SHOW_FULL_NUMBERS and shown and "•" in title:
+            # 'Yoga Life, •••3927' -> 'Yoga Life, (555) 555-3927'
+            return title.replace(mask_number(strip_format(num)), shown)
+        return title
+    return shown

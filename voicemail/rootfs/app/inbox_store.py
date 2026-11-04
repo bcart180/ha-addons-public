@@ -233,7 +233,7 @@ def sensor_state(items: list[dict]) -> dict:
                 # Masked only: no raw caller/caller_pretty/caller_title/snippet/
                 # transcript. Any HA user can read entity attributes; the admin
                 # panel reads the store directly.
-                "caller_masked": call_summary.mask_number(call_summary.strip_format(item.get("caller") or "")),
+                "caller_masked": call_summary.caller_number(call_summary.strip_format(item.get("caller") or "")),
                 "date": item.get("date") or "",
                 "date_display": item.get("date_display") or "",
                 "timestamp_display": item.get("timestamp_display") or "",
