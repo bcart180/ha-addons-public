@@ -89,6 +89,10 @@ notify_not_charging_min: 20
 - `dry_run_safety_off` (default true): in dry run, still send safety stops.
 - `min_amps` / `max_amps`: 1–48 A. 48 A is a hard ceiling (also enforced in the engine). If `min_amps` is above
   `max_amps`, max wins and a warning is logged.
+- `charge_limit` / `ble_charge_limit`: one of them is **required to go live** (`dry_run: false`); without it the
+  add-on refuses to start charging (stops still work).
+- `charge_on_max_per_window` (default 5): if the car doesn't start charging, the on command is retried with backoff
+  10, 20, 40, 80, then 120 min, up to this many times per window.
 - `stale_minutes` (default 30): battery level or plug state not reported for this long counts as unknown. The add-on
   then never starts or raises charging; peak safety stops still fire. It presses wake to refresh only when the plug
   is freshly known plugged in, `home_entity` (if set) says home, it is off-peak or charge-now is on, and the last

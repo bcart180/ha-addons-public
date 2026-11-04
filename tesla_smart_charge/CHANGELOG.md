@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.4
+- Charge-on retries use the same backoff (10/20/40/80/120 min) with a per-window cap (`charge_on_max_per_window`,
+  default 5); reset only on a real plug-in or a new off-peak window. Repeats log at debug.
+- Unknown/unavailable charging sensor is treated as unknown, not "not charging": peak, pause and safety stops are
+  still sent.
+- L-a: with `dry_run: false`, starts are refused (stops still work) unless `charge_limit` or `ble_charge_limit` is
+  set, so a stale SoC restored after an HA restart can't charge without a ceiling.
+- L-b: check cadence and wake backoff run on the monotonic clock; wall-clock jumps no longer delay re-plans.
+- L-c: state timestamps more than 60 s in the future count as stale.
+- L-e: a wake attempt with no wake button configured no longer uses up the wake budget.
+
 ## 0.1.3
 - Wake backoff and per-window cap reset only on a real plug off -> on, or a new off-peak window. Fresh data no
   longer resets them, and unavailable/unknown readings never count as a transition (SA L4: plug flapping).

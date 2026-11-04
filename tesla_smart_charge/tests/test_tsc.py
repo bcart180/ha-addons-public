@@ -63,7 +63,8 @@ BASE = {"switch.car_charge": "off", "number.car_charge_current": "16", "number.c
 def mk(t, opts=None, **st):
     ha = FakeHA(dict(BASE, **st))
     clock = {"t": t}
-    e = Engine(dict(OPTS, **(opts or {})), ha, clock=lambda: clock["t"], sleep=lambda s: None)
+    e = Engine(dict(OPTS, **(opts or {})), ha, clock=lambda: clock["t"], sleep=lambda s: None,
+               mono=lambda: clock["t"].timestamp())
     return e, ha, clock
 
 
@@ -360,12 +361,12 @@ def test_l3_backoff_sequence_caps_at_120():
     e, _, _ = _l3(opts={"wake_max_per_window": 20})
     s = {"now": datetime(2026, 11, 2, 21, 0), "last_plugged": True, "home": None, "peak": False,
          "charge_now": False, "last_soc": 50, "target": 80}
-    gaps, t = [], s["now"]
+    gaps, t = [], 0.0
+    e.mono = lambda: t
     for _ in range(6):
-        s["now"] = t
-        assert e.stale_wake_allowed(s) and e._wake_budget(t)
-        gaps.append(int((e.next_wake_at - t).total_seconds() // 60))
-        t = e.next_wake_at
+        assert e.stale_wake_allowed(s) and e._wake_budget(None)
+        gaps.append(int((e.wake_bo.next_at - t) // 60))
+        t = e.wake_bo.next_at
     assert gaps == [10, 20, 40, 80, 120, 120]
 
 
@@ -430,3 +431,88 @@ def test_l4_hard_min_gap_between_any_wakes():
     e.last_plan = None
     e.tick()
     assert _wakes(ha) == 1
+
+
+def _on_calls(ha):
+    return len([c for c in ha.calls if c[:2] == ("switch", "turn_on")])
+
+
+def test_charge_on_retry_backoff_and_cap():
+    e, ha, clock = mk(NIGHT)
+    ha.call = lambda d, sv, data: ha.calls.append((d, sv, data["entity_id"], data.get("value")))  # car ignores
+    start, sent = clock["t"], []
+    for m in range(0, 600, 10):
+        clock["t"] = start + timedelta(minutes=m)
+        before = _on_calls(ha)
+        e.tick()
+        if _on_calls(ha) > before:
+            sent.append(m)
+    assert sent == [0, 10, 30, 70, 150]  # 10/20/40/80 apart, cap 5
+
+
+def test_charge_on_backoff_resets_on_new_window():
+    e, ha, clock = mk(NIGHT, opts={"charge_on_max_per_window": 1})
+    ha.call = lambda d, sv, data: ha.calls.append((d, sv, data["entity_id"], data.get("value")))
+    e.tick()
+    clock["t"] += timedelta(minutes=30)
+    e.tick()
+    assert _on_calls(ha) == 1
+    ha.states["binary_sensor.utility_peak"] = "on"
+    clock["t"] += timedelta(minutes=1)
+    e.tick()
+    ha.states["binary_sensor.utility_peak"] = "off"
+    clock["t"] += timedelta(minutes=1)
+    e.tick()
+    assert _on_calls(ha) == 2
+
+
+def test_unknown_charging_sensor_still_stops():
+    for bad in ("unavailable", "unknown"):
+        e, ha, _ = mk(NIGHT, opts={"charging_sensor": "binary_sensor.car_charging"},
+                      **{"binary_sensor.car_charging": bad, "binary_sensor.utility_peak": "on"})
+        e.tick()
+        assert ("switch", "turn_off", "switch.car_charge", None) in ha.calls
+        e, ha, _ = mk(NIGHT, opts={"charging_sensor": "binary_sensor.car_charging"},
+                      **{"binary_sensor.car_charging": bad, "input_boolean.charge_pause": "on"})
+        e.tick()
+        assert ("switch", "turn_off", "switch.car_charge", None) in ha.calls
+
+
+def test_la_live_without_limit_refuses_start():
+    o = dict(OPTS)
+    o.pop("charge_limit")
+    ha = FakeHA(dict(BASE))
+    e = Engine(o, ha, clock=lambda: NIGHT, sleep=lambda s: None)
+    assert e.tick()["action"] == "start"
+    assert not [c for c in ha.calls if c[1] in ("turn_on", "set_value")]
+    ha.states["binary_sensor.utility_peak"] = "on"
+    ha.states["switch.car_charge"] = "on"
+    e.tick()
+    assert ("switch", "turn_off", "switch.car_charge", None) in ha.calls
+
+
+def test_lb_wall_clock_jump_back_does_not_suppress_plans():
+    t = {"wall": NIGHT, "mono": 1000.0}
+    ha = FakeHA(dict(BASE))
+    e = Engine(dict(OPTS), ha, clock=lambda: t["wall"], sleep=lambda s: None, mono=lambda: t["mono"])
+    assert e.tick() is not None
+    t["wall"] = NIGHT - timedelta(hours=2)  # wall jumps back
+    t["mono"] += 600
+    assert e.tick() is not None
+
+
+def test_lc_future_stamp_is_stale():
+    now = datetime(2026, 11, 2, 21, 0).astimezone()
+    ha = StampHA(dict(BASE), {"sensor.car_battery_level": (now + timedelta(minutes=5)).isoformat()})
+    e = Engine(dict(OPTS), ha, clock=lambda: now, sleep=lambda s: None)
+    assert e.tick()["reason"] == "stale_state"
+    ha.stamps = {"sensor.car_battery_level": (now + timedelta(seconds=30)).isoformat()}
+    e.last_plan = None
+    assert e.tick()["action"] == "start"
+
+
+def test_le_no_wake_button_keeps_budget():
+    e, ha, _ = _l3()
+    e.o["wake_button"] = ""
+    e.tick()
+    assert e.wake_count == 0

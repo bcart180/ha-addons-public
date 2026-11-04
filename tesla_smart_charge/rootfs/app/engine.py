@@ -11,12 +11,34 @@ DEFAULTS = {"dry_run": True, "dry_run_safety_off": True, "check_interval_min": 1
             "confirm_s": 20, "battery_kwh": 75, "charge_efficiency": 0.9, "target_soc": 80,
             "departure_time": "07:00", "finish_buffer_min": 30, "min_amps": 5, "max_amps": 32,
             "fallback_voltage": 240,
-            "stale_minutes": 30, "wake_max_per_window": 5, "peak_schedule": [], "notify_not_charging_min": 20}
+            "stale_minutes": 30, "wake_max_per_window": 5,
+            "charge_on_max_per_window": 5, "peak_schedule": [], "notify_not_charging_min": 20}
 HARD_MAX_AMPS = 48
 SAFETY_STOPS = ("stale_state", "peak", "plug_state_unavailable", "soc_or_target_unavailable")
 ENTITY_KEYS = ("charge_switch", "charge_current", "charge_limit", "wake_button", "ble_charge_switch",
                "ble_charge_current", "ble_charge_limit", "ble_wake_button", "charge_now_entity",
                "pause_entity", "trip_entity")
+
+
+class Backoff:
+    """Per-window cap + exponential backoff on the monotonic clock (minutes 10/20/40/80/120 cap)."""
+    STEPS_MIN = (10, 20, 40, 80, 120)
+
+    def __init__(self, cap):
+        self.cap = int(cap)
+        self.reset()
+
+    def reset(self):
+        self.count, self.next_at = 0, None
+
+    def take(self, mono_now):
+        if self.count >= self.cap:
+            return False
+        if self.next_at is not None and mono_now < self.next_at:
+            return False
+        self.next_at = mono_now + 60 * self.STEPS_MIN[min(self.count, len(self.STEPS_MIN) - 1)]
+        self.count += 1
+        return True
 
 
 class Engine:
@@ -35,14 +57,20 @@ class Engine:
         self.peak_definite = None  # last definite peak reading; unknown peak never makes an edge
         self.sleep = sleep or time.sleep
         self.prev = {}
-        self.last_plan = None  # monotonic-ish: datetime of last full plan
+        self.last_plan = None  # monotonic seconds of last full plan (L-b)
         self.last_amps_cmd = None
         self.window_start = None
         self.notified_window = None
         self.status = {}
-        self.wake_count = 0
         self.plug_on_edge = False
-        self.next_wake_at = None
+        self.wake_bo = Backoff(self.o["wake_max_per_window"])
+        self.on_bo = Backoff(self.o["charge_on_max_per_window"])
+        # L-a: going live without a charge-limit entity could start on a restored stale SoC with no ceiling.
+        self.limit_missing = not self.o["dry_run"] and not (
+            self.o.get("charge_limit") or self.o.get("ble_charge_limit"))
+        if self.limit_missing:
+            log.error("dry_run is false but no charge_limit/ble_charge_limit is set: "
+                      "starts are refused, stops still work")
 
     # ---------- inputs ----------
     def _st(self, states, key):
@@ -63,6 +91,8 @@ class Engine:
         try:
             t = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
             n = now if now.tzinfo else now.astimezone()
+            if t - n > timedelta(seconds=60):
+                return True  # L-c: a stamp more than 60 s in the future is not trusted
             return (n - t) > timedelta(minutes=int(self.o["stale_minutes"]))
         except (TypeError, ValueError):
             return True
@@ -105,11 +135,9 @@ class Engine:
         home = None
         if o.get("home_entity"):
             home = core.is_on(self._st(states, "home_entity"))
-        charging = None
-        if o.get("charging_sensor"):
-            charging = core.is_on(self._st(states, "charging_sensor"))
-        else:
-            charging = core.is_on(self._st(states, "charge_switch"))
+        # Unknown charging state = None (not False): stops are still sent (only a definite False skips them).
+        raw_ch = self._st(states, "charging_sensor" if o.get("charging_sensor") else "charge_switch")
+        charging = None if str(raw_ch).strip().lower() in core.BAD else core.is_on(raw_ch)
         return {
             "now": now, "soc": soc, "stale": stale, "last_soc": last_soc,
             "last_plugged": last_plugged if plug_fresh else None,
@@ -190,6 +218,8 @@ class Engine:
             return False
         if self.last_wake_mono is not None and self.mono() - self.last_wake_mono < self.WAKE_MIN_GAP_S:
             return False
+        if not (self.o.get("ble_wake_button") or self.o.get("wake_button")):
+            return False  # L-e: nothing to press, keep the budget
         if not self._wake_budget(now or self.clock()):
             return False
         self.last_wake_mono = self.mono()
@@ -258,13 +288,15 @@ class Engine:
                 # Pause lasts until the next off-peak window: clear it at the window edge.
                 self._clear("pause", states)
                 states = self.ha.get_states()
-        due = self.last_plan is None or (now - self.last_plan) >= timedelta(minutes=int(self.o["check_interval_min"]))
+        mono = self.mono()
+        due = self.last_plan is None or (mono - self.last_plan) >= 60 * int(self.o["check_interval_min"])
         if not (due or why or peak_off_edge):
             return None
-        self.last_plan = now
+        self.last_plan = mono
         s = self.inputs(states, now)
         if peak_off_edge or self.plug_on_edge:
             self.reset_wake_backoff()  # L4: only a new off-peak window or a real off->on plug-in
+            self.on_bo.reset()
         p = core.plan(s)
         if s["stale"] and p["action"] != "idle":
             p.update(action="stop" if p["action"] == "stop" else "hold", reason="stale_state", amps=None)
@@ -300,17 +332,26 @@ class Engine:
         elif p["action"] == "start":
             if dry:
                 return  # dry run never turns charging ON or changes amps
+            if self.limit_missing:
+                log.warning("start refused: configure charge_limit or ble_charge_limit before dry_run: false")
+                return
             self.wake(s["now"])  # same cap/backoff/min-gap as the stale path
             self.set_limit(s["target"], states)
             if core.amps_changed(p["amps"], s["amps_now"]):
                 self.set_amps(p["amps"])
-            if not s["charging"]:
-                self.set_switch(True)
+            if s["charging"] is not True:
+                if self.on_bo.take(self.mono()):
+                    (log.debug if self.on_bo.count > 1 else log.info)("charge on (attempt %d)", self.on_bo.count)
+                    self.set_switch(True)
+                else:
+                    log.debug("charge-on retry held by backoff/cap (%d sent this window)", self.on_bo.count)
 
-    WAKE_BACKOFF_MIN = (10, 20, 40, 80, 120)
+    @property
+    def wake_count(self):
+        return self.wake_bo.count
 
     def reset_wake_backoff(self):
-        self.wake_count, self.next_wake_at = 0, None
+        self.wake_bo.reset()
 
     def stale_wake_allowed(self, s):
         """L3: wake a stale car only when it is worth it, with exponential backoff and a per-window cap."""
@@ -326,14 +367,7 @@ class Engine:
 
     def _wake_budget(self, now):
         """Per-window cap + exponential backoff, shared by every wake path. Consumes one wake when True."""
-        if self.wake_count >= int(self.o["wake_max_per_window"]):
-            return False
-        if self.next_wake_at is not None and now < self.next_wake_at:
-            return False
-        delay = self.WAKE_BACKOFF_MIN[min(self.wake_count, len(self.WAKE_BACKOFF_MIN) - 1)]
-        self.wake_count += 1
-        self.next_wake_at = now + timedelta(minutes=delay)
-        return True
+        return self.wake_bo.take(self.mono())
 
     def check_notify(self, p, s, now):
         mins = int(self.o["notify_not_charging_min"])
