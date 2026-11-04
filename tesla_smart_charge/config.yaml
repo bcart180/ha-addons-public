@@ -1,0 +1,90 @@
+name: Tesla Smart Charge
+version: "0.1.4"
+slug: tesla_smart_charge
+description: Lowest-amp off-peak Tesla charging that reaches your target by departure (BLE first, cloud fallback)
+url: https://github.com/bcart180/ha-addons-public/tree/main/tesla_smart_charge
+arch:
+  - aarch64
+  - amd64
+init: false
+# No ports, no ingress. Talks only to Home Assistant through the Supervisor proxy.
+homeassistant_api: true
+options:
+  # SAFE ON INSTALL: dry run (plans and logs only; never turns charging ON). See DOCS.md.
+  dry_run: true
+  # Dry run still sends safety stops (peak with no charge-now): it can stop a charge you started by hand in peak.
+  dry_run_safety_off: true
+  log_level: info
+  check_interval_min: 10
+  # No entity ids ship as defaults: set yours in the Configuration tab (example in DOCS.md).
+  charge_switch: ""
+  charge_current: ""
+  battery_level: ""
+  plugged_in: ""
+  battery_kwh: 75
+  charge_efficiency: 0.9
+  target_soc: 80
+  departure_time: "07:00"
+  finish_buffer_min: 30
+  min_amps: 5
+  max_amps: 32
+  stale_minutes: 30
+  wake_max_per_window: 5
+  charge_on_max_per_window: 5
+  fallback_voltage: 240
+  peak_schedule: []
+  notify_not_charging_min: 20
+schema:
+  dry_run: bool
+  dry_run_safety_off: bool?
+  log_level: list(debug|info|warning|error)
+  check_interval_min: int(2,60)
+  tick_s: int(10,120)?
+  # Cloud (Tesla Fleet / Teslemetry / Tessie) entities. Required.
+  charge_switch: match(^(switch\.[a-z0-9_]+)?$)
+  charge_current: match(^(number\.[a-z0-9_]+)?$)
+  charge_limit: match(^number\.[a-z0-9_]+$)?
+  battery_level: match(^(sensor\.[a-z0-9_]+)?$)
+  plugged_in: match(^(binary_sensor\.[a-z0-9_]+)?$)
+  charging_sensor: match(^(binary_sensor|sensor)\.[a-z0-9_]+$)?
+  wake_button: match(^button\.[a-z0-9_]+$)?
+  online_sensor: match(^binary_sensor\.[a-z0-9_]+$)?
+  home_entity: match(^(binary_sensor|device_tracker|person)\.[a-z0-9_]+$)?
+  # Optional Tesla BLE (ESPHome) entities: tried first, cloud is the fallback.
+  ble_charge_switch: match(^switch\.[a-z0-9_]+$)?
+  ble_charge_current: match(^number\.[a-z0-9_]+$)?
+  ble_charge_limit: match(^number\.[a-z0-9_]+$)?
+  ble_wake_button: match(^button\.[a-z0-9_]+$)?
+  confirm_s: int(5,120)?
+  voltage_sensor: match(^sensor\.[a-z0-9_]+$)?
+  fallback_voltage: int(180,260)
+  battery_kwh: float(10,250)
+  charge_efficiency: float(0.5,1)
+  target_soc: int(50,100)
+  target_soc_entity: match(^(input_number|number)\.[a-z0-9_]+$)?
+  departure_time: match(^\d{2}:\d{2}$)
+  departure_entity: match(^input_datetime\.[a-z0-9_]+$)?
+  finish_buffer_min: int(0,180)
+  min_amps: int(1,48)
+  stale_minutes: int(5,1440)
+  wake_max_per_window: int(0,20)
+  charge_on_max_per_window: int(1,20)
+  # Hard ceiling 48 A (Gen 3 Wall Connector max). The engine also clamps to 48.
+  max_amps: int(1,48)
+  max_amps_entity: match(^(input_number|number)\.[a-z0-9_]+$)?
+  # Peak: a binary_sensor (on = peak) and/or a weekly schedule. Either one saying peak = peak.
+  peak_sensor: match(^binary_sensor\.[a-z0-9_]+$)?
+  peak_schedule:
+    - days: str
+      start: match(^\d{2}:\d{2}$)
+      end: match(^\d{2}:\d{2}$)
+  # Helpers you create (input_boolean) to drive it from a phone or dashboard.
+  enabled_entity: match(^input_boolean\.[a-z0-9_]+$)?
+  charge_now_entity: match(^input_boolean\.[a-z0-9_]+$)?
+  pause_entity: match(^input_boolean\.[a-z0-9_]+$)?
+  trip_entity: match(^input_boolean\.[a-z0-9_]+$)?
+  trip_target_soc: int(50,100)?
+  trip_departure_time: match(^\d{2}:\d{2}$)?
+  notify_service: match(^notify\.[a-z0-9_]+$)?
+  notify_not_charging_min: int(0,240)
+  status_entity: match(^sensor\.[a-z0-9_]+$)?
