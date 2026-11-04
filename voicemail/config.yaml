@@ -40,7 +40,6 @@ options:
   icloud_apple_id: ""
   icloud_app_password: ""
   contacts_sync_interval_min: 30
-  show_full_numbers: false
 schema:
   sensor_entity: str
   media_player: str?
@@ -62,4 +61,3 @@ schema:
   icloud_apple_id: str?
   icloud_app_password: password?
   contacts_sync_interval_min: int(15,1440)
-  show_full_numbers: bool

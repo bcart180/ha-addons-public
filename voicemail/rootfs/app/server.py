@@ -53,8 +53,6 @@ def load_options() -> dict:
 
 
 OPTS = load_options()
-# Opt-in full caller numbers on the shared sensor / push (default off).
-call_summary.SHOW_FULL_NUMBERS = OPTS.get("show_full_numbers") is True
 PORT = int(os.environ.get("VM_PORT", "8099"))
 MOCK = bool(OPTS.get("mock")) or os.environ.get("VM_MOCK") == "1"
 SENSOR = (OPTS.get("sensor_entity") or "sensor.inbound_voicemails").strip()

@@ -97,11 +97,3 @@ configuration:
   contacts_sync_interval_min:
     name: Contacts sync interval (minutes)
     description: How often to re-read iCloud contacts. Default 30, minimum 15.
-  show_full_numbers:
-    name: Show full caller numbers
-    description: >-
-      Off by default. When on, the caller number on the voicemail sensor and
-      phone notifications shows in full, e.g. (555) 555-0142, instead of the
-      last 4 digits. Any signed-in Home Assistant user can read the sensor, and
-      notifications can show on a lock screen. Numbers spoken in a transcript
-      stay masked.

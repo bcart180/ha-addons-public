@@ -2,7 +2,7 @@
 
 ## 0.5.6 — 2026-11-03
 
-- New option `show_full_numbers` (default `false`). When on, the caller-number fields on the shared sensor and push (`caller_masked`, `caller_label_masked`, `summary_callback`) carry the full formatted number, e.g. `(555) 555-0142`, instead of `•••0142`; a contact title with a masked number gets the full number swapped in. Transcript-derived text (`summary_reason`, `summary_name`, `summary_fallback`, list preview) stays masked. Default behavior is unchanged. No data, API permission, webhook or dry_run change.
+- Privacy contract locked by tests (no behavior change): full caller numbers appear only in the admin-only ingress panel (`panel_admin: true`; list title and detail). Every shared output (`sensor.inbound_voicemails` attributes `caller_masked`, `caller_label_masked`, `summary_callback`, `summary_*`, `summary_fallback`, and the blueprint push built from them) stays last-4 only (`•••1234`). There is deliberately no option to unmask shared outputs. New `tests/test_full_numbers_admin_only.py`. No data, API permission, webhook or dry_run change.
 
 ## 0.5.5 — 2026-11-03
 
