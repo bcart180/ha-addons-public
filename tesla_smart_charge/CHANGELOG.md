@@ -3,6 +3,8 @@
 ## 0.3.1
 - Hot-handle hysteresis: a `handle_too_hot` stop stays latched until the handle is `handle_temp_margin_f`
   (default 20 F) below `handle_temp_max_f`, or the car is unplugged. Unknown readings keep the latch.
+  The latch persists in `/data` across restarts; an unknown or within-margin first reading starts latched.
+  The margin is clamped to 5-80 in code.
 
 ## 0.3.0
 - Fix: at/after the finish-by time the add-on stops adjusting instead of rolling over to tomorrow's departure

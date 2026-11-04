@@ -1,5 +1,7 @@
 """Tesla Smart Charge engine: reads HA, plans with core.plan, commands BLE first then cloud."""
+import json
 import logging
+import os
 import re
 import time
 from datetime import datetime, timedelta
@@ -81,7 +83,14 @@ class Engine:
         self.session_dep = None  # deadline of the current plugged-in session (survives the next-day rollover)
         self.derate_seen = 0  # consecutive plans with actual current far below the set current
         self.fault_notified = None
-        self.hot_latched = False  # handle_too_hot hysteresis latch
+        m = int(self.o["handle_temp_margin_f"])
+        self.o["handle_temp_margin_f"] = max(5, min(80, m))
+        if self.o["handle_temp_margin_f"] != m:
+            log.warning("handle_temp_margin_f %s out of range 5-80: using %s", m, self.o["handle_temp_margin_f"])
+        # handle_too_hot hysteresis latch, persisted so a restart can't clear it
+        self.state_file = self.o.get("state_file") or os.environ.get("TSC_STATE", "/data/tsc_state.json")
+        self.hot_latched = self._load_latch()
+        self.hot_first = True  # first handle reading after start decides the fail-safe initial latch
         self.wake_bo = Backoff(self.o["wake_max_per_window"])
         self.on_bo = Backoff(self.o["charge_on_max_per_window"])
         # L-a: going live without a charge-limit entity could start on a restored stale SoC with no ceiling.
@@ -114,9 +123,41 @@ class Engine:
         if o.get("handle_temp_sensor"):
             hf = core.temp_f(self._st(states, "handle_temp_sensor"),
                              self._attr(states, "handle_temp_sensor", "unit_of_measurement"))
-            if hf is not None and o.get("handle_temp_max_f") and hf >= float(o["handle_temp_max_f"]):
-                self.hot_latched = True
+            limit = float(o.get("handle_temp_max_f") or 0)
+            if self.hot_first:
+                self.hot_first = False
+                if limit and (hf is None or hf > limit - float(o["handle_temp_margin_f"])):
+                    if not self.hot_latched:
+                        log.warning("first handle reading %s F is unknown or within the margin: starting latched", hf)
+                    self._set_latch(True)
+            if hf is not None and limit and hf >= limit:
+                self._set_latch(True)
         return core.wc_fault(status, hf, o.get("handle_temp_max_f")) or self._hot_latch(states, hf), hf
+
+    def _load_latch(self):
+        try:
+            with open(self.state_file) as f:
+                v = bool(json.load(f).get("hot_latched"))
+            if v:
+                log.warning("restored hot-handle latch from %s: charging stays stopped", self.state_file)
+            return v
+        except FileNotFoundError:
+            return False
+        except Exception as e:  # noqa: BLE001 - corrupt state: fail safe
+            log.warning("state file unreadable (%s): starting latched", e)
+            return True
+
+    def _set_latch(self, v):
+        if v == self.hot_latched:
+            return
+        self.hot_latched = v
+        try:  # atomic write
+            tmp = self.state_file + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump({"hot_latched": v}, f)
+            os.replace(tmp, self.state_file)
+        except OSError as e:
+            log.warning("could not persist hot-handle latch: %s", e)
 
     def _hot_latch(self, states, hf):
         """Hysteresis for handle_too_hot: once tripped, stay stopped until the handle reads at least
@@ -125,11 +166,11 @@ class Engine:
             return None
         plug = str(self._st(states, "plugged_in")).strip().lower()
         if plug not in core.BAD and not core.is_on(plug):
-            self.hot_latched = False
+            self._set_latch(False)
             return None
         limit = float(self.o.get("handle_temp_max_f") or 0)
         if hf is not None and hf <= limit - float(self.o["handle_temp_margin_f"]):
-            self.hot_latched = False
+            self._set_latch(False)
             return None
         return "handle_too_hot"
 

@@ -38,7 +38,8 @@ Disable any existing smart-charge automations for the same car before going live
   150 °F; °C sensors are converted), **stops charging** (switch off) whatever the plan says, including charge-now,
   and also in dry run (it is a safety stop). A new fault re-plans on the next tick (about 30 s), not the next check interval.
   A hot-handle stop is latched until the handle reads `handle_temp_margin_f` (default 20 °F) below the
-  limit or the car is unplugged, so it never cycles stop/start at the limit. One notification per episode. A hot handle is a real hazard: inspect the handle and cable and contact Tesla.
+  limit or the car is unplugged, so it never cycles stop/start at the limit. The latch is saved to `/data`
+  and survives restarts; on start, an unknown first reading or one within the margin also starts latched. One notification per episode. A hot handle is a real hazard: inspect the handle and cable and contact Tesla.
 - **Car's own cap**: requested current is clamped to the charge-current number entity's `max` attribute. When a
   Wall Connector derates, that range can shrink (for example to 0–6 A) and higher requests are rejected.
 - **Derate detection** (optional `actual_current_sensor`, the car's measured charger current): if it stays more
