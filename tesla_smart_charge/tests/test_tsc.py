@@ -814,3 +814,19 @@ def test_031_fault_idle_and_stale_stop():
     clock2["t"] = datetime(2026, 11, 3, 21, 0).astimezone()
     p2 = e2.tick()
     assert p2["action"] == "stop" and p2["reason"] == "wall_connector_fault" and _switched_off(ha2)
+
+
+def test_032_fault_mid_interval_stops_next_tick():
+    e, ha, clock = night({}, **{"switch.car_charge": "on"})
+    t0 = datetime(2026, 11, 4, 1, 0)
+    clock["t"] = t0
+    assert e.tick() is not None  # full plan
+    clock["t"] = t0 + timedelta(seconds=30)
+    assert e.tick() is None  # nothing new: no plan before the interval
+    ha.states["sensor.wc_handle_temp"] = "491"
+    n = len(ha.calls)
+    clock["t"] = t0 + timedelta(seconds=60)
+    p = e.tick()
+    assert p is not None and p["action"] == "stop" and p["reason"] == "handle_too_hot"
+    assert ("switch", "turn_off", "switch.car_charge", None) in ha.calls[n:]
+    assert "fault" in e.status["trigger"]

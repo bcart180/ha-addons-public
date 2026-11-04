@@ -331,6 +331,7 @@ class Engine:
             "pause": self._flag(states, "pause_entity"),
             "plugged": self._st(states, "plugged_in"),
             "trip": self._flag(states, "trip_entity"),
+            "fault": self.fault_state(states)[0],  # a new fault re-plans (and stops) on the next tick
         }
         why = [k for k in cur if k in self.prev and self.prev[k] != cur[k]]
         # L4: edges only from definite readings. unavailable/unknown never creates a window or plug edge.
