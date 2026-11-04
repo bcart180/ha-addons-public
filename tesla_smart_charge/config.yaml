@@ -1,5 +1,5 @@
 name: Tesla Smart Charge
-version: "0.3.0"
+version: "0.3.1"
 slug: tesla_smart_charge
 description: Lowest-amp off-peak Tesla charging that reaches your target by departure (BLE first, cloud fallback)
 url: https://github.com/bcart180/ha-addons-public/tree/main/tesla_smart_charge
@@ -42,6 +42,8 @@ options:
   notify_not_charging_min: 20
   # Wall Connector safety (optional entities from the Tesla Wall Connector integration). See DOCS.md.
   handle_temp_max_f: 150
+  # After a hot-handle stop, stay stopped until the handle is this many F below the limit (or unplugged).
+  handle_temp_margin_f: 20
   ramp_up_max_a: 4
   derate_margin_a: 4
 schema:
@@ -110,6 +112,7 @@ schema:
   wall_connector_status: match(^sensor\.[a-z0-9_]+$)?
   handle_temp_sensor: match(^sensor\.[a-z0-9_]+$)?
   handle_temp_max_f: int(100,200)
+  handle_temp_margin_f: int(5,80)
   actual_current_sensor: match(^sensor\.[a-z0-9_]+$)?
   ramp_up_max_a: int(1,48)
   derate_margin_a: int(1,20)

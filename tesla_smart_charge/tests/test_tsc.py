@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 from datetime import datetime, timedelta
@@ -63,6 +64,8 @@ BASE = {"switch.car_charge": "off", "number.car_charge_current": "16", "number.c
 
 
 def mk(t, opts=None, **st):
+    import tempfile
+    opts = dict({"state_file": os.path.join(tempfile.mkdtemp(), "state.json")}, **(opts or {}))
     ha = FakeHA(dict(BASE, **st))
     clock = {"t": t}
     e = Engine(dict(OPTS, **(opts or {})), ha, clock=lambda: clock["t"], sleep=lambda s: None,
@@ -585,7 +588,7 @@ def test_020_self_check_reports_missing():
 
 def test_020_defaults_public_safe():
     cfg = yaml.safe_load(open(CFG))
-    assert cfg["version"] == "0.3.0" and cfg["options"]["rates"] == [] and cfg["options"]["taper_soc"] == 90
+    assert cfg["version"] == "0.3.1" and cfg["options"]["rates"] == [] and cfg["options"]["taper_soc"] == 90
 
 
 # ---------------- 0.3.0 ----------------
@@ -830,3 +833,101 @@ def test_032_fault_mid_interval_stops_next_tick():
     assert p is not None and p["action"] == "stop" and p["reason"] == "handle_too_hot"
     assert ("switch", "turn_off", "switch.car_charge", None) in ha.calls[n:]
     assert "fault" in e.status["trigger"]
+
+
+def _hot_engine():
+    e, ha, clock = night({"wall_connector_status": ""}, **{"switch.car_charge": "on"})
+    clock["t"] = datetime(2026, 11, 4, 1, 0)
+    return e, ha, clock
+
+
+def _step(e, clock, mins=10):
+    clock["t"] += timedelta(minutes=mins)
+    return e.tick()
+
+
+def test_031h_no_cycling_at_limit():
+    e, ha, clock = _hot_engine()
+    ha.states["sensor.wc_handle_temp"] = "150"
+    assert e.tick()["reason"] == "handle_too_hot"
+    for temp in ("149", "145", "140", "131", "150", "135"):  # hovering just under the limit
+        ha.states["sensor.wc_handle_temp"] = temp
+        p = _step(e, clock)
+        assert p["action"] == "stop" and p["reason"] == "handle_too_hot", temp
+    assert not any(c[1] == "turn_on" and c[0] == "switch" for c in ha.calls)
+
+
+def test_031h_release_after_cooling():
+    e, ha, clock = _hot_engine()
+    ha.states["sensor.wc_handle_temp"] = "160"
+    e.tick()
+    ha.states["sensor.wc_handle_temp"] = "unavailable"  # unknown keeps the latch
+    assert _step(e, clock)["reason"] == "handle_too_hot"
+    ha.states["sensor.wc_handle_temp"] = "130"  # exactly limit - margin
+    p = _step(e, clock)
+    assert p["reason"] != "handle_too_hot" and e.hot_latched is False
+
+
+def test_031h_margin_configurable():
+    e, ha, clock = _hot_engine()
+    e.o["handle_temp_margin_f"] = 40
+    ha.states["sensor.wc_handle_temp"] = "155"
+    e.tick()
+    ha.states["sensor.wc_handle_temp"] = "120"
+    assert _step(e, clock)["reason"] == "handle_too_hot"
+    ha.states["sensor.wc_handle_temp"] = "110"
+    assert _step(e, clock)["reason"] != "handle_too_hot"
+
+
+def test_031h_release_on_unplug():
+    e, ha, clock = _hot_engine()
+    ha.states["sensor.wc_handle_temp"] = "160"
+    e.tick()
+    ha.states["sensor.wc_handle_temp"] = "145"
+    ha.states["binary_sensor.car_charge_cable"] = "off"
+    p = _step(e, clock)
+    assert e.hot_latched is False and p["reason"] == "unplugged"
+    ha.states["binary_sensor.car_charge_cable"] = "on"
+    ha.states["switch.car_charge"] = "off"
+    assert _step(e, clock)["reason"] != "handle_too_hot"
+
+
+def test_034_restart_keeps_latch_persisted():
+    for temp in ("135", "142", "149"):
+        e, ha, clock = _hot_engine()
+        ha.states["sensor.wc_handle_temp"] = "160"
+        e.tick()
+        sf = e.state_file
+        assert json.load(open(sf))["hot_latched"] is True
+        ha.states["sensor.wc_handle_temp"] = temp
+        ha.states["switch.car_charge"] = "off"
+        e2 = Engine(dict(e.o), ha, clock=lambda c=clock: c["t"], sleep=lambda s: None,
+                    mono=lambda c=clock: c["t"].timestamp())
+        p = e2.tick()
+        assert p["reason"] == "handle_too_hot" and not any(c[1] == "turn_on" for c in ha.calls), temp
+
+
+def test_034_fresh_start_fail_safe_latch():
+    for temp in ("135", "149", "unavailable"):
+        e, ha, clock = night({"wall_connector_status": ""}, **{"sensor.wc_handle_temp": temp})
+        clock["t"] = datetime(2026, 11, 4, 1, 0)
+        p = e.tick()
+        assert p["reason"] == "handle_too_hot" and e.hot_latched, temp
+        assert not any(c[1] == "turn_on" for c in ha.calls)
+    e, ha, clock = night({"wall_connector_status": ""}, **{"sensor.wc_handle_temp": "129"})
+    clock["t"] = datetime(2026, 11, 4, 1, 0)
+    assert e.tick()["reason"] != "handle_too_hot" and not e.hot_latched
+
+
+def test_034_corrupt_state_file_fails_safe(tmp_path):
+    sf = tmp_path / "s.json"
+    sf.write_text("{not json")
+    e, ha, clock = mk(NIGHT, {"state_file": str(sf)})
+    assert e.hot_latched is True
+
+
+def test_034_margin_clamped_in_code():
+    assert mk(NIGHT, {"handle_temp_margin_f": 0})[0].o["handle_temp_margin_f"] == 5
+    assert mk(NIGHT, {"handle_temp_margin_f": -10})[0].o["handle_temp_margin_f"] == 5
+    assert mk(NIGHT, {"handle_temp_margin_f": 500})[0].o["handle_temp_margin_f"] == 80
+    assert mk(NIGHT, {"handle_temp_margin_f": 30})[0].o["handle_temp_margin_f"] == 30
