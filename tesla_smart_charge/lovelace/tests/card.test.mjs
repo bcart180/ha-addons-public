@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { viewModel, chipCalls, render, esc, fmtCost, ring } from "../tesla-smart-charge-card.js";
+import { viewModel, chipCalls, render, esc, fmtCost, battery } from "../tesla-smart-charge-card.js";
 
 const SRC = fs.readFileSync(new URL("../tesla-smart-charge-card.js", import.meta.url), "utf8");
 const ST = { state: "start", last_updated: "x", attributes: {
@@ -52,5 +52,32 @@ test("escapes attribute text; alerts; missing sensor", () => {
   assert.match(render(viewModel(undefined)), /Status sensor not found/);
   assert.equal(esc('"<'), "&quot;&lt;");
   assert.equal(fmtCost(null), "—");
-  assert.match(ring(null, null, false), /—/);
+  assert.match(battery(null, null, false), /width:0\.0%/);
+  assert.match(render(viewModel(ST)), /class="fill live" style="width:58\.6%"/);
+  assert.match(render(viewModel(ST)), /class="lim" style="left:90\.0%"/);
+});
+
+test("0.3.0 alerts: fault, hot handle, derate, deadline passed (no behind nag)", () => {
+  const html = (a) => render(viewModel({ ...ST, attributes: { ...ST.attributes, ...a } }));
+  assert.match(html({ fault: "wall_connector_fault" }), /Wall Connector fault/);
+  assert.match(html({ fault: "handle_too_hot", handle_temp_f: 491 }), /491°F/);
+  assert.match(html({ derated: true }), /limiting current/);
+  const past = html({ reason: "past_finish_time", behind: true });
+  assert.match(past, /Deadline passed/);
+  assert.doesNotMatch(past, /Behind plan/);
+});
+
+test("Plaid style: dark panel, no device-specific sizing", () => {
+  assert.match(SRC, /--panel:#16181b/);
+  assert.doesNotMatch(SRC, /echo|show 8|1280|800px/i);
+});
+
+test("chipCalls ignores helper ids that are not input_boolean.<slug>", () => {
+  const bad = viewModel({ ...ST, attributes: { ...ST.attributes, trip_entity: "lock.front_door",
+    pause_entity: "input_boolean.Bad-Id" } });
+  assert.deepEqual(chipCalls(bad, "trip"), []);
+  assert.ok(chipCalls(bad, "smart").every((c) => /^input_boolean\.[a-z0-9_]+$/.test(c[2].entity_id)));
+  const forged = { mode: "smart", helpers: { trip: "switch.garage" } };
+  assert.deepEqual(chipCalls(forged, "trip"), []);
+  assert.deepEqual(chipCalls(forged, "smart"), []);
 });
