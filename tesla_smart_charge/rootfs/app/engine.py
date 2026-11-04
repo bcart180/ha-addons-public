@@ -15,7 +15,8 @@ DEFAULTS = {"dry_run": True, "dry_run_safety_off": True, "check_interval_min": 1
             "stale_minutes": 30, "wake_max_per_window": 5,
             "charge_on_max_per_window": 5, "taper_soc": 90, "taper_factor": 1.5, "rates": [],
             "default_price": None, "currency": "$", "peak_schedule": [], "notify_not_charging_min": 20,
-            "handle_temp_max_f": 150, "ramp_up_max_a": 4, "derate_margin_a": 4, "derate_checks": 2}
+            "handle_temp_max_f": 150,
+            "handle_temp_margin_f": 20, "ramp_up_max_a": 4, "derate_margin_a": 4, "derate_checks": 2}
 HARD_MAX_AMPS = 48
 HELPER_RE = re.compile(r"^input_boolean\.[a-z0-9_]+$")
 HELPER_KEYS = ("enabled_entity", "charge_now_entity", "pause_entity", "trip_entity")
@@ -80,6 +81,7 @@ class Engine:
         self.session_dep = None  # deadline of the current plugged-in session (survives the next-day rollover)
         self.derate_seen = 0  # consecutive plans with actual current far below the set current
         self.fault_notified = None
+        self.hot_latched = False  # handle_too_hot hysteresis latch
         self.wake_bo = Backoff(self.o["wake_max_per_window"])
         self.on_bo = Backoff(self.o["charge_on_max_per_window"])
         # L-a: going live without a charge-limit entity could start on a restored stale SoC with no ceiling.
@@ -112,7 +114,24 @@ class Engine:
         if o.get("handle_temp_sensor"):
             hf = core.temp_f(self._st(states, "handle_temp_sensor"),
                              self._attr(states, "handle_temp_sensor", "unit_of_measurement"))
-        return core.wc_fault(status, hf, o.get("handle_temp_max_f")), hf
+            if hf is not None and o.get("handle_temp_max_f") and hf >= float(o["handle_temp_max_f"]):
+                self.hot_latched = True
+        return core.wc_fault(status, hf, o.get("handle_temp_max_f")) or self._hot_latch(states, hf), hf
+
+    def _hot_latch(self, states, hf):
+        """Hysteresis for handle_too_hot: once tripped, stay stopped until the handle reads at least
+        handle_temp_margin_f below the limit, or the car is definitely unplugged. Unknown temp keeps the latch."""
+        if not self.hot_latched:
+            return None
+        plug = str(self._st(states, "plugged_in")).strip().lower()
+        if plug not in core.BAD and not core.is_on(plug):
+            self.hot_latched = False
+            return None
+        limit = float(self.o.get("handle_temp_max_f") or 0)
+        if hf is not None and hf <= limit - float(self.o["handle_temp_margin_f"]):
+            self.hot_latched = False
+            return None
+        return "handle_too_hot"
 
     def derated(self, states, soc, charging):
         """Actual current far below the set current, outside the taper zone, for derate_checks plans in a row."""
@@ -551,6 +570,7 @@ class Engine:
             "volts": s["volts"], "max_amps": s["max_amps"],
             "amp_cap": s.get("amp_cap"),
             "fault": s.get("fault"), "derated": bool(s.get("derated")), "handle_temp_f": s.get("handle_f"),
+            "handle_latched": self.hot_latched,
             "transport": self.transport,
             "setup_mode": "ble+cloud" if o.get("ble_charge_switch") else "cloud-only",
             "next_action": nxt, "last_error": self.last_error, "dry_run": bool(o["dry_run"]),

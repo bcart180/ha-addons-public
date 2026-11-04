@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+- Hot-handle hysteresis: a `handle_too_hot` stop stays latched until the handle is `handle_temp_margin_f`
+  (default 20 F) below `handle_temp_max_f`, or the car is unplugged. Unknown readings keep the latch.
+
 ## 0.3.0
 - Fix: at/after the finish-by time the add-on stops adjusting instead of rolling over to tomorrow's departure
   (it used to command `min_amps` right at the deadline). Late plug-ins with no session still charge at max.
