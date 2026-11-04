@@ -516,3 +516,71 @@ def test_le_no_wake_button_keeps_budget():
     e.o["wake_button"] = ""
     e.tick()
     assert e.wake_count == 0
+
+
+def test_020_taper_adds_time_above_taper_soc():
+    a0, w0 = core.required_amps(50, 100, 100, 0.9, 240, 8)
+    a1, w1 = core.required_amps(50, 100, 100, 0.9, 240, 8, taper_soc=90, taper_factor=1.5)
+    assert w0 == w1 and a1 > a0
+    assert core.taper_equiv_kwh(50, 80, 100, 0.9, 90, 1.5)[1] == core.taper_equiv_kwh(50, 80, 100, 0.9)[1]
+
+
+def test_020_tou_cost_estimate():
+    rates = [{"days": "all", "start": "21:00", "end": "07:00", "price": 0.10},
+             {"days": "all", "start": "07:00", "end": "21:00", "price": 0.30}]
+    assert core.est_cost(datetime(2026, 11, 2, 22, 0), 4, 40, rates, None) == 4.0
+    assert core.est_cost(datetime(2026, 11, 2, 22, 0), 4, 40, [], None) is None
+    assert core.est_cost(datetime(2026, 11, 2, 22, 0), 4, 40, [], 0.2) == 8.0
+
+
+def test_020_next_offpeak():
+    assert core.next_offpeak(datetime(2026, 11, 2, 18, 0), SCHED) == datetime(2026, 11, 2, 21, 0)
+    assert core.next_offpeak(datetime(2026, 11, 2, 22, 0), SCHED) == datetime(2026, 11, 2, 22, 0)
+
+
+def test_020_status_attributes_for_card():
+    e, ha, _ = mk(NIGHT, opts={"rates": [{"days": "all", "start": "00:00", "end": "23:59", "price": 0.12}]})
+    seen = {}
+    ha.set_status = lambda s, a: seen.update(a, state=s)
+    e.tick()
+    for k in ("plan_amps", "kwh_needed", "eta_finish", "est_cost", "mode", "transport", "next_action",
+              "last_error", "start_at", "finish_by", "setup_mode", "charge_now_entity", "pause_entity", "trip_entity"):
+        assert k in seen, k
+    assert seen["mode"] == "smart" and seen["transport"] == "cloud" and seen["setup_mode"] == "cloud-only"
+    assert seen["est_cost"] == round(33.33 * 0.12, 2) or abs(seen["est_cost"] - 4.0) < 0.05
+    assert seen["eta_finish"] <= seen["finish_by"]
+
+
+def test_020_status_peak_shows_next_window_start():
+    e, ha, _ = mk(datetime(2026, 11, 2, 18, 0), opts={"peak_schedule": SCHED, "peak_sensor": ""})
+    seen = {}
+    ha.set_status = lambda s, a: seen.update(a)
+    e.tick()
+    assert seen["next_action"] == "wait for off-peak" and seen["start_at"].startswith("2026-11-02T21:00")
+
+
+def test_020_ble_transport_and_last_error():
+    o = {"ble_charge_switch": "switch.ble_charger", "ble_charge_current": "number.ble_charging_amps"}
+    e, ha, _ = mk(NIGHT, opts=o)
+    e.tick()
+    assert e.transport == "ble" and e.summary(core.plan(e.inputs(ha.get_states(), NIGHT)),
+                                              e.inputs(ha.get_states(), NIGHT))["setup_mode"] == "ble+cloud"
+
+    def boom(*a):
+        raise RuntimeError("HTTP 500")
+    e2, ha2, _ = mk(NIGHT)
+    ha2.call = boom
+    e2.tick()
+    assert "HTTP 500" in e2.last_error
+
+
+def test_020_self_check_reports_missing():
+    e, ha, _ = mk(NIGHT, opts={"voltage_sensor": "sensor.not_there"})
+    r = e.self_check(ha.get_states())
+    assert r["mode"] == "cloud-only" and any("sensor.not_there" in m for m in r["missing"])
+    assert not r["required_empty"]
+
+
+def test_020_defaults_public_safe():
+    cfg = yaml.safe_load(open(CFG))
+    assert cfg["version"] == "0.2.0" and cfg["options"]["rates"] == [] and cfg["options"]["taper_soc"] == 90

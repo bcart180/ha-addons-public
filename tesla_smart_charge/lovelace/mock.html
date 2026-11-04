@@ -1,0 +1,17 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Tesla Smart Charge card mock</title>
+<style>body{background:#e8eef4;margin:0;padding:24px;font-family:"Segoe UI",system-ui}.wrap{display:flex;gap:24px;flex-wrap:wrap}
+.cell{width:460px}</style></head><body><div class="wrap"><div class="cell" id="a"></div><div class="cell" id="b"></div></div>
+<script type="module">
+import { viewModel, render, CSS } from "./tesla-smart-charge-card.js";
+const base = { mode: "smart", soc: 58.6, target: 90, plan_amps: 18, kwh_needed: 33.3, charging: true, transport: "ble",
+  start_at: new Date().toISOString(), eta_finish: new Date(Date.now() + 8.5 * 36e5).toISOString(),
+  finish_by: new Date(Date.now() + 9 * 36e5).toISOString(), est_cost: 3.41, currency: "$",
+  next_action: "charging at 18 A", dry_run: false, charge_now_entity: "input_boolean.car_charge_now",
+  pause_entity: "input_boolean.car_charge_pause", trip_entity: "input_boolean.car_trip_mode" };
+const put = (id, attrs, title) => { const h = document.getElementById(id).attachShadow({ mode: "open" });
+  h.innerHTML = `<style>${CSS}</style>` + render(viewModel({ state: "start", attributes: attrs }), title); };
+put("a", base, "Car");
+put("b", { ...base, mode: "trip", soc: 72, target: 100, plan_amps: 32, charging: false, transport: "cloud",
+  start_at: new Date(Date.now() + 2 * 36e5).toISOString(), next_action: "wait for off-peak", behind: true, est_cost: 4.12 },
+  "Car (trip, cloud-only)");
+</script></body></html>
