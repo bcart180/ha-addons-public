@@ -9,6 +9,8 @@
  */
 export const DEFAULT_ENTITY = "sensor.tesla_smart_charge_status";
 export const CHIPS = [["smart", "Smart"], ["charge_now", "Charge now"], ["paused", "Pause"], ["trip", "Trip"]];
+export const HELPER_RE = /^input_boolean\.[a-z0-9_]+$/;
+const okHelper = (v) => (typeof v === "string" && HELPER_RE.test(v) ? v : null);
 const HELPER = { charge_now: "charge_now_entity", paused: "pause_entity", trip: "trip_entity" };
 
 export const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) =>
@@ -39,9 +41,9 @@ export function viewModel(st) {
   if (a.behind && a.reason !== "past_finish_time") alerts.push(["warn", "Behind plan: charging at max amps"]);
   if (a.plugged === false) alerts.push(["info", "Unplugged"]);
   if (a.reason === "stale_state") alerts.push(["warn", "Waiting for fresh car data"]);
-  if (a.fault === "wall_connector_fault") alerts.push(["bad", "Wall Connector fault: holding, no amp changes"]);
+  if (a.fault === "wall_connector_fault") alerts.push(["bad", "Wall Connector fault: charging stopped"]);
   if (a.fault === "handle_too_hot") alerts.push(["bad", "Handle too hot" + (a.handle_temp_f != null ?
-    " (" + Math.round(a.handle_temp_f) + "°F)" : "") + ": holding. Inspect the handle and cable."]);
+    " (" + Math.round(a.handle_temp_f) + "°F)" : "") + ": charging stopped. Inspect the handle and cable."]);
   if (a.derated) alerts.push(["warn", "Wall Connector is limiting current: not raising amps"]);
   if (a.reason === "past_finish_time") alerts.push(["info", "Deadline passed: no more adjustments"]);
   if (a.last_error) alerts.push(["bad", "Last error: " + a.last_error]);
@@ -51,13 +53,14 @@ export function viewModel(st) {
     charging: a.charging === true, amps: a.plan_amps ?? a.amps ?? null, kwh: a.kwh_needed,
     start: a.start_at, finishBy: a.finish_by, eta: a.eta_finish, cost: a.est_cost, currency: a.currency || "$",
     transport: a.transport || null, setup: a.setup_mode || "cloud-only", next: a.next_action || "",
-    alerts, helpers: { charge_now: a.charge_now_entity, paused: a.pause_entity, trip: a.trip_entity },
+    alerts, helpers: { charge_now: okHelper(a.charge_now_entity), paused: okHelper(a.pause_entity), trip: okHelper(a.trip_entity) },
   };
 }
 
 /** Service calls for tapping a chip. Smart = turn the other helpers off. Only input_boolean on/off. */
 export function chipCalls(vm, chip) {
-  const h = vm.helpers || {};
+  const raw = vm.helpers || {};
+  const h = Object.fromEntries(Object.keys(HELPER).map((k) => [k, okHelper(raw[k])]));
   const offs = (except) => Object.keys(HELPER).filter((k) => k !== except && h[k])
     .map((k) => ["input_boolean", "turn_off", { entity_id: h[k] }]);
   if (chip === "smart") return offs(null);

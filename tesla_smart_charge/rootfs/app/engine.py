@@ -19,8 +19,8 @@ DEFAULTS = {"dry_run": True, "dry_run_safety_off": True, "check_interval_min": 1
 HARD_MAX_AMPS = 48
 HELPER_RE = re.compile(r"^input_boolean\.[a-z0-9_]+$")
 HELPER_KEYS = ("enabled_entity", "charge_now_entity", "pause_entity", "trip_entity")
-HOLD_REASONS = ("past_finish_time", "wall_connector_fault", "handle_too_hot")
-SAFETY_STOPS = ("stale_state", "peak", "plug_state_unavailable", "soc_or_target_unavailable")
+SAFETY_STOPS = ("wall_connector_fault", "handle_too_hot",
+                "stale_state", "peak", "plug_state_unavailable", "soc_or_target_unavailable")
 ENTITY_KEYS = ("charge_switch", "charge_current", "charge_limit", "wake_button", "ble_charge_switch",
                "ble_charge_current", "ble_charge_limit", "ble_wake_button", "charge_now_entity",
                "pause_entity", "trip_entity")
@@ -398,6 +398,10 @@ class Engine:
             self.session_dep = s["departure"]
         if s["stale"] and p["action"] != "idle":
             p.update(action="stop" if p["action"] == "stop" else "hold", reason="stale_state", amps=None)
+        if s.get("fault"):
+            # Fail safe: a Wall Connector fault or hot handle always STOPS, whatever the plan said
+            # (charge-now, late plug-in, stale hold, past deadline, idle, disabled).
+            p.update(action="stop", reason=s["fault"], amps=None)
         self.apply(p, s, states)
         self.check_notify(p, s, now)
         self.fault_notify(p, s)
@@ -489,9 +493,9 @@ class Engine:
         if self.fault_notified == p["reason"]:
             return
         self.fault_notified = p["reason"]
-        msg = ("Wall Connector reports a fault; smart charging is holding (no amp changes)."
+        msg = ("Wall Connector reports a fault; charging stopped."
                if p["reason"] == "wall_connector_fault" else
-               "Wall Connector handle reads %.0f F; smart charging is holding. Inspect the handle."
+               "Wall Connector handle reads %.0f F; charging stopped. Inspect the handle."
                % (s["handle_f"] or 0))
         try:
             self.ha.notify("Tesla Smart Charge", msg)
@@ -527,12 +531,12 @@ class Engine:
         if p["action"] == "start":
             nxt = "charging at %s A" % amps if s.get("charging") else "start charging at %s A" % amps
         elif p["action"] == "stop":
-            nxt = {"peak": "wait for off-peak", "target_reached": "done", "paused_until_next_window":
+            nxt = {"wall_connector_fault": "Wall Connector fault: stopped", "handle_too_hot": "handle hot: stopped",
+                   "peak": "wait for off-peak", "target_reached": "done", "paused_until_next_window":
                    "paused until next off-peak window", "charge_now_complete": "done"}.get(p["reason"], "stop")
         elif p["action"] == "hold":
-            nxt = {"past_finish_time": "deadline passed: no more adjustments",
-                   "wall_connector_fault": "Wall Connector fault: holding",
-                   "handle_too_hot": "handle hot: holding"}.get(p["reason"], "waiting for fresh car data")
+            nxt = {"past_finish_time": "deadline passed: no more adjustments"}.get(
+                p["reason"], "waiting for fresh car data")
         else:
             nxt = {"unplugged": "plug in to plan", "not_home": "away from home", "disabled": "disabled"}.get(
                 p["reason"], "idle")

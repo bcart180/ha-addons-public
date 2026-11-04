@@ -4,7 +4,7 @@
 - Fix: at/after the finish-by time the add-on stops adjusting instead of rolling over to tomorrow's departure
   (it used to command `min_amps` right at the deadline). Late plug-ins with no session still charge at max.
 - Wall Connector safety: optional `wall_connector_status` / `handle_temp_sensor` (`handle_temp_max_f`, default
-  150 F) hold the plan on a fault or hot handle, with one notification per episode.
+  150 F) force a safety STOP on a fault or hot handle (any plan, also in dry run), one notification per episode.
 - Requested amps are clamped to the charge-current entity's `max` attribute (no more out-of-range requests).
 - Derate detection via optional `actual_current_sensor`: never raises amps while the charger is limiting.
 - Upward ramps limited to `ramp_up_max_a` (default 4 A) per plan; downward changes are immediate.

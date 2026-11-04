@@ -71,3 +71,13 @@ test("Plaid style: dark panel, no device-specific sizing", () => {
   assert.match(SRC, /--panel:#16181b/);
   assert.doesNotMatch(SRC, /echo|show 8|1280|800px/i);
 });
+
+test("chipCalls ignores helper ids that are not input_boolean.<slug>", () => {
+  const bad = viewModel({ ...ST, attributes: { ...ST.attributes, trip_entity: "lock.front_door",
+    pause_entity: "input_boolean.Bad-Id" } });
+  assert.deepEqual(chipCalls(bad, "trip"), []);
+  assert.ok(chipCalls(bad, "smart").every((c) => /^input_boolean\.[a-z0-9_]+$/.test(c[2].entity_id)));
+  const forged = { mode: "smart", helpers: { trip: "switch.garage" } };
+  assert.deepEqual(chipCalls(forged, "trip"), []);
+  assert.deepEqual(chipCalls(forged, "smart"), []);
+});

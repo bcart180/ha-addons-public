@@ -294,7 +294,7 @@ def wc_fault(status, handle_f, handle_max_f):
 
 def guard(p, s):
     """Safety/stability pass over a plan. Never touches stops. For starts:
-      - hold on a Wall Connector fault or hot handle (no starts, no amp changes),
+      - stop on a Wall Connector fault or hot handle (the engine also forces this for every plan),
       - clamp to the car's own number max (it can drop to 6 A while derated),
       - while derated (actual far below set), never raise amps,
       - rate-limit upward changes to ramp_up_max_a per plan (down is immediate)."""
@@ -303,7 +303,7 @@ def guard(p, s):
     q = dict(p)
     fault = s.get("fault")
     if fault:
-        q.update(action="hold", amps=None, reason=fault)
+        q.update(action="stop", amps=None, reason=fault)
         return q
     amps = int(q["amps"])
     cap = s.get("amp_cap")

@@ -662,8 +662,9 @@ def test_030_replay_last_night_rollover_derate_fault():
     sets_after = [v for v in amp_sets(ha)[len(before):]]
     assert 40 not in amp_sets(ha) and all(v <= 6 for v in sets_after)
     after = [(t, act, r) for (t, act, a, r) in log if t >= datetime(2026, 11, 4, 2, 40)]
-    assert all(act == "hold" for (t, act, r) in after)
-    assert any(r == "handle_too_hot" for (t, act, r) in after)
+    assert after and all(act == "stop" and r in ("handle_too_hot", "wall_connector_fault") for (t, act, r) in after)
+    assert after[0][2] == "handle_too_hot"
+    assert ("switch", "turn_off", "switch.car_charge", None) in ha.calls
     assert ha.notes and "491" in ha.notes[0]
     assert e.status["next_action"]
 
@@ -731,7 +732,7 @@ def test_030_fault_hold_and_stop_untouched():
     assert core.wc_fault("charging", 151, 150) == "handle_too_hot"
     assert core.wc_fault("unavailable", None, 150) is None
     assert core.temp_f("70", "\u00b0C") == 158.0
-    assert core.guard({"action": "start", "amps": 10, "reason": "x"}, {"fault": "handle_too_hot"})["action"] == "hold"
+    assert core.guard({"action": "start", "amps": 10, "reason": "x"}, {"fault": "handle_too_hot"})["action"] == "stop"
     stop = {"action": "stop", "amps": None, "reason": "peak"}
     assert core.guard(stop, {"fault": "wall_connector_fault"}) is stop
 
@@ -755,3 +756,61 @@ def test_030_public_scrub():
             txt = open(os.path.join(dp, f), errors="ignore").read().lower()
             for b in bad:
                 assert b not in txt, (f, b)
+
+
+def _fault_engine(opts=None, **st):
+    e, ha, clock = night(opts, **dict({"switch.car_charge": "on", "sensor.wc_status": "error"}, **st))
+    return e, ha, clock
+
+
+def _switched_off(ha):
+    return any(c[0] == "switch" and c[1] == "turn_off" for c in ha.calls)
+
+
+def test_031_fault_while_charging_stops():
+    e, ha, clock = _fault_engine()
+    p = e.tick()
+    assert p["action"] == "stop" and p["reason"] == "wall_connector_fault" and _switched_off(ha)
+    assert not any(c[1] == "turn_on" for c in ha.calls)
+
+
+def test_031_hot_handle_stops_in_dry_run():
+    e, ha, clock = _fault_engine({"dry_run": True}, **{"sensor.wc_status": "charging", "sensor.wc_handle_temp": "160"})
+    p = e.tick()
+    assert p["reason"] == "handle_too_hot" and _switched_off(ha)
+
+
+def test_031_fault_overrides_charge_now():
+    e, ha, clock = _fault_engine(**{"input_boolean.charge_now": "on"})
+    p = e.tick()
+    assert p["action"] == "stop" and _switched_off(ha)
+
+
+def test_031_fault_past_deadline_stops():
+    e, ha, clock = night({}, **{"switch.car_charge": "on", "sensor.car_battery_level": "40"})
+    clock["t"] = datetime(2026, 11, 4, 4, 0)
+    e.tick()  # session latched
+    ha.states["sensor.wc_status"] = "fault"
+    clock["t"] = datetime(2026, 11, 4, 5, 10)
+    p = e.tick()
+    assert p["action"] == "stop" and p["reason"] == "wall_connector_fault" and _switched_off(ha)
+
+
+def test_031_fault_idle_and_stale_stop():
+    e, ha, clock = _fault_engine(**{"input_boolean.charge_pause": "off"})
+    e.o["enabled_entity"] = "input_boolean.tsc_enabled"
+    ha.states["input_boolean.tsc_enabled"] = "off"  # idle/disabled plan
+    p = e.tick()
+    assert p["action"] == "stop" and _switched_off(ha)
+    e2, ha2, clock2 = _fault_engine()
+    e2.o["stale_minutes"] = 5
+    orig = ha2.get_states
+
+    def stale():
+        st = orig()
+        st["sensor.car_battery_level"]["last_updated"] = "2026-11-03T00:00:00+00:00"
+        return st
+    ha2.get_states = stale
+    clock2["t"] = datetime(2026, 11, 3, 21, 0).astimezone()
+    p2 = e2.tick()
+    assert p2["action"] == "stop" and p2["reason"] == "wall_connector_fault" and _switched_off(ha2)

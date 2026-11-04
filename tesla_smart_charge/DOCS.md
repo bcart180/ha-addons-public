@@ -35,8 +35,8 @@ Disable any existing smart-charge automations for the same car before going live
   after the finish-by time with no session yet still charges at max amps.
 - **Fault hold** (optional, from the Tesla Wall Connector integration): set `wall_connector_status` and/or
   `handle_temp_sensor`. A status containing error/fault, or a handle at or above `handle_temp_max_f` (default
-  150 °F; °C sensors are converted), puts the add-on on hold: no starts, no amp changes, one notification per
-  episode. Stops still fire. A hot handle is a real hazard: inspect the handle and cable and contact Tesla.
+  150 °F; °C sensors are converted), **stops charging** (switch off) whatever the plan says, including charge-now,
+  and also in dry run (it is a safety stop). One notification per episode. A hot handle is a real hazard: inspect the handle and cable and contact Tesla.
 - **Car's own cap**: requested current is clamped to the charge-current number entity's `max` attribute. When a
   Wall Connector derates, that range can shrink (for example to 0–6 A) and higher requests are rejected.
 - **Derate detection** (optional `actual_current_sensor`, the car's measured charger current): if it stays more
