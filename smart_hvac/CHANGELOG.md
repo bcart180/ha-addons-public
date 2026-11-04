@@ -1,3 +1,10 @@
+## 0.8.8 — 2026-11-04
+
+- When the unit's own `current_temperature` is used as the room-temperature fallback (sensor unavailable or stale via `indoor_stale_min`), a value outside 30–110 °F (converted from °C when the unit reports `temperature_unit: C`) is treated as missing, so the zone holds (`missing:indoor_temp`) and makes no change.
+- New engine-level tests: stale sensor uses the unit temperature; stale plus missing or out-of-range unit temperature holds with no service calls; option off behaves as 0.8.7.
+- Follows Security Audit notes L1/L2 on PR #35. Source: https://developers.home-assistant.io/blog/2024/03/20/state_reported_timestamp/
+- Mode lock, split logic and spare bathroom heater unchanged; no new options, entities, services or permissions.
+
 ## 0.8.7 — 2026-11-04
 
 - New optional zone option `indoor_stale_min` (0–1440, unset/0 = off, so existing installs behave exactly as 0.8.6). A battery room sensor that dies often keeps its last value instead of going `unavailable`; when the zone's `indoor` sensor has not reported for that many minutes (HA `last_reported`, which moves on every write even when the value repeats, else `last_updated`), the add-on ignores it and uses the unit's own `current_temperature`, the same fallback as an unavailable sensor. No timestamp = not stale.

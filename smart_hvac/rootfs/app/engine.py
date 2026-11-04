@@ -239,6 +239,17 @@ class Engine:
             return None, (s or {}).get("attributes", {}) if s else {}
         return s.get("state"), s.get("attributes", {}) or {}
 
+    @staticmethod
+    def _unit_temp(cattr):
+        """0.8.8: the unit's current_temperature as a fallback, in F. Values outside 30-110 F
+        (converted from C when the unit reports `temperature_unit: C`) are treated as missing."""
+        t = _num((cattr or {}).get("current_temperature"))
+        if t is None:
+            return None
+        unit = str((cattr or {}).get("temperature_unit") or "").upper().lstrip("\u00b0")
+        f = t * 9 / 5 + 32 if unit == "C" else t
+        return t if 30 <= f <= 110 else None
+
     def _indoor_stale(self, states, z, now):
         """0.8.7: True when the zone's `indoor` sensor has not reported for `indoor_stale_min` minutes.
         Uses HA `last_reported` (2024.3+, moves on every write even when the value repeats), then
@@ -581,7 +592,7 @@ class Engine:
             ind_stale = self._indoor_stale(states, z, now)
             if ind_stale:
                 ind = None  # frozen room sensor: fall back to the unit's own reading, same as unavailable
-            indoor = _num(ind) if _num(ind) is not None else _num(cattr.get("current_temperature"))
+            indoor = _num(ind) if _num(ind) is not None else self._unit_temp(cattr)
             setpt = cattr.get("temperature") if cl is not None else None
             if excluded(z.get("climate")):
                 results[name] = {"action": "hold", "reason": "excluded_entity", "mode": None,
