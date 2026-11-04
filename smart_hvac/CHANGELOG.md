@@ -1,3 +1,9 @@
+## 0.8.7 — 2026-11-04
+
+- New optional zone option `indoor_stale_min` (0–1440, unset/0 = off, so existing installs behave exactly as 0.8.6). A battery room sensor that dies often keeps its last value instead of going `unavailable`; when the zone's `indoor` sensor has not reported for that many minutes (HA `last_reported`, which moves on every write even when the value repeats, else `last_updated`), the add-on ignores it and uses the unit's own `current_temperature`, the same fallback as an unavailable sensor. No timestamp = not stale.
+- Source: Home Assistant developer blog, `State.last_reported` (https://developers.home-assistant.io/blog/2024/03/20/state_reported_timestamp/).
+- Version 0.8.7. Mode lock, split logic and spare bathroom heater unchanged; no new entities, services or permissions.
+
 ## 0.8.6 — 2026-11-03
 
 - Fix: split setpoint writes failed with HTTP 400 every cycle. The `set_temperature` data is now built from the target entity's own attributes: `supported_features` bit 1 (single setpoint) sends `temperature` only; a range-only entity (bit 2) sends `target_temp_low` (heat) or `target_temp_high` (cool/dry) and keeps the other bound at its current value, or one step inside `min_temp`/`max_temp` when it is unknown (an edge value like 88 °F becomes 31.11 °C and fails a device whose native max is 31.0 °C). `hvac_mode` is never sent with a setpoint.

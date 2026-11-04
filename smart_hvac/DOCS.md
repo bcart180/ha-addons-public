@@ -16,6 +16,8 @@ Do not Start until the go-live checklist below is done; Start alone is still dry
 ## Options
 - `presence_entity` + `presence_entities`: occupants (any home = occupied). List each occupant's tracker, e.g. `device_tracker.person_a_phone`, `person.person_b`. Empty by default. Unlisted phones never count.
 - `zones[]`: `climate`, `indoor`, `humidity`, optional `floor` (radiant probe) and `window` (contact sensor),
+  `indoor_stale_min` (0.8.7, optional, 0/unset = off): if the zone's `indoor` sensor has not reported for this many minutes
+  (HA `last_reported`, else `last_updated`), it is ignored and the unit's own `current_temperature` is used, the same as when the sensor is unavailable.
   `window_action` (`off` default / `fan_only` / `eco`), `window_open_delay_s` / `window_close_delay_s` (0.5.0, default 0),
   `facing_az`/`solar_factor` (sun gain), `heat_only`, and per-zone `comfort`/`sleep`/`away` (radiant).
 - Example `zones` (generic names; replace with your own entities):

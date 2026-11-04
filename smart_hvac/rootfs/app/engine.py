@@ -239,6 +239,26 @@ class Engine:
             return None, (s or {}).get("attributes", {}) if s else {}
         return s.get("state"), s.get("attributes", {}) or {}
 
+    def _indoor_stale(self, states, z, now):
+        """0.8.7: True when the zone's `indoor` sensor has not reported for `indoor_stale_min` minutes.
+        Uses HA `last_reported` (2024.3+, moves on every write even when the value repeats), then
+        `last_updated`. Option unset/0, no indoor sensor, or no timestamp -> False (0.8.6 behaviour)."""
+        try:
+            lim = float(z.get("indoor_stale_min") or 0)
+        except (TypeError, ValueError):
+            lim = 0
+        eid = z.get("indoor")
+        if lim <= 0 or not eid:
+            return False
+        s = states.get(eid) or {}
+        ts = _ts(s.get("last_reported")) or _ts(s.get("last_updated"))
+        if ts is None:
+            return False
+        stale = (now - ts) > lim * 60
+        if stale:
+            log.debug("zone %s: indoor sensor stale (%.0f min), using unit temperature", z.get("name"), (now - ts) / 60)
+        return stale
+
     def _override_active(self, name, now):
         return self.st["override_until"].get(name, 0) > now
 
@@ -558,6 +578,9 @@ class Engine:
             hum, _ = self._get(states, z.get("humidity"))
             floor, _ = self._get(states, z.get("floor"))
             win, _ = self._get(states, z.get("window"))
+            ind_stale = self._indoor_stale(states, z, now)
+            if ind_stale:
+                ind = None  # frozen room sensor: fall back to the unit's own reading, same as unavailable
             indoor = _num(ind) if _num(ind) is not None else _num(cattr.get("current_temperature"))
             setpt = cattr.get("temperature") if cl is not None else None
             if excluded(z.get("climate")):
