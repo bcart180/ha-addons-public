@@ -209,9 +209,19 @@ def plan(s):
         return out
     now, dep = s["now"], s["departure"]
     finish = dep - timedelta(minutes=int(s.get("finish_buffer_min", 0)))
+    if now >= finish:
+        if s.get("in_session"):
+            # Already planned toward this deadline: stop adjusting (0.3.0 fix). Never re-plan against
+            # tomorrow's deadline; whatever the car is doing keeps going untouched until the session ends.
+            out.update(action="hold", reason="past_finish_time", behind=True)
+        else:
+            # Plugged in late with no session yet: best effort at max amps.
+            out.update(action="start", amps=int(s["max_amps"]), reason="late_plug_in", behind=True)
+        return out
     hours = offpeak_hours(now, finish, s.get("schedule"))
     if hours <= 0:
-        out.update(action="start", amps=int(s["max_amps"]), reason="past_finish_time", behind=True)
+        # Off-peak time left before the deadline is zero (rest of the night is peak): charge now at max.
+        out.update(action="start", amps=int(s["max_amps"]), reason="no_offpeak_left", behind=True)
         return out
     amps, kwh = required_amps(soc, target, s["battery_kwh"], s["efficiency"], s["volts"], hours,
                               s.get("taper_soc"), s.get("taper_factor", 1.0))
@@ -242,3 +252,70 @@ def as_local(dt_now, iso_or_hhmm):
         return d if d > dt_now else next_departure(dt_now, d.strftime("%H:%M"))
     except ValueError:
         return None
+
+
+SESSION_HOLD_H = 6
+
+
+def session_departure(latched, computed, now, hold_h=SESSION_HOLD_H):
+    """Keep the session's deadline through a midnight-style rollover.
+
+    next_departure() jumps to tomorrow the moment the departure time passes, which made the planner treat the
+    morning as a fresh 24 h window and drop to min amps right at the deadline. If `computed` is exactly one day
+    after `latched` (pure rollover) and we are within hold_h hours after the latched departure, keep `latched`.
+    Any other change (user moved the time, trip mode) takes the new value."""
+    if latched is None or computed is None:
+        return computed
+    if computed - latched == timedelta(days=1) and now < latched + timedelta(hours=hold_h):
+        return latched
+    return computed
+
+
+def temp_f(value, unit):
+    """Temperature in F from a sensor state and its unit_of_measurement (C or F; unknown unit = F)."""
+    v = num(value)
+    if v is None:
+        return None
+    return v * 9.0 / 5.0 + 32.0 if "C" in str(unit or "").upper() else v
+
+
+FAULT_WORDS = ("error", "fault", "faulted", "fail")
+
+
+def wc_fault(status, handle_f, handle_max_f):
+    """Reason string if the Wall Connector looks unsafe/faulted, else None."""
+    st = str(status or "").strip().lower()
+    if st and st not in BAD and any(w in st for w in FAULT_WORDS):
+        return "wall_connector_fault"
+    if handle_f is not None and handle_max_f and handle_f >= float(handle_max_f):
+        return "handle_too_hot"
+    return None
+
+
+def guard(p, s):
+    """Safety/stability pass over a plan. Never touches stops. For starts:
+      - hold on a Wall Connector fault or hot handle (no starts, no amp changes),
+      - clamp to the car's own number max (it can drop to 6 A while derated),
+      - while derated (actual far below set), never raise amps,
+      - rate-limit upward changes to ramp_up_max_a per plan (down is immediate)."""
+    if p["action"] != "start":
+        return p
+    q = dict(p)
+    fault = s.get("fault")
+    if fault:
+        q.update(action="hold", amps=None, reason=fault)
+        return q
+    amps = int(q["amps"])
+    cap = s.get("amp_cap")
+    if cap is not None and cap >= 1 and amps > cap:
+        amps = int(cap)
+        q["capped"] = True
+    cur = num(s.get("amps_now"))
+    if s.get("derated") and cur is not None and amps > cur:
+        amps = int(cur)
+        q["reason"] = "derated: holding %d A" % amps
+    ramp = s.get("ramp_up_max_a")
+    if ramp and s.get("charging") is True and cur is not None and amps > cur + int(ramp):
+        amps = int(cur) + int(ramp)
+    q["amps"] = max(1, amps)
+    return q

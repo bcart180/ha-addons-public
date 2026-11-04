@@ -28,6 +28,25 @@ Disable any existing smart-charge automations for the same car before going live
   off-peak window opens, it sends one notification per window to `notify_service`.
 - A status sensor (`sensor.tesla_smart_charge_status` by default) shows the last decision, reason, amps and target.
 
+## Deadline and Wall Connector safety (0.3.0)
+- **Deadline**: once a session has planned toward a finish-by time, it **stops adjusting at that time**. It no longer
+  rolls over to tomorrow's departure the moment the time passes (which used to drop the current to `min_amps` right
+  at the deadline). The car keeps doing whatever it was doing until you unplug or reach the target. Plugging in
+  after the finish-by time with no session yet still charges at max amps.
+- **Fault hold** (optional, from the Tesla Wall Connector integration): set `wall_connector_status` and/or
+  `handle_temp_sensor`. A status containing error/fault, or a handle at or above `handle_temp_max_f` (default
+  150 °F; °C sensors are converted), puts the add-on on hold: no starts, no amp changes, one notification per
+  episode. Stops still fire. A hot handle is a real hazard: inspect the handle and cable and contact Tesla.
+- **Car's own cap**: requested current is clamped to the charge-current number entity's `max` attribute. When a
+  Wall Connector derates, that range can shrink (for example to 0–6 A) and higher requests are rejected.
+- **Derate detection** (optional `actual_current_sensor`, the car's measured charger current): if it stays more
+  than `derate_margin_a` (default 4 A) below the set current for `derate_checks` (default 2) plans, outside the
+  taper zone, the add-on stops raising amps instead of fighting the charger.
+- **Gentle ramps**: while charging, each plan raises the current by at most `ramp_up_max_a` (default 4 A).
+  Lowering is immediate.
+- Helper ids (`enabled_entity`, `charge_now_entity`, `pause_entity`, `trip_entity`) must match
+  `^input_boolean\.[a-z0-9_]+$`; anything else is ignored with an error in the log.
+
 ## Phone / dashboard controls
 Create these helpers (Settings → Devices & services → Helpers → Toggle) and point the options at them. Each one can
 go on a dashboard, in an iOS/Android widget, or in a Shortcut that calls `input_boolean.turn_on`.
@@ -72,7 +91,8 @@ ble_wake_button: button.tesla_ble_wake
 2. Settings → Dashboards → ⋮ → Resources → Add `/local/tesla-smart-charge-card.js` (JavaScript module).
 3. Add a card: `type: custom:tesla-smart-charge-card` (optional `entity:` if you changed `status_entity`, `title:`).
 
-The card reads only the status sensor. The chips call `input_boolean.turn_on/turn_off` on the helpers you set in
+The card follows the Tesla in-car charging screen: dark panel, large SoC, a horizontal battery bar with
+a limit marker (green while charging), and Wall Connector alerts. It reads only the status sensor. The chips call `input_boolean.turn_on/turn_off` on the helpers you set in
 `charge_now_entity` / `pause_entity` / `trip_entity` (a chip is greyed out if its helper isn't set); Smart turns
 them all off. The add-on still applies every rule (peak fail-safe, dry run, caps).
 

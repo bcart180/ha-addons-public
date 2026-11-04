@@ -1,4 +1,5 @@
-/* Tesla Smart Charge Lovelace card (0.2.0). Reads ONLY the add-on's status sensor; its attributes carry the plan,
+/* Tesla Smart Charge Lovelace card (0.3.0). Styled after the Tesla in-car (Model S Plaid) charging screen:
+ * dark panel, big light numerals, horizontal battery bar with a limit marker, green while charging. Reads ONLY the add-on's status sensor; its attributes carry the plan,
  * ETA, cost, mode, transport and the helper entity ids. Mode chips toggle those input_boolean helpers
  * (input_boolean.turn_on / turn_off only). No iframe, no ingress, no other service calls.
  *
@@ -35,9 +36,14 @@ export function viewModel(st) {
   const alerts = [];
   if (st.state === "not_configured") alerts.push(["warn", "Add-on not configured yet"]);
   if (a.dry_run) alerts.push(["info", "Dry run: planning only, no charge commands"]);
-  if (a.behind) alerts.push(["warn", "Behind plan: charging at max amps"]);
+  if (a.behind && a.reason !== "past_finish_time") alerts.push(["warn", "Behind plan: charging at max amps"]);
   if (a.plugged === false) alerts.push(["info", "Unplugged"]);
   if (a.reason === "stale_state") alerts.push(["warn", "Waiting for fresh car data"]);
+  if (a.fault === "wall_connector_fault") alerts.push(["bad", "Wall Connector fault: holding, no amp changes"]);
+  if (a.fault === "handle_too_hot") alerts.push(["bad", "Handle too hot" + (a.handle_temp_f != null ?
+    " (" + Math.round(a.handle_temp_f) + "°F)" : "") + ": holding. Inspect the handle and cable."]);
+  if (a.derated) alerts.push(["warn", "Wall Connector is limiting current: not raising amps"]);
+  if (a.reason === "past_finish_time") alerts.push(["info", "Deadline passed: no more adjustments"]);
   if (a.last_error) alerts.push(["bad", "Last error: " + a.last_error]);
   return {
     state: st.state, mode: a.mode || "smart",
@@ -60,41 +66,38 @@ export function chipCalls(vm, chip) {
   return [...offs(chip), ["input_boolean", "turn_on", { entity_id: h[chip] }]];
 }
 
-export function ring(soc, target, charging) {
-  const r = 52, c = 2 * Math.PI * r, p = Math.max(0, Math.min(100, soc ?? 0)) / 100;
-  const ta = ((target ?? 0) / 100) * 2 * Math.PI - Math.PI / 2;
-  const tx = 60 + Math.cos(ta) * r, ty = 60 + Math.sin(ta) * r;
-  return `<svg viewBox="0 0 120 120" class="ring" role="img" aria-label="Battery ${esc(soc)}% of ${esc(target)}%">
-    <circle cx="60" cy="60" r="${r}" class="track"/>
-    <circle cx="60" cy="60" r="${r}" class="fill${charging ? " live" : ""}" stroke-dasharray="${(c * p).toFixed(1)} ${c.toFixed(1)}"
-      transform="rotate(-90 60 60)"/>
-    ${target != null ? `<circle cx="${tx.toFixed(1)}" cy="${ty.toFixed(1)}" r="5" class="tick"/>` : ""}
-    <text x="60" y="58" class="pct">${soc == null ? "—" : Math.round(soc) + "%"}</text>
-    <text x="60" y="78" class="tgt">${target == null ? "" : "target " + Math.round(target) + "%"}</text></svg>`;
+/** Horizontal battery bar like the in-car charging screen: fill = SoC, white tick = charge limit/target. */
+export function battery(soc, target, charging) {
+  const p = Math.max(0, Math.min(100, soc ?? 0)), t = target == null ? null : Math.max(0, Math.min(100, target));
+  return `<div class="bat" role="img" aria-label="Battery ${esc(soc)}% of ${esc(target)}%">
+    <div class="fill${charging ? " live" : ""}" style="width:${p.toFixed(1)}%"></div>
+    ${t != null ? `<div class="lim" style="left:${t.toFixed(1)}%"></div>` : ""}</div>`;
 }
 
 export const CSS = `
-:host{--bg:#e8eef4;--panel:#f4f7fa;--text:#1e2a36;--dim:#5a6b7c;--line:#c5d0dc;--accent:#2a9d8f;--soft:#d5f0ec;
- --good:#2f9e6b;--bad:#c94c4c;--warn:#c9892b}
-ha-card{display:block;background:var(--panel);color:var(--text);border-radius:14px;padding:16px;font-family:"Segoe UI",system-ui,sans-serif;
- box-shadow:0 2px 10px rgba(30,42,54,.08)}
-.hd{display:flex;align-items:center;justify-content:space-between;gap:8px}.title{font-size:22px;font-weight:600}
-.badge{font-size:13px;padding:3px 10px;border-radius:999px;background:#eef3f8;border:1px solid var(--line);color:var(--dim)}
-.badge.ble{background:var(--soft);color:#21867a;border-color:var(--accent)}
-.main{display:grid;grid-template-columns:150px 1fr;gap:16px;align-items:center;margin-top:8px}
-.ring{width:150px;height:150px}.track{fill:none;stroke:var(--line);stroke-width:12}
-.fill{fill:none;stroke:var(--accent);stroke-width:12;stroke-linecap:round}.fill.live{stroke:var(--good)}
-.tick{fill:var(--text)}.pct{font-size:28px;font-weight:600;text-anchor:middle;fill:var(--text)}
-.tgt{font-size:12px;text-anchor:middle;fill:var(--dim)}
-.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px}
-.k{font-size:13px;color:var(--dim)}.v{font-size:18px;font-weight:600;white-space:nowrap}
-.next{margin-top:10px;font-size:16px}.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
-.chip{min-height:44px;padding:0 18px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--text);
- font-size:16px;cursor:pointer}.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
-.chip:disabled{opacity:.45;cursor:default}
-.al{margin-top:10px;padding:8px 12px;border-radius:10px;font-size:14px;background:#eef3f8;border-left:4px solid var(--dim)}
-.al.warn{border-color:var(--warn)}.al.bad{border-color:var(--bad)}.al.info{border-color:var(--accent)}
-@media (max-width:420px){.main{grid-template-columns:1fr;justify-items:center}}`;
+:host{--bg:#0b0c0e;--panel:#16181b;--text:#f5f6f7;--dim:#8d9399;--line:#2a2e33;--green:#3ddc84;--blue:#3e6ae1;
+ --red:#e82127;--amber:#f2a33a}
+ha-card{display:block;background:var(--panel);color:var(--text);border-radius:16px;padding:20px;border:1px solid var(--line);
+ font-family:"Gotham SSm","Gotham","Helvetica Neue",-apple-system,system-ui,sans-serif;letter-spacing:.01em}
+.hd{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.title{font-size:15px;font-weight:500;color:var(--dim);text-transform:uppercase;letter-spacing:.12em}
+.badge{font-size:12px;padding:3px 10px;border-radius:999px;background:#1f2226;color:var(--dim)}
+.badge.ble{color:var(--blue)}
+.big{display:flex;align-items:baseline;gap:10px;margin-top:10px}
+.pct{font-size:56px;font-weight:300;line-height:1}.pct small{font-size:24px;color:var(--dim);margin-left:2px}
+.status{font-size:16px;color:var(--dim)}.status.live{color:var(--green)}
+.bat{position:relative;height:14px;border-radius:7px;background:#25282c;margin:14px 0 4px;overflow:visible}
+.bat .fill{height:100%;border-radius:7px;background:#c9ccd0}.bat .fill.live{background:var(--green)}
+.bat .lim{position:absolute;top:-4px;width:2px;height:22px;background:var(--text);border-radius:1px}
+.tgt{font-size:12px;color:var(--dim);text-align:right}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 12px;margin-top:16px}
+.k{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em}.v{font-size:20px;font-weight:400;white-space:nowrap}
+.chips{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:18px}
+.chip{min-height:44px;border-radius:10px;border:0;background:#24272b;color:var(--text);font:inherit;font-size:14px;cursor:pointer}
+.chip.on{background:var(--blue);color:#fff}.chip:disabled{opacity:.35;cursor:default}
+.al{margin-top:10px;padding:10px 12px;border-radius:10px;font-size:13px;background:#1f2226;border-left:3px solid var(--dim)}
+.al.warn{border-color:var(--amber)}.al.bad{border-color:var(--red)}.al.info{border-color:var(--blue)}
+@media (max-width:420px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.chips{grid-template-columns:repeat(2,1fr)}}`;
 
 export function render(vm, title = "Tesla Smart Charge", now = new Date()) {
   if (vm.missing) return `<ha-card><div class="title">${esc(title)}</div><div class="al bad">Status sensor not found.
@@ -106,15 +109,18 @@ export function render(vm, title = "Tesla Smart Charge", now = new Date()) {
   }).join("");
   return `<ha-card><div class="hd"><div class="title">${esc(title)}</div>
     <span class="badge${t === "Bluetooth" ? " ble" : ""}">${esc(t ? "via " + t : vm.setup)}</span></div>
-    <div class="main">${ring(vm.soc, vm.target, vm.charging)}<div class="grid">
-      <div><div class="k">Plan</div><div class="v">${vm.amps ? esc(vm.amps) + " A" : "—"}</div></div>
+    <div class="big"><div class="pct">${vm.soc == null ? "—" : Math.round(vm.soc)}<small>%</small></div>
+      <div class="status${vm.charging ? " live" : ""}">${vm.charging ? "Charging · " : ""}${esc(vm.next)}</div></div>
+    ${battery(vm.soc, vm.target, vm.charging)}
+    <div class="tgt">${vm.target == null ? "" : "Limit " + esc(Math.round(vm.target)) + "%"}</div>
+    <div class="grid">
+      <div><div class="k">Current</div><div class="v">${vm.amps ? esc(vm.amps) + " A" : "—"}</div></div>
       <div><div class="k">Needed</div><div class="v">${vm.kwh != null ? esc(Number(vm.kwh).toFixed(1)) + " kWh" : "—"}</div></div>
-      <div><div class="k">Starts</div><div class="v">${esc(fmtTime(vm.start, now))}</div></div>
-      <div><div class="k">Done by</div><div class="v">${esc(fmtTime(vm.eta, now))}</div></div>
-      <div><div class="k">Deadline</div><div class="v">${esc(fmtTime(vm.finishBy, now))}</div></div>
       <div><div class="k">Est. cost</div><div class="v">${fmtCost(vm.cost, vm.currency)}</div></div>
-    </div></div>
-    <div class="next">${vm.charging ? "⚡ " : ""}${esc(vm.next)}</div>
+      <div><div class="k">Starts</div><div class="v">${esc(fmtTime(vm.start, now))}</div></div>
+      <div><div class="k">Done</div><div class="v">${esc(fmtTime(vm.eta, now))}</div></div>
+      <div><div class="k">Deadline</div><div class="v">${esc(fmtTime(vm.finishBy, now))}</div></div>
+    </div>
     <div class="chips">${chips}</div>
     ${vm.alerts.map(([lvl, m]) => `<div class="al ${lvl}">${esc(m)}</div>`).join("")}</ha-card>`;
 }
@@ -134,7 +140,7 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
         for (const [d, s, data] of chipCalls(this._vm, b.dataset.chip)) this._h.callService(d, s, data);
       }));
     }
-    getCardSize() { return 5; }
+    getCardSize() { return 6; }
     static getStubConfig() { return { entity: DEFAULT_ENTITY }; }
   }
   if (!customElements.get("tesla-smart-charge-card")) customElements.define("tesla-smart-charge-card", TeslaSmartChargeCard);

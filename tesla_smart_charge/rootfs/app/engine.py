@@ -1,5 +1,6 @@
 """Tesla Smart Charge engine: reads HA, plans with core.plan, commands BLE first then cloud."""
 import logging
+import re
 import time
 from datetime import datetime, timedelta
 
@@ -13,8 +14,12 @@ DEFAULTS = {"dry_run": True, "dry_run_safety_off": True, "check_interval_min": 1
             "fallback_voltage": 240,
             "stale_minutes": 30, "wake_max_per_window": 5,
             "charge_on_max_per_window": 5, "taper_soc": 90, "taper_factor": 1.5, "rates": [],
-            "default_price": None, "currency": "$", "peak_schedule": [], "notify_not_charging_min": 20}
+            "default_price": None, "currency": "$", "peak_schedule": [], "notify_not_charging_min": 20,
+            "handle_temp_max_f": 150, "ramp_up_max_a": 4, "derate_margin_a": 4, "derate_checks": 2}
 HARD_MAX_AMPS = 48
+HELPER_RE = re.compile(r"^input_boolean\.[a-z0-9_]+$")
+HELPER_KEYS = ("enabled_entity", "charge_now_entity", "pause_entity", "trip_entity")
+HOLD_REASONS = ("past_finish_time", "wall_connector_fault", "handle_too_hot")
 SAFETY_STOPS = ("stale_state", "peak", "plug_state_unavailable", "soc_or_target_unavailable")
 ENTITY_KEYS = ("charge_switch", "charge_current", "charge_limit", "wake_button", "ble_charge_switch",
                "ble_charge_current", "ble_charge_limit", "ble_wake_button", "charge_now_entity",
@@ -46,6 +51,11 @@ class Engine:
     def __init__(self, opts, ha, clock=None, sleep=None, mono=None):
         self.o = dict(DEFAULTS, **{k: v for k, v in opts.items() if v not in (None,)})
         self.ha = ha
+        for k in HELPER_KEYS:  # defense in depth: the schema also enforces this
+            v = self.o.get(k)
+            if v and not HELPER_RE.match(str(v)):
+                log.error("%s must look like input_boolean.name; ignoring it", k)
+                self.o[k] = ""
         self.o["max_amps"] = max(1, min(int(self.o["max_amps"]), HARD_MAX_AMPS))
         if int(self.o["min_amps"]) > self.o["max_amps"]:
             log.warning("min_amps %s > max_amps %s: using max_amps for both (max wins)",
@@ -67,6 +77,9 @@ class Engine:
         self.transport = None  # last command path: ble | cloud | cloud_unconfirmed | none
         self.last_error = None
         self.checked = False
+        self.session_dep = None  # deadline of the current plugged-in session (survives the next-day rollover)
+        self.derate_seen = 0  # consecutive plans with actual current far below the set current
+        self.fault_notified = None
         self.wake_bo = Backoff(self.o["wake_max_per_window"])
         self.on_bo = Backoff(self.o["charge_on_max_per_window"])
         # L-a: going live without a charge-limit entity could start on a restored stale SoC with no ceiling.
@@ -80,6 +93,41 @@ class Engine:
     def _st(self, states, key):
         eid = self.o.get(key) or ""
         return (states.get(eid) or {}).get("state") if eid else None
+
+    def _attr(self, states, key, attr):
+        eid = self.o.get(key) or ""
+        return ((states.get(eid) or {}).get("attributes") or {}).get(attr) if eid else None
+
+    def amp_cap(self, states):
+        """The car's own current ceiling (number entity `max` attribute). It drops (e.g. to 6 A) when the
+        Wall Connector derates; requesting more than this is rejected by the integration."""
+        caps = [core.num(self._attr(states, k, "max")) for k in ("charge_current", "ble_charge_current")]
+        caps = [c for c in caps if c is not None and c >= 1]
+        return int(min(caps)) if caps else None
+
+    def fault_state(self, states):
+        o = self.o
+        status = self._st(states, "wall_connector_status") if o.get("wall_connector_status") else None
+        hf = None
+        if o.get("handle_temp_sensor"):
+            hf = core.temp_f(self._st(states, "handle_temp_sensor"),
+                             self._attr(states, "handle_temp_sensor", "unit_of_measurement"))
+        return core.wc_fault(status, hf, o.get("handle_temp_max_f")), hf
+
+    def derated(self, states, soc, charging):
+        """Actual current far below the set current, outside the taper zone, for derate_checks plans in a row."""
+        if not self.o.get("actual_current_sensor") or charging is not True:
+            self.derate_seen = 0
+            return False
+        act = core.num(self._st(states, "actual_current_sensor"))
+        setp = core.num(self._st(states, "charge_current"))
+        taper = self.o.get("taper_soc")
+        in_taper = soc is not None and taper is not None and soc >= taper
+        if act is None or setp is None or in_taper or act > setp - float(self.o["derate_margin_a"]):
+            self.derate_seen = 0
+            return False
+        self.derate_seen += 1
+        return self.derate_seen >= int(self.o["derate_checks"])
 
     def _flag(self, states, key):
         eid = self.o.get(key) or ""
@@ -104,7 +152,8 @@ class Engine:
     SELF_CHECK_KEYS = ("charge_switch", "charge_current", "battery_level", "plugged_in", "charge_limit",
                        "charging_sensor", "online_sensor", "wake_button", "home_entity", "voltage_sensor",
                        "ble_charge_switch", "ble_charge_current", "ble_charge_limit", "ble_wake_button",
-                       "peak_sensor", "target_soc_entity", "departure_entity", "max_amps_entity", "enabled_entity",
+                       "peak_sensor", "wall_connector_status", "handle_temp_sensor", "actual_current_sensor",
+                       "target_soc_entity", "departure_entity", "max_amps_entity", "enabled_entity",
                        "charge_now_entity", "pause_entity", "trip_entity")
 
     def self_check(self, states):
@@ -168,7 +217,14 @@ class Engine:
         # Unknown charging state = None (not False): stops are still sent (only a definite False skips them).
         raw_ch = self._st(states, "charging_sensor" if o.get("charging_sensor") else "charge_switch")
         charging = None if str(raw_ch).strip().lower() in core.BAD else core.is_on(raw_ch)
+        if plugged is False:
+            self.session_dep = None
+        departure = core.session_departure(self.session_dep, departure, now)
+        fault, handle_f = self.fault_state(states)
         return {
+            "in_session": self.session_dep is not None and departure == self.session_dep,
+            "fault": fault, "handle_f": handle_f, "amp_cap": self.amp_cap(states),
+            "derated": self.derated(states, soc, charging), "ramp_up_max_a": int(o["ramp_up_max_a"]),
             "now": now, "soc": soc, "stale": stale, "last_soc": last_soc,
             "last_plugged": last_plugged if plug_fresh else None,
             "target": core.num(target), "plugged": plugged, "home": home, "peak": peak,
@@ -337,11 +393,14 @@ class Engine:
         if peak_off_edge or self.plug_on_edge:
             self.reset_wake_backoff()  # L4: only a new off-peak window or a real off->on plug-in
             self.on_bo.reset()
-        p = core.plan(s)
+        p = core.guard(core.plan(s), s)
+        if p["action"] == "start" and p["reason"] not in ("charge_now", "late_plug_in"):
+            self.session_dep = s["departure"]
         if s["stale"] and p["action"] != "idle":
             p.update(action="stop" if p["action"] == "stop" else "hold", reason="stale_state", amps=None)
         self.apply(p, s, states)
         self.check_notify(p, s, now)
+        self.fault_notify(p, s)
         attrs = self.summary(p, s)
         attrs["trigger"] = ",".join(why + (["peak_end"] if peak_off_edge else [])) or "interval"
         self.publish(p["action"], attrs)
@@ -422,6 +481,23 @@ class Engine:
         except Exception as e:  # noqa: BLE001
             log.warning("notify failed: %s", e)
 
+    def fault_notify(self, p, s):
+        """One notification per fault episode (clears when the fault clears)."""
+        if p["reason"] not in ("wall_connector_fault", "handle_too_hot"):
+            self.fault_notified = None
+            return
+        if self.fault_notified == p["reason"]:
+            return
+        self.fault_notified = p["reason"]
+        msg = ("Wall Connector reports a fault; smart charging is holding (no amp changes)."
+               if p["reason"] == "wall_connector_fault" else
+               "Wall Connector handle reads %.0f F; smart charging is holding. Inspect the handle."
+               % (s["handle_f"] or 0))
+        try:
+            self.ha.notify("Tesla Smart Charge", msg)
+        except Exception as e:  # noqa: BLE001
+            log.warning("notify failed: %s", e)
+
     def mode(self, p, s):
         if not s.get("enabled", True):
             return "disabled"
@@ -454,7 +530,9 @@ class Engine:
             nxt = {"peak": "wait for off-peak", "target_reached": "done", "paused_until_next_window":
                    "paused until next off-peak window", "charge_now_complete": "done"}.get(p["reason"], "stop")
         elif p["action"] == "hold":
-            nxt = "waiting for fresh car data"
+            nxt = {"past_finish_time": "deadline passed: no more adjustments",
+                   "wall_connector_fault": "Wall Connector fault: holding",
+                   "handle_too_hot": "handle hot: holding"}.get(p["reason"], "waiting for fresh car data")
         else:
             nxt = {"unplugged": "plug in to plan", "not_home": "away from home", "disabled": "disabled"}.get(
                 p["reason"], "idle")
@@ -465,7 +543,10 @@ class Engine:
             "charging": s["charging"], "peak": s["peak"], "kwh_needed": round(wall, 2),
             "start_at": iso(start), "finish_by": iso(finish_by), "eta_finish": iso(eta),
             "departure": iso(s["departure"]), "est_cost": cost, "currency": o.get("currency", "$"),
-            "volts": s["volts"], "max_amps": s["max_amps"], "transport": self.transport,
+            "volts": s["volts"], "max_amps": s["max_amps"],
+            "amp_cap": s.get("amp_cap"),
+            "fault": s.get("fault"), "derated": bool(s.get("derated")), "handle_temp_f": s.get("handle_f"),
+            "transport": self.transport,
             "setup_mode": "ble+cloud" if o.get("ble_charge_switch") else "cloud-only",
             "next_action": nxt, "last_error": self.last_error, "dry_run": bool(o["dry_run"]),
             "charge_now_entity": o.get("charge_now_entity") or None, "pause_entity": o.get("pause_entity") or None,

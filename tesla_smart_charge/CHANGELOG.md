@@ -1,9 +1,22 @@
 # Changelog
 
+## 0.3.0
+- Fix: at/after the finish-by time the add-on stops adjusting instead of rolling over to tomorrow's departure
+  (it used to command `min_amps` right at the deadline). Late plug-ins with no session still charge at max.
+- Wall Connector safety: optional `wall_connector_status` / `handle_temp_sensor` (`handle_temp_max_f`, default
+  150 F) hold the plan on a fault or hot handle, with one notification per episode.
+- Requested amps are clamped to the charge-current entity's `max` attribute (no more out-of-range requests).
+- Derate detection via optional `actual_current_sensor`: never raises amps while the charger is limiting.
+- Upward ramps limited to `ramp_up_max_a` (default 4 A) per plan; downward changes are immediate.
+- Helper ids validated against `^input_boolean\.[a-z0-9_]+$` (schema and engine).
+- Card restyled after the Tesla in-car charging screen (dark, battery bar with limit marker); device-specific
+  sizing removed; fault / derate / deadline alerts.
+- Tests: replay of a real overnight incident (hot handle, 6 A derate, fault, deadline rollover).
+
 ## 0.2.0
 - Lovelace card `custom:tesla-smart-charge-card` (lovelace/): SoC ring vs target, plan amps, start / done-by /
   deadline, kWh needed, estimated cost, transport badge (Bluetooth / Cloud), alerts, and Smart / Charge now / Pause /
-  Trip chips that toggle your input_boolean helpers. Reads only the status sensor. Echo Show sized.
+  Trip chips that toggle your input_boolean helpers. Reads only the status sensor.
 - Taper-aware planning: above `taper_soc` (default 90) each kWh is planned at `taper_factor` (1.5x) the time, so
   100% targets finish on time instead of running late.
 - TOU `rates` + `currency` for a session cost estimate.
