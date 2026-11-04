@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0
+- Lovelace card `custom:tesla-smart-charge-card` (lovelace/): SoC ring vs target, plan amps, start / done-by /
+  deadline, kWh needed, estimated cost, transport badge (Bluetooth / Cloud), alerts, and Smart / Charge now / Pause /
+  Trip chips that toggle your input_boolean helpers. Reads only the status sensor. Echo Show sized.
+- Taper-aware planning: above `taper_soc` (default 90) each kWh is planned at `taper_factor` (1.5x) the time, so
+  100% targets finish on time instead of running late.
+- TOU `rates` + `currency` for a session cost estimate.
+- Rich status sensor attributes: mode, plan_amps, kWh needed, start_at, eta_finish, finish_by, est_cost, transport,
+  setup_mode, next_action, last_error, helper entity ids.
+- Startup self-check: logs cloud-only vs BLE+cloud, which configured entities resolved or are missing, and gaps
+  (no peak source, required options empty).
+
 ## 0.1.4
 - Charge-on retries use the same backoff (10/20/40/80/120 min) with a per-window cap (`charge_on_max_per_window`,
   default 5); reset only on a real plug-in or a new off-peak window. Repeats log at debug.

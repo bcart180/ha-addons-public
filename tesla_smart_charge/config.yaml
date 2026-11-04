@@ -1,5 +1,5 @@
 name: Tesla Smart Charge
-version: "0.1.4"
+version: "0.2.0"
 slug: tesla_smart_charge
 description: Lowest-amp off-peak Tesla charging that reaches your target by departure (BLE first, cloud fallback)
 url: https://github.com/bcart180/ha-addons-public/tree/main/tesla_smart_charge
@@ -33,6 +33,12 @@ options:
   charge_on_max_per_window: 5
   fallback_voltage: 240
   peak_schedule: []
+  # Taper: above this SoC the car draws less than commanded; planning allows taper_factor x the time there.
+  taper_soc: 90
+  taper_factor: 1.5
+  # Optional TOU prices for the cost estimate (any currency). Example in DOCS.md.
+  rates: []
+  currency: "$"
   notify_not_charging_min: 20
 schema:
   dry_run: bool
@@ -85,6 +91,15 @@ schema:
   trip_entity: match(^input_boolean\.[a-z0-9_]+$)?
   trip_target_soc: int(50,100)?
   trip_departure_time: match(^\d{2}:\d{2}$)?
+  taper_soc: int(50,100)
+  taper_factor: float(1,4)
+  rates:
+    - days: str
+      start: match(^\d{2}:\d{2}$)
+      end: match(^\d{2}:\d{2}$)
+      price: float(0,10)
+  default_price: float(0,10)?
+  currency: str
   notify_service: match(^notify\.[a-z0-9_]+$)?
   notify_not_charging_min: int(0,240)
   status_entity: match(^sensor\.[a-z0-9_]+$)?

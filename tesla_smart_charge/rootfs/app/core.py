@@ -93,13 +93,67 @@ def offpeak_hours(now, until, schedule, step_min=5):
     return total / 3600
 
 
-def required_amps(soc, target, battery_kwh, efficiency, volts, hours):
-    """Lowest whole amps that add (target-soc)% of battery_kwh (wall-side, /efficiency) in `hours`."""
-    remaining_kwh = max(0.0, target - soc) / 100.0 * battery_kwh / efficiency
-    if remaining_kwh <= 0:
+def taper_equiv_kwh(soc, target, battery_kwh, efficiency, taper_soc=None, taper_factor=1.0):
+    """(wall kWh, time-equivalent kWh). Above taper_soc the car accepts less than the commanded current, so each
+    kWh there takes taper_factor times as long. Planning on the time-equivalent finishes on time; cost uses wall kWh."""
+    lo, hi = max(0.0, float(soc)), max(0.0, float(target))
+    if hi <= lo:
+        return 0.0, 0.0
+    wall = (hi - lo) / 100.0 * battery_kwh / efficiency
+    if taper_soc is None or taper_factor <= 1.0 or hi <= taper_soc:
+        return wall, wall
+    above = (hi - max(lo, taper_soc)) / 100.0 * battery_kwh / efficiency
+    return wall, wall + above * (taper_factor - 1.0)
+
+
+def required_amps(soc, target, battery_kwh, efficiency, volts, hours, taper_soc=None, taper_factor=1.0):
+    """Lowest whole amps that add (target-soc)% of battery_kwh (wall-side, /efficiency) in `hours`,
+    taper-aware above taper_soc. Returns (amps, wall_kwh)."""
+    wall, equiv = taper_equiv_kwh(soc, target, battery_kwh, efficiency, taper_soc, taper_factor)
+    if wall <= 0:
         return 0, 0.0
     hours = max(hours, 0.25)
-    return int(math.ceil(remaining_kwh * 1000.0 / (volts * hours))), remaining_kwh
+    return int(math.ceil(equiv * 1000.0 / (volts * hours))), wall
+
+
+def hours_at(amps, volts, equiv_kwh):
+    """Hours to deliver equiv_kwh at `amps` (0 amps -> None)."""
+    if not amps or amps <= 0:
+        return None
+    return equiv_kwh * 1000.0 / (volts * amps)
+
+
+def price_at(t, rates, default_price):
+    """Price per kWh at local time t from TOU `rates` [{days,start,end,price}], else default_price (None ok)."""
+    for r in rates or []:
+        if in_schedule(t, [r]):
+            return float(r["price"])
+    return default_price
+
+
+def est_cost(start, hours, wall_kwh, rates, default_price, step_min=5):
+    """Session cost estimate: wall kWh spread evenly over [start, start+hours], priced per TOU block."""
+    if not wall_kwh or hours is None or hours <= 0:
+        return 0.0 if not wall_kwh else None
+    n = max(1, int(math.ceil(hours * 60 / step_min)))
+    total = 0.0
+    for i in range(n):
+        p = price_at(start + timedelta(minutes=i * step_min), rates, default_price)
+        if p is None:
+            return None
+        total += p * wall_kwh / n
+    return round(total, 2)
+
+
+def next_offpeak(now, schedule, horizon_h=48, step_min=5):
+    """First time >= now outside the peak schedule (now if not in peak)."""
+    t = now
+    end = now + timedelta(hours=horizon_h)
+    while t < end:
+        if not in_schedule(t, schedule):
+            return t
+        t = (t + timedelta(minutes=step_min)).replace(second=0, microsecond=0)
+    return None
 
 
 def clamp_voltage(v, fallback):
@@ -159,7 +213,8 @@ def plan(s):
     if hours <= 0:
         out.update(action="start", amps=int(s["max_amps"]), reason="past_finish_time", behind=True)
         return out
-    amps, kwh = required_amps(soc, target, s["battery_kwh"], s["efficiency"], s["volts"], hours)
+    amps, kwh = required_amps(soc, target, s["battery_kwh"], s["efficiency"], s["volts"], hours,
+                              s.get("taper_soc"), s.get("taper_factor", 1.0))
     # max_amps always wins over min_amps (M1).
     final = min(max(int(s["min_amps"]), amps), int(s["max_amps"]))
     out.update(action="start", amps=final, behind=amps > int(s["max_amps"]),

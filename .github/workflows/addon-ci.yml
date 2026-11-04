@@ -136,6 +136,8 @@ jobs:
         run: ruff check .
       - name: pytest
         run: pytest -q
+      - name: Lovelace card tests (runner's preinstalled Node)
+        run: node --version && node --test lovelace/tests/card.test.mjs
       - name: Safe default (dry run)
         run: "grep -qx '  dry_run: true' config.yaml"
       - name: Home Assistant add-on lint

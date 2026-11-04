@@ -12,7 +12,8 @@ DEFAULTS = {"dry_run": True, "dry_run_safety_off": True, "check_interval_min": 1
             "departure_time": "07:00", "finish_buffer_min": 30, "min_amps": 5, "max_amps": 32,
             "fallback_voltage": 240,
             "stale_minutes": 30, "wake_max_per_window": 5,
-            "charge_on_max_per_window": 5, "peak_schedule": [], "notify_not_charging_min": 20}
+            "charge_on_max_per_window": 5, "taper_soc": 90, "taper_factor": 1.5, "rates": [],
+            "default_price": None, "currency": "$", "peak_schedule": [], "notify_not_charging_min": 20}
 HARD_MAX_AMPS = 48
 SAFETY_STOPS = ("stale_state", "peak", "plug_state_unavailable", "soc_or_target_unavailable")
 ENTITY_KEYS = ("charge_switch", "charge_current", "charge_limit", "wake_button", "ble_charge_switch",
@@ -63,6 +64,9 @@ class Engine:
         self.notified_window = None
         self.status = {}
         self.plug_on_edge = False
+        self.transport = None  # last command path: ble | cloud | cloud_unconfirmed | none
+        self.last_error = None
+        self.checked = False
         self.wake_bo = Backoff(self.o["wake_max_per_window"])
         self.on_bo = Backoff(self.o["charge_on_max_per_window"])
         # L-a: going live without a charge-limit entity could start on a restored stale SoC with no ceiling.
@@ -96,6 +100,32 @@ class Engine:
             return (n - t) > timedelta(minutes=int(self.o["stale_minutes"]))
         except (TypeError, ValueError):
             return True
+
+    SELF_CHECK_KEYS = ("charge_switch", "charge_current", "battery_level", "plugged_in", "charge_limit",
+                       "charging_sensor", "online_sensor", "wake_button", "home_entity", "voltage_sensor",
+                       "ble_charge_switch", "ble_charge_current", "ble_charge_limit", "ble_wake_button",
+                       "peak_sensor", "target_soc_entity", "departure_entity", "max_amps_entity", "enabled_entity",
+                       "charge_now_entity", "pause_entity", "trip_entity")
+
+    def self_check(self, states):
+        """Startup report: which configured entities exist in HA and which are missing; setup mode."""
+        found, missing = [], []
+        for k in self.SELF_CHECK_KEYS:
+            eid = self.o.get(k)
+            if eid:
+                (found if eid in states else missing).append("%s=%s" % (k, eid))
+        need = [k for k in ("charge_switch", "charge_current", "battery_level", "plugged_in") if not self.o.get(k)]
+        mode = "ble+cloud" if self.o.get("ble_charge_switch") else "cloud-only"
+        log.info("self-check: mode=%s found=%d missing=%d", mode, len(found), len(missing))
+        for m in missing:
+            log.warning("self-check: entity not found in HA: %s", m)
+        for k in need:
+            log.warning("self-check: required option %s is empty; add-on stays idle", k)
+        if not (self.o.get("peak_sensor") or self.o.get("peak_schedule")):
+            log.warning("self-check: no peak_sensor or peak_schedule; every hour counts as off-peak")
+        if not self.o.get("charge_now_entity"):
+            log.info("self-check: no charge_now_entity; the card's Charge now chip is hidden")
+        return {"mode": mode, "found": found, "missing": missing, "required_empty": need}
 
     def configured(self):
         return all(self.o.get(k) for k in ("charge_switch", "charge_current", "battery_level", "plugged_in"))
@@ -149,6 +179,7 @@ class Engine:
             "battery_kwh": float(o["battery_kwh"]), "efficiency": float(o["charge_efficiency"]),
             "departure": departure, "finish_buffer_min": o["finish_buffer_min"], "min_amps": o["min_amps"],
             "max_amps": max_amps, "schedule": o.get("peak_schedule"),
+            "taper_soc": o.get("taper_soc"), "taper_factor": float(o.get("taper_factor") or 1.0),
         }
 
     # ---------- commands ----------
@@ -158,6 +189,7 @@ class Engine:
             return True
         except Exception as e:  # noqa: BLE001 - log and fall back
             log.warning("%s.%s %s failed: %s", domain, service, data.get("entity_id"), e)
+            self.last_error = "%s.%s %s: %s" % (domain, service, data.get("entity_id"), str(e)[:120])
             return False
 
     def _confirm(self, check):
@@ -174,13 +206,18 @@ class Engine:
 
     def _ble_then_cloud(self, ble_key, cloud_key, domain, service, extra, check):
         """Try BLE entity, wait for confirmation, else the cloud entity. Returns path used or None."""
+        path = None
         if self.o.get(ble_key):
             if self._call(domain, service, dict(entity_id=self.o[ble_key], **extra)) and self._confirm(check):
-                return "ble"
-            log.info("BLE %s.%s unconfirmed after %ss; falling back to cloud", domain, service, self.o["confirm_s"])
-        if self.o.get(cloud_key) and self._call(domain, service, dict(entity_id=self.o[cloud_key], **extra)):
-            return "cloud" if self._confirm(check) else "cloud_unconfirmed"
-        return None
+                path = "ble"
+            else:
+                log.info("BLE %s.%s unconfirmed after %ss; falling back to cloud", domain, service,
+                         self.o["confirm_s"])
+        if path is None and self.o.get(cloud_key) and self._call(domain, service,
+                                                                 dict(entity_id=self.o[cloud_key], **extra)):
+            path = "cloud" if self._confirm(check) else "cloud_unconfirmed"
+        self.transport = path or "none"
+        return path
 
     def _charging(self, states):
         key = "charging_sensor" if self.o.get("charging_sensor") else "charge_switch"
@@ -277,6 +314,9 @@ class Engine:
     def tick(self):
         now = self.clock()
         states = self.ha.get_states()
+        if not self.checked:
+            self.checked = True
+            self.setup = self.self_check(states)
         if not self.configured():
             self.publish("not_configured", {})
             return None
@@ -302,10 +342,9 @@ class Engine:
             p.update(action="stop" if p["action"] == "stop" else "hold", reason="stale_state", amps=None)
         self.apply(p, s, states)
         self.check_notify(p, s, now)
-        self.publish(p["action"], {"reason": p["reason"], "amps": p["amps"], "behind": p["behind"],
-                                   "soc": s["soc"], "target": s["target"], "peak": s["peak"],
-                                   "departure": s["departure"].isoformat(), "dry_run": bool(self.o["dry_run"]),
-                                   "trigger": ",".join(why + (["peak_end"] if peak_off_edge else [])) or "interval"})
+        attrs = self.summary(p, s)
+        attrs["trigger"] = ",".join(why + (["peak_end"] if peak_off_edge else [])) or "interval"
+        self.publish(p["action"], attrs)
         log.info("plan %s amps=%s reason=%s soc=%s target=%s peak=%s dry_run=%s", p["action"], p["amps"],
                  p["reason"], s["soc"], s["target"], s["peak"], self.o["dry_run"])
         return p
@@ -382,6 +421,56 @@ class Engine:
                            % (s["soc"], mins))
         except Exception as e:  # noqa: BLE001
             log.warning("notify failed: %s", e)
+
+    def mode(self, p, s):
+        if not s.get("enabled", True):
+            return "disabled"
+        if s.get("charge_now"):
+            return "charge_now"
+        if s.get("pause"):
+            return "paused"
+        if s.get("trip"):
+            return "trip"
+        return "smart"
+
+    def summary(self, p, s):
+        """Rich status for the card: plan, ETA, cost, mode, transport, next action, last error."""
+        o, now = self.o, s["now"]
+        wall, equiv = (0.0, 0.0)
+        if s.get("soc") is not None and s.get("target") is not None:
+            wall, equiv = core.taper_equiv_kwh(s["soc"], s["target"], s["battery_kwh"], s["efficiency"],
+                                               s.get("taper_soc"), s.get("taper_factor", 1.0))
+        amps = p.get("amps")
+        start = now
+        if p["action"] != "start" and s.get("peak") and not s.get("charge_now"):
+            start = core.next_offpeak(now, o.get("peak_schedule")) if o.get("peak_schedule") else None
+        h = core.hours_at(amps, s["volts"], equiv) if amps else None
+        eta = (start + timedelta(hours=h)) if (start and h) else None
+        finish_by = s["departure"] - timedelta(minutes=int(s.get("finish_buffer_min", 0)))
+        cost = core.est_cost(start or now, h, wall, o.get("rates"), o.get("default_price")) if h else None
+        if p["action"] == "start":
+            nxt = "charging at %s A" % amps if s.get("charging") else "start charging at %s A" % amps
+        elif p["action"] == "stop":
+            nxt = {"peak": "wait for off-peak", "target_reached": "done", "paused_until_next_window":
+                   "paused until next off-peak window", "charge_now_complete": "done"}.get(p["reason"], "stop")
+        elif p["action"] == "hold":
+            nxt = "waiting for fresh car data"
+        else:
+            nxt = {"unplugged": "plug in to plan", "not_home": "away from home", "disabled": "disabled"}.get(
+                p["reason"], "idle")
+        iso = (lambda d: d.isoformat() if d else None)
+        return {
+            "reason": p["reason"], "mode": self.mode(p, s), "amps": amps, "plan_amps": amps,
+            "behind": p["behind"], "soc": s["soc"], "target": s["target"], "plugged": s["plugged"],
+            "charging": s["charging"], "peak": s["peak"], "kwh_needed": round(wall, 2),
+            "start_at": iso(start), "finish_by": iso(finish_by), "eta_finish": iso(eta),
+            "departure": iso(s["departure"]), "est_cost": cost, "currency": o.get("currency", "$"),
+            "volts": s["volts"], "max_amps": s["max_amps"], "transport": self.transport,
+            "setup_mode": "ble+cloud" if o.get("ble_charge_switch") else "cloud-only",
+            "next_action": nxt, "last_error": self.last_error, "dry_run": bool(o["dry_run"]),
+            "charge_now_entity": o.get("charge_now_entity") or None, "pause_entity": o.get("pause_entity") or None,
+            "trip_entity": o.get("trip_entity") or None, "enabled_entity": o.get("enabled_entity") or None,
+        }
 
     def publish(self, state, attrs):
         self.status = dict(attrs, state=state)
