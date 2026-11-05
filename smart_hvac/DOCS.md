@@ -107,22 +107,26 @@ session to **admin** users. For any non-admin user (for example a wall/Echo Show
 **view only** and shows a banner linking to the Climate panel; it has no other write path.
 
 ## 0.4.0: defrost, presets, next change, events
-- **Defrost**: when a unit reports Home Assistant's standard `hvac_action` `defrosting` or `preheating`, the app
-  does not treat a setpoint/mode it sees as a manual change, does not count it as a mode change for the
-  anti-short-cycle guard, and does not write (no "missed setpoint" retry). The zone reason is `defrosting` /
-  `preheating`; cards show "Defrosting" / "Pre-heating" and a band on the graph. Checked live 30 Oct: the
-  two Mitsubishi splits (ESPHome) and their `_proxy` entities report only `heating` / `idle` / `off` and have no
-  defrost attribute or entity, so today nothing is shown; there is **no inference** from temperatures. It
-  lights up on its own if the firmware starts reporting it.
-  (0.4.1) If one spell lasts more than 30 minutes the app stops waiting, goes back to normal logic and records a
-  `defrost_stuck` event.
-  (0.5.1) Option `defrost_aware` (default off = exactly the behaviour above). On: each defrost window is
-  capped at 15 min and at most 4 may start per 60 min, after which normal logic resumes (`defrost_stuck` past the
-  cap); the official `defrosting` / `preheating` is always honoured; and on zones with `heat_pump: true` a
-  defrost is inferred when the unit reports `heating` in heat mode, the outdoor temp is known and <= 40°F, and
-  the room falls >= 0.5°F per 3 min. Unknown outdoor temp = no inference. Debug logs only; zone payload adds
-  `defrost_inferred`. Sources: https://developers.home-assistant.io/blog/2024/07/07/climate-hvacaction-defrosting/
+- **Defrost** (0.8.9, `defrost_aware` default **on**): a heat pump that is defrosting is not a missed setpoint.
+  The app does not chase the setpoint that cycle and does not treat the spell as a manual change. It is also
+  not counted as heat delivered (learned warm-up and sleep coast skip it). The short-cycle guard still blocks
+  a heat/cool flip inside the minimum cycle, including the 10 minutes after a defrost ends.
+  Reported: `hvac_action` `defrosting` or `preheating` (any zone). Inferred, because some heads only ever report
+  `heating` / `idle`: zones with `heat_pump: true` that are not radiant, in heat mode, outdoor temperature known
+  and at or below 40°F (a Celsius weather temperature is converted first), and the room — or a supply temperature
+  the climate entity already reports — falling at least 0.5°F per 3 minutes while the unit is heating or has just
+  gone idle from heating. Cool mode is never inferred. Unknown outdoor temperature means no inference. Each window
+  is at most 15 minutes, and at most 4 windows may start per hour; past either limit normal logic resumes
+  (`defrost_stuck` past the cap). For 10 minutes after a window ends, a same-mode setpoint chase is held, and a
+  mode or setpoint blip in that window is not taken as a new manual hold. The short-cycle guard is not skipped.
+  The zone payload sets `defrosting: true` (and `defrost` / `defrost_inferred`). The card and the history graph
+  show a Defrosting badge and a shaded band, including an inferred defrost that is not in recorder history.
+  `defrost_aware: false` restores the previous guards. A state file that omits the option still behaves as off,
+  which is how the older golden test stays stable; the add-on fills the default when it loads options.
+  Sources: https://developers.home-assistant.io/blog/2024/07/07/climate-hvacaction-defrosting/
   and https://community.home-assistant.io/t/helper-script-to-detect-defrost-status-for-heat-pump/789890
+  (0.4.1) A reported spell longer than 30 minutes, when `defrost_aware` is off, stops waiting and records
+  `defrost_stuck`. With the option on, the cap is 15 minutes.
 - **Presets** `POST /api/preset {"preset": "home"|"sleep"|"away"|"eco"}` (ingress only) set the global profile:
   Home/Sleep/Away = those profiles, **Eco = automatic** (presence + schedule: away setback when nobody is home,
   sleep at night). Same effect as `/api/profile`; the cycle runs right away and writes through the usual gates.

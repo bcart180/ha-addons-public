@@ -92,6 +92,21 @@ def test_short_cycle_released_after_min():
     r = decide(base(indoor_temp=76, outdoor_temp=85, last_mode="heat", last_mode_change_ts=NOW - 1000), LR)
     assert r["mode"] == "cool"
 
+def test_defrost_grace_does_not_bypass_short_cycle():
+    """SA M1: room 82 F, outdoor 75 F, heat changed 100 s ago stays heat. Cool stays cool. Chase still holds."""
+    common = dict(indoor_temp=82, outdoor_temp=75, last_mode="heat", last_setpoint=71,
+                  last_mode_change_ts=NOW - 100)
+    plain = decide(base(**common), LR)
+    flagged = decide(base(**common, defrosting=True), LR)
+    for r in (plain, flagged):
+        assert r["action"] == "hold" and r["reason"] == "short_cycle_guard" and r["mode"] == "heat"
+        assert r["mode"] != "cool"
+    cool = decide(base(indoor_temp=60, outdoor_temp=30, last_mode="cool", last_setpoint=71,
+                       last_mode_change_ts=NOW - 100, defrosting=True), LR)
+    assert cool["action"] == "hold" and cool["reason"] == "short_cycle_guard" and cool["mode"] == "cool"
+    chase = decide(base(defrosting=True), LR)  # heat already, setpoint 65 vs target 71
+    assert chase["action"] == "hold" and chase["reason"] == "defrosting" and chase["mode"] == "heat"
+
 def test_override_holds():
     assert decide(base(override_active=True), LR)["reason"] == "manual_override"
 

@@ -58,7 +58,7 @@ function render(){
  $("modes").innerHTML=MODES.map(([k,l])=>`<button class="btn ${S.profile===k?"primary":""}" onclick="setMode('${k}')">${l}</button>`).join("");
  $("zones").innerHTML=S.zones.map(z=>{const r=(S.last.zones||{})[z.name]||{},h=z.history,last=h[h.length-1]||[];
   const ov=z.override_until&&z.override_until*1000>Date.now();
-  const word={heat:"Heating",cool:"Cooling",off:"Off"}[r.mode]||"Holding";
+  const word=r.defrosting||r.defrost?"Defrosting":({heat:"Heating",cool:"Cooling",off:"Off"}[r.mode]||"Holding");
   return `<div class="card"><h2>${esc(z.label)}</h2>${dial(r.setpoint??last[3],r.mode)}
   <div class="dim">Inside ${last[1]!=null?Math.round(last[1])+"°":"--"}</div>
   <div class="ctrl"><button class="btn" onclick="bump('${z.name}',-1)">−</button><button class="btn" onclick="bump('${z.name}',1)">+</button></div>

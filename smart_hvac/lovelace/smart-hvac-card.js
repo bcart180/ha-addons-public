@@ -119,12 +119,14 @@ export function sharedModeRequests(zones, mode) {
 
 export function glanceRow(hass, z, api, vac, tz) {
   const st = hass?.states?.[z.entity], a = st?.attributes || {};
-  const s = statusOf(st, z, vac);
-  const now = num(hass?.states?.[z.indoor]?.state) ?? num(a.current_temperature);
   const zr = api?.last?.zones?.[z.zone], za = (api?.zones || []).find((x) => x.name === z.zone);
+  const s = statusOf(st, z, vac, zr);
+  const now = num(hass?.states?.[z.indoor]?.state) ?? num(a.current_temperature);
   const hold = za?.override_until && za.override_until * 1000 > Date.now() ? za.override_until : null;
   let doing = s.status;
-  if (vac) doing = z.heat_only ? "Vacation · off" : "Vacation";
+  const dlab = defrostLabel(st, zr);
+  if (dlab) doing = dlab;
+  else if (vac) doing = z.heat_only ? "Vacation · off" : "Vacation";
   else if (hold) doing = `Hold · auto at ${fmtClock(hold, tz)}`;
   else if (zr?.preheat) doing = "Warming up";
   else if (zr?.profile === "away") doing = "Away";
@@ -211,17 +213,51 @@ export function buildSeries(hist, zone, weather, start, end) {
   return out;
 }
 
-/** Status line: active mode and why (vacation / off / heating ...). */
-export function statusOf(stateObj, zone, vacation) {
+/** "Defrosting" / "Pre-heating" from the climate attribute, or from the add-on zone result when defrost is inferred. */
+export function defrostLabel(stateObj, zr) {
+  if (!stateObj || stateObj.state === "off" || stateObj.state === "unavailable") return null;
+  const act = stateObj.attributes?.hvac_action;
+  if (DEFROST[act]) return DEFROST[act];
+  if (zr && (zr.defrosting || zr.defrost)) return DEFROST[zr.defrost] || "Defrosting";
+  return null;
+}
+
+/** Recorder defrost points plus add-on defrost events, so an inferred defrost (no hvac_action) still shades the graph. */
+export function mergeDefrostEvents(series, events) {
+  if (!series) return series;
+  const spans = eventSpans(events, series.start, series.end).filter((s) => s.kind === "defrost");
+  if (!spans.length) return series;
+  const iv = [];
+  const pts = series.defrost || [];
+  pts.forEach(([t, on], i) => {
+    if (!on) return;
+    const t2 = (pts[i + 1] || [series.end])[0];
+    if (t2 > t) iv.push([t, t2]);
+  });
+  for (const s of spans) iv.push([s.t1, s.t2]);
+  iv.sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const [a, b] of iv) {
+    if (!merged.length || a > merged[merged.length - 1][1]) merged.push([a, b]);
+    else merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], b);
+  }
+  const defrost = [];
+  for (const [a, b] of merged) defrost.push([a, 1], [b, 0]);
+  return { ...series, defrost };
+}
+
+/** Status line: active mode and why (vacation / off / heating / defrosting ...). */
+export function statusOf(stateObj, zone, vacation, zr) {
   const mode = stateObj ? stateObj.state : "unavailable";
   const act = stateObj?.attributes?.hvac_action;
   const off = mode === "off";
+  const dlab = defrostLabel(stateObj, zr);
   const status = !stateObj || mode === "unavailable" ? "Unavailable" : off ? "Off"
-    : DEFROST[act] ? DEFROST[act] : act === "heating" ? "Heating" : act === "cooling" ? "Cooling" : act === "fan" ? "Fan" : "Idle";
+    : dlab ? dlab : act === "heating" ? "Heating" : act === "cooling" ? "Cooling" : act === "fan" ? "Fan" : "Idle";
   let why = "";
   if (vacation) why = zone.heat_only ? "Vacation — radiant floor stays off" : "Vacation — set back";
   else if (off) why = "Off";
-  else if (DEFROST[act]) why = `${DEFROST[act]} — not a manual change; the app waits`;
+  else if (dlab) why = `${dlab} — not a manual change; the app waits`;
   return { mode, off, status, why };
 }
 
@@ -413,7 +449,8 @@ class SmartHvacCard extends Base {
 
   _card(z, i, vac, tz) {
     const h = this._hass, st = h.states[z.entity], a = st?.attributes || {};
-    const s = statusOf(st, z, vac), ro = !canWrite(h);
+    const api = this._api, zr = api?.last?.zones?.[z.zone], za = (api?.zones || []).find((x) => x.name === z.zone);
+    const s = statusOf(st, z, vac, zr), ro = !canWrite(h);
     const indoor = num(h.states[z.indoor]?.state) ?? num(a.current_temperature);
     const hum = num(h.states[z.humidity]?.state) ?? num(a.current_humidity);
     const sp = this._pend[z.entity] ?? num(a.temperature);
@@ -422,12 +459,13 @@ class SmartHvacCard extends Base {
     const fans = z.heat_only ? [] : a.fan_modes || [];
     let chips = vac ? `<span class="chip vac">Vacation · ${z.heat_only ? "radiant off" : "set back"}</span>` : `<span class="chip">${esc(s.mode[0]?.toUpperCase() + s.mode.slice(1))}</span>`;
     if (outdoor != null) chips += `<span class="chip">Outside ${Math.round(outdoor)}°</span>`;
-    if (DEFROST[a.hvac_action] && !s.off) chips += `<span class="chip dfr">${DEFROST[a.hvac_action]}</span>`;
+    const dlab = defrostLabel(st, zr);
+    if (dlab) chips += `<span class="chip dfr">${esc(dlab)}</span>`;
     if (z.heat_only) chips += `<span class="chip">Max ${radiantCap(this._api)}°</span>`;
-    const g = this._hist[z.entity];
-    const api = this._api, zr = api?.last?.zones?.[z.zone], za = (api?.zones || []).find((x) => x.name === z.zone);
-    const nl = nextLine(zr, tz, za?.override_until);
     const evs = za?.events || [];
+    const g0 = this._hist[z.entity];
+    const g = g0 ? mergeDefrostEvents(g0, evs) : null;
+    const nl = nextLine(zr, tz, za?.override_until);
     return `<div class="card"><div class="zh"><h2>${esc(z.label || a.friendly_name || z.entity)}</h2><span class="dim">${z.heat_only ? "Radiant floor" : "Mini split"}</span></div>
       <div class="face ${s.off ? "off" : ""}"><div class="status">${hum != null ? Math.round(hum) + "% · " : ""}${esc(s.status)}</div>
       <div class="big">${indoor != null ? Math.round(indoor) : "--"}</div>

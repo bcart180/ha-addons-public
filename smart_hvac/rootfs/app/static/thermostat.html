@@ -37,6 +37,7 @@ display:flex;flex-direction:column;align-items:center;justify-content:center;use
 .chip{padding:4px 10px;border-radius:20px;font-size:13.5px;background:var(--elev);color:var(--dim);border:1px solid var(--line)}
 .chip.auto{color:var(--soft);border-color:var(--accent)}.chip.hold{color:#f1d3a6;border-color:var(--warn)}
 .chip.ok{color:#bfe8d3;border-color:var(--good)}.chip.bad{color:#f2c2c2;border-color:var(--bad)}
+.chip.dfr{color:#7fd6ff;border-color:#7fd6ff}
 .why{font-size:14.5px;color:var(--dim);margin:2px 0 10px;min-height:20px}
 .row{display:flex;gap:8px;flex-wrap:wrap}
 .btn{background:var(--elev);color:var(--text);border:1px solid var(--line);border-radius:var(--rc);padding:10px 14px;font-size:15px;cursor:pointer}
@@ -95,7 +96,8 @@ function card(z){
  const L=S.last||{},r=(L.zones||{})[z.name]||{},lv=r.live||{},now=Date.now()/1000;
  const hold=z.override_until&&z.override_until>now, mode=lv.mode||"off", off=mode==="off";
  const sp=pend[z.name]??lv.setpoint, act=lv.hvac_action, heat=act==="heating"||(!act&&mode==="heat");
- const stat=off?"Off":act==="heating"?"Heating":act==="cooling"?"Cooling":act==="fan"?"Fan":"Idle";
+ const dfr=!off && (act==="preheating"||r.defrost==="preheating")?"Pre-heating":(!off && (r.defrosting||r.defrost||act==="defrosting"||act==="preheating")?"Defrosting":"");
+ const stat=off?"Off":dfr?dfr:act==="heating"?"Heating":act==="cooling"?"Cooling":act==="fan"?"Fan":"Idle";
  const prof=r.profile||(S.profile&&S.profile!=="auto"?S.profile:null);
  const capOn=L.radiant_timeout==="on";
  const ro=!S.enabled||S.dry_run;
@@ -103,6 +105,7 @@ function card(z){
   :`<span class="chip">${esc(PROF[S.profile]||S.profile)}${S.profile==="auto"&&prof?" → "+esc(PROF[prof]):""}</span>`;
  chips+=hold?`<span class="chip hold">Manual hold · until ${fmtT(z.override_until)}</span>`:`<span class="chip auto">App in control</span>`;
  if(L.outdoor!=null)chips+=`<span class="chip">Outside ${Math.round(L.outdoor)}°</span>`;
+ if(dfr)chips+=`<span class="chip dfr">${dfr}</span>`;
  if(z.heat_only)chips+=`<span class="chip ${capOn?"ok":"bad"}">90-min cap ${capOn?"armed":"OFF"}</span><span class="chip">Max ${S.radiant_setpoint_max??85}° · Air off ${S.radiant_air_shutoff??80}°</span>`;
  const modes=(z.heat_only?["heat","off"]:["heat","cool","off"]).filter(m=>!lv.hvac_modes||!lv.hvac_modes.length||lv.hvac_modes.includes(m));
  const fans=z.heat_only?[]:(lv.fan_modes||[]);
@@ -129,7 +132,7 @@ function card(z){
  <div class="gwrap"><div class="gbar"><span class="seg">${["24h","7d"].map(g=>`<button class="${(H[z.name]?.range||"24h")===g?"on":""}" onclick="loadHist('${z.name}','${g}')">${g}</button>`).join("")}</span>
   <label class="tog"><input type="checkbox" ${H[z.name]?.out!==false?"checked":""} onchange="H['${z.name}'].out=this.checked;drawG('${z.name}')"> Outdoor</label></div>
   <svg class="g" id="g-${z.name}" viewBox="0 0 600 150"></svg>
-  <div class="leg"><span><i style="background:#e8eef4"></i>Indoor</span><span><i style="background:var(--accent)"></i>Setpoint</span><span><i style="background:rgba(201,137,43,.55);height:8px"></i>Heating</span><span><i style="background:#6f8296"></i>Outdoor</span></div></div>
+  <div class="leg"><span><i style="background:#e8eef4"></i>Indoor</span><span><i style="background:var(--accent)"></i>Setpoint</span><span><i style="background:rgba(201,137,43,.55);height:8px"></i>Heating</span><span><i style="background:#6f8296"></i>Outdoor</span><span><i style="background:rgba(127,214,255,.7);height:8px"></i>Defrost</span></div></div>
  </div>`;}
 function render(){if(!S)return;
  $("sub").textContent=!S.enabled?"App is off — cards are read-only":S.dry_run?"Dry run — cards are read-only":"Live";
@@ -152,6 +155,7 @@ function drawG(z){const el=$("g-"+z),h=H[z];if(!el)return;const d=h&&h.d;
  let lo=Math.floor(Math.min(...vals)-2),hi=Math.ceil(Math.max(...vals)+2);const Y=v=>Ht-P-(v-lo)/(hi-lo)*(Ht-2*P)+6;
  let s="";for(let i=0;i<=3;i++){const v=lo+(hi-lo)*i/3,y=Y(v);s+=`<line x1="28" x2="${W-2}" y1="${y}" y2="${y}" stroke="#2a3540" stroke-width="1"/><text x="2" y="${y+4}" fill="#8a9bac" font-size="11">${Math.round(v)}°</text>`;}
  const hp=d.heating;for(let i=0;i<hp.length;i++)if(hp[i][1]){const a=X(hp[i][0]),b=X(i+1<hp.length?hp[i+1][0]:x1);s+=`<rect x="${a}" y="6" width="${Math.max(1,b-a)}" height="${Ht-P-6}" fill="rgba(201,137,43,.22)"/>`;}
+ const df=d.defrost||[];for(let i=0;i<df.length;i++)if(df[i][1]){const a=X(df[i][0]),b=X(i+1<df.length?df[i+1][0]:x1);s+=`<rect x="${a}" y="6" width="${Math.max(2,b-a)}" height="${Ht-P-6}" fill="rgba(127,214,255,.35)"/><text x="${a+3}" y="16" fill="#7fd6ff" font-size="11">Defrosting</text>`;}
  const hold=pts=>{const l=pts[pts.length-1];return l&&l[1]!=null&&l[0]<x1?[...pts,[x1,l[1]]]:pts;}; // carry last value to now
  const line=(pts,step)=>{let p="",prev=null;for(const [t,v] of hold(pts)){if(v==null){prev=null;continue;}const x=X(t),y=Y(v);
   if(prev==null)p+=`M${x},${y}`;else p+=step?`H${x}V${y}`:`L${x},${y}`;prev=y;}return p;};
@@ -165,10 +169,12 @@ async function refresh(){try{S=await api("api/state");render();S.zones.forEach(z
 /* ---------- mock (screenshots / design review only: ?mock=1; never writes) ---------- */
 function mockApi(p,b){const now=Math.floor(Date.now()/1000);
  if(p.includes("/history")){const z=p.split("/")[2],rng=p.endsWith("7d")?"7d":"24h",span=rng==="7d"?7*86400:86400,n=rng==="7d"?168:96;
-  const base=z==="bath_floor"?70:69,set=z==="bath_floor"?72:71;const o={zone:z,range:rng,start:now-span,end:now,indoor:[],setpoint:[],heating:[],outdoor:[]};
+  const base=z==="bath_floor"?70:69,set=z==="bath_floor"?72:71;const o={zone:z,range:rng,start:now-span,end:now,indoor:[],setpoint:[],heating:[],defrost:[],outdoor:[]};
   for(let i=0;i<=n;i++){const t=now-span+i*span/n,hr=new Date(t*1000).getHours(),sl=hr>=22||hr<6,sp=sl?(z==="bath_floor"?66:68):set;
    const ph=Math.sin(i/3+z.length);const ind=sp-0.6+ph*0.7+(sl?0.3:0);o.indoor.push([t,+ind.toFixed(1)]);o.setpoint.push([t,sp]);
-   o.heating.push([t,z!=='bath_floor'||i<n*0.8?(ind<sp-1.0?1:0):0]);o.outdoor.push([t,+(44+9*Math.sin((hr-9)/24*2*Math.PI)+3*Math.sin(i/20)).toFixed(1)]);}
+   const thaw=z!=="bath_floor"&&i>=Math.floor(n*0.45)&&i<Math.floor(n*0.48);
+   o.heating.push([t,thaw?0:(z!=='bath_floor'||i<n*0.8?(ind<sp-1.0?1:0):0)]);o.defrost.push([t,thaw?1:0]);
+   o.outdoor.push([t,+(44+9*Math.sin((hr-9)/24*2*Math.PI)+3*Math.sin(i/20)).toFixed(1)]); }
   return o;}
  return S||MOCK_STATE;}
 const MOCK_STATE={enabled:true,dry_run:false,profile:"auto",override_hours:2,radiant_room_cap:85,radiant_setpoint_max:85,radiant_air_shutoff:80,radiant_floor_cap:85,

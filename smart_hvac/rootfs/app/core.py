@@ -220,10 +220,17 @@ def decide(inp, unit, cfg=None):
         target = round(min(max(target, c["min_temp"]), c["max_temp"]) * 2) / 2.0
         last_mode = inp.get("last_mode")
         last_sp = _num(inp.get("last_setpoint"))
+        # 0.8.9: the engine sets defrosting while a heat pump is defrosting and for ~10 min after.
+        # That only holds a same-mode setpoint chase (the room drop is not "not reaching setpoint").
+        # It must not bypass the short-cycle guard: a heat/cool flip inside min_cycle_s still holds
+        # (SA M1). Shared-mode lock stays the backstop after the guard.
+        thawing = bool(inp.get("defrosting"))
         if mode != last_mode and last_mode in ("heat", "cool") and mode in ("heat", "cool"):
             since = _num(inp.get("now_ts")) - (_num(inp.get("last_mode_change_ts")) or 0)
             if since < c["min_cycle_s"]:
                 return hold("short_cycle_guard", prof)
+        if thawing and mode == last_mode and last_sp is not None and abs(last_sp - target) >= 0.5:
+            return hold("defrosting", prof)
         if mode == last_mode and last_sp is not None and abs(last_sp - target) < 0.5:
             return hold("no_change", prof)
         return {"action": "set", "mode": mode, "setpoint": target, "reason": "window_restore" if restored else "ok",
