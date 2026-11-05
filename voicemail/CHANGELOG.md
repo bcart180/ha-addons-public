@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.7 — 2026-11-05
+
+- **Callback request, not a dial.** Call back in the list and on the detail screen queues a pending request (`POST /api/request_callback`). It sets `callback_status=pending` and `callback_requested_at`, and fires the Home Assistant event `callcatch_callback_requested` (voicemail id, masked from, display name, short summary, requested_at). A second request while pending is a no-op. `POST /api/callback_status` sets `returned`, `failed`, or `cancelled` (optional note) after a human-approved outbound call elsewhere, or from **Mark returned** / **Cancel request** in the panel. Returned shows `Returned · {local time}`.
+- The add-on never dials: no Twilio Dial, no outbound SIP, no `place_phone_call`. Call back is no longer a `tel:` link. **Open on phone** is an optional secondary `tel:` link (transcript numbers stay tappable). Mock and dry_run still only record the request. The event does not include a full number (the shared sensor does not publish From either). Logs stay masked. No new options, secrets, or dry_run change.
+
 ## 0.5.6 — 2026-11-03
 
 - Privacy contract locked by tests (no behavior change): full caller numbers appear only in the admin-only ingress panel (`panel_admin: true`; list title and detail). Every shared output (`sensor.inbound_voicemails` attributes `caller_masked`, `caller_label_masked`, `summary_callback`, `summary_*`, `summary_fallback`, and the blueprint push built from them) stays last-4 only (`•••1234`). There is deliberately no option to unmask shared outputs. New `tests/test_full_numbers_admin_only.py`. No data, API permission, webhook or dry_run change.

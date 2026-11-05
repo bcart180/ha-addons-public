@@ -189,7 +189,55 @@ button, input, select { font: inherit; color: inherit; }
   font-weight: 600; font-size: 18px;
   font-variant-numeric: tabular-nums;
 }
-.number-pill::after { content: "›"; color: var(--dim); font-weight: 400; }
+.callback-bar {
+  margin: 0 16px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.callback-line {
+  margin: 0;
+  text-align: center;
+  color: var(--dim);
+  font-size: 15px;
+}
+.callback-line:empty { display: none; }
+.callback-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.callback-bar .action-chip.call,
+.callback-actions .action-chip { width: 100%; }
+.action-chip.call {
+  background: var(--call);
+  border-color: var(--call);
+  color: #000;
+}
+.open-phone {
+  align-self: center;
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  color: var(--dim);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.cb-btn { cursor: pointer; padding: 0; }
+.cb-btn.pending,
+.icon-btn.call-green.pending {
+  background: transparent;
+  color: var(--call);
+  box-shadow: inset 0 0 0 2px var(--call);
+}
+.cb-state {
+  color: var(--call);
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 4px;
+}
 .card-soft {
   margin: 0 16px 16px;
   background: var(--raise);

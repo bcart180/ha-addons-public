@@ -137,6 +137,10 @@ def transcript_text(body: dict) -> str:
 
 _VERSTAT_RE = re.compile(r"^[A-Za-z0-9\-]{1,64}$")
 TRUST_VERDICTS = ("allow", "screen", "blocked")
+CALLBACK_PENDING = "pending"
+CALLBACK_TERMINAL = ("returned", "failed", "cancelled")
+CALLBACK_STATUSES = (CALLBACK_PENDING, *CALLBACK_TERMINAL)
+CALLBACK_KEYS = ("callback_status", "callback_requested_at", "callback_status_at", "callback_note")
 
 
 def clean_verstat(value: Any) -> str:
@@ -214,11 +218,27 @@ def item_from_payload(body: dict, now: datetime | None = None) -> dict:
         "trust_verdict": str(body.get("trust_verdict") or "") if str(body.get("trust_verdict") or "") in TRUST_VERDICTS else "",
         # 0.3.7 post-call summary: Voice-sent (validated) or derived locally.
         "summary": call_summary.summarize(body.get("summary"), text, caller or pretty),
-        # Server-set. A caller cannot choose Drive ids, upload state, or source.
+        # Server-set. A caller cannot choose Drive ids, upload state, source,
+        # or callback-request state (ingest cannot mark a call returned).
         "source": "",
         "drive_audio_id": "",
         "drive_transcript_id": "",
         "drive_status": "",
+        "callback_status": "",
+        "callback_requested_at": "",
+        "callback_status_at": "",
+        "callback_note": "",
+    }
+
+
+def callback_sensor_fields(item: dict) -> dict:
+    """Status only. No callback note and no phone number."""
+    status = str(item.get("callback_status") or "")
+    if status not in CALLBACK_STATUSES:
+        status = ""
+    return {
+        "callback_status": status,
+        "callback_requested_at": str(item.get("callback_requested_at") or "") if status else "",
     }
 
 
@@ -250,6 +270,7 @@ def sensor_state(items: list[dict]) -> dict:
                 **call_summary.for_sensor(call_summary.stored_or_extract(item)),
                 "summary_fallback": call_summary.fallback_line(item),
                 "caller_label_masked": call_summary.caller_label(item),
+                **callback_sensor_fields(item),
             }
         )
     unheard = sum(1 for item in items if not item.get("heard"))
@@ -385,6 +406,9 @@ class VoicemailStore:
                         item[key] = prev[key]
                 if not item.get("drive_status") and prev.get("drive_status"):
                     item["drive_status"] = prev["drive_status"]
+                for key in CALLBACK_KEYS:
+                    if not str(item.get(key) or "") and prev.get(key):
+                        item[key] = prev[key]
                 if audio is None and prev.get("audio_name") and not item.get("audio_name"):
                     item["audio_name"] = prev.get("audio_name") or ""
                     item["audio_ext"] = prev.get("audio_ext") or ""
@@ -495,6 +519,56 @@ class VoicemailStore:
             path.unlink()
         except OSError:
             pass
+
+    def request_callback(self, voicemail_id: str) -> dict | None:
+        """Record a pending callback request. Does not dial.
+
+        None when the id is missing. ``created`` is false when a request is
+        already pending (same timestamp, no rewrite).
+        """
+        with exclusive_lock(self.lock_path):
+            data = self._read()
+            item = data["items"].get(voicemail_id)
+            if not isinstance(item, dict):
+                return None
+            if (
+                str(item.get("callback_status") or "") == CALLBACK_PENDING
+                and str(item.get("callback_requested_at") or "")
+            ):
+                return {"item": copy.deepcopy(item), "created": False}
+            now = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+            item["callback_status"] = CALLBACK_PENDING
+            item["callback_requested_at"] = now
+            item["callback_status_at"] = ""
+            item["callback_note"] = ""
+            data["items"][voicemail_id] = item
+            self._write(data)
+            return {"item": copy.deepcopy(item), "created": True}
+
+    def set_callback_status(self, voicemail_id: str, status: str, note: str = "") -> dict | None:
+        """Move a pending request to returned, failed, or cancelled.
+
+        None when the id is missing. ``error`` is ``bad-status`` or
+        ``not-pending``. The same status again is a no-op (``changed`` false).
+        """
+        if status not in CALLBACK_TERMINAL:
+            return {"error": "bad-status"}
+        with exclusive_lock(self.lock_path):
+            data = self._read()
+            item = data["items"].get(voicemail_id)
+            if not isinstance(item, dict):
+                return None
+            current = str(item.get("callback_status") or "")
+            if current == status:
+                return {"item": copy.deepcopy(item), "changed": False}
+            if current != CALLBACK_PENDING:
+                return {"error": "not-pending", "item": copy.deepcopy(item)}
+            item["callback_status"] = status
+            item["callback_status_at"] = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+            item["callback_note"] = str(note or "")[:160]
+            data["items"][voicemail_id] = item
+            self._write(data)
+            return {"item": copy.deepcopy(item), "changed": True}
 
     def find_by_call(self, call_id: str) -> dict | None:
         safe = safe_id(call_id)

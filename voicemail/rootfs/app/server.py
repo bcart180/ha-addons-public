@@ -35,7 +35,7 @@ import share_import
 APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC = APP_DIR / "static"
 EXAMPLE = APP_DIR / "example_voicemails.json"
-VERSION = "0.5.6"
+VERSION = "0.5.7"
 AUDIO_LIMIT = 25 * 1024 * 1024
 SENSOR_RE = re.compile(r"sensor\.[a-z0-9_]+")
 RT = web.AppKey("rt", dict)
@@ -347,6 +347,7 @@ def normalize_item(raw: dict) -> dict:
         "stir": inbox_store.stir_summary(raw.get("stir_verstat")),
         "trust_verdict": raw.get("trust_verdict") or "",
         "summary": summary,
+        **callback_view(raw),
         # 0.5.5: list preview is always masked server-side (never the raw snippet). Detail keeps full text.
         "preview": (summary.get("reason") or "")
         or call_summary.fallback_line({"snippet": map_speaker_text(snippet_raw) if isinstance(snippet_raw, str) else ""})
@@ -584,6 +585,88 @@ async def ha_call_service(
         except Exception:
             body = await resp.text()
         return resp.status, body
+
+
+_EVENT_TYPE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+CALLBACK_EVENT = "callcatch_callback_requested"
+
+
+def _log_safe(message: str) -> None:
+    """Info log with phone runs masked. Never pass tokens or raw numbers on purpose."""
+    log.info("%s", call_summary.mask_phone_runs(message))
+
+
+def callback_view(raw: dict) -> dict:
+    """Admin panel fields. The note is plain text; it is not copied onto the sensor."""
+    status = str(raw.get("callback_status") or "")
+    if status not in inbox_store.CALLBACK_STATUSES:
+        status = ""
+    note = re.sub(r"\s+", " ", call_summary.plain_text(raw.get("callback_note") or "")).strip()[:160]
+    return {
+        "callback_status": status,
+        "callback_requested_at": str(raw.get("callback_requested_at") or "") if status else "",
+        "callback_status_at": str(raw.get("callback_status_at") or "") if status else "",
+        "callback_note": note if status else "",
+    }
+
+
+def callback_event_data(item: dict, requested_at: str) -> dict:
+    """HA event payload. Masked like the sensor: no full From number.
+
+    The shared sensor never publishes the raw caller, so this event does not
+    either. Display name is the spoken name when there is one.
+    """
+    summary = call_summary.stored_or_extract(item)
+    sensor_bits = call_summary.for_sensor(summary)
+    reason = (sensor_bits.get("summary_reason") or call_summary.fallback_line(item) or "")[:120]
+    name = call_summary.mask_phone_runs(call_summary.plain_text(summary.get("name") or "")).strip()[:80]
+    if not name:
+        label = call_summary.caller_label(item)
+        if label and "•" not in label and any(ch.isalpha() for ch in label):
+            name = label[:80]
+    caller = item.get("caller") or item.get("caller_pretty") or ""
+    return {
+        "voicemail_id": str(item.get("voicemail_id") or ""),
+        "from_masked": call_summary.mask_number(call_summary.strip_format(caller)),
+        "display_name": name,
+        "summary": reason,
+        "requested_at": requested_at,
+    }
+
+
+def _masked_from(item: dict) -> str:
+    caller = item.get("caller") or item.get("caller_pretty") or ""
+    return call_summary.mask_number(call_summary.strip_format(caller)) or "none"
+
+
+async def ha_fire_event(session: ClientSession | None, event_type: str, data: dict) -> tuple[int, Any]:
+    """POST one Home Assistant event. This never places a call."""
+    if event_type != CALLBACK_EVENT or not _EVENT_TYPE.fullmatch(event_type):
+        return 400, {"ok": False, "error": "bad-event"}
+    vid = str((data or {}).get("voicemail_id") or "")[:80]
+    if not _in_ha():
+        _log_safe(f"event {event_type} mock id={vid}")
+        return 200, {"ok": True, "mock": True}
+    if session is None:
+        _log_safe(f"event {event_type} skipped id={vid}")
+        return 0, {"skipped": True}
+    url = f"http://supervisor/core/api/events/{event_type}"
+    hdr = {
+        "Authorization": f"Bearer {_supervisor_token()}",
+        "Content-Type": "application/json",
+    }
+    try:
+        async with session.post(url, headers=hdr, json=data or {}, timeout=ClientTimeout(total=10)) as resp:
+            try:
+                body = await resp.json(content_type=None)
+            except Exception:
+                body = await resp.text()
+            if not 200 <= resp.status < 300:
+                log.warning("event %s HTTP %s", event_type, resp.status)
+            return resp.status, body
+    except Exception as exc:  # noqa: BLE001
+        log.warning("event %s error: %s", event_type, type(exc).__name__)
+        return 0, {"ok": False}
 
 
 async def ha_set_state(session: ClientSession, entity_id: str, payload: dict) -> tuple[int, Any]:
@@ -967,6 +1050,106 @@ async def api_mark_heard(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": "not-found"}, status=404)
     await _after_change(request.app)
     return web.json_response({"ok": True})
+
+
+def _callback_id(body: dict) -> str:
+    return str(body.get("voicemail_id") or body.get("message_id") or "").strip()[:80]
+
+
+async def api_request_callback(request: web.Request) -> web.Response:
+    """Queue a callback request. Records pending state and fires an HA event.
+
+    Does not dial. A second request while pending returns the current row.
+    ``dry_run`` in the body is ignored: the request is still recorded, and
+    this route still does not place a call.
+    """
+    denied = deny_mutation(request)
+    if denied:
+        return denied
+    if legacy_enabled():
+        return web.json_response({"ok": False, "error": "legacy-unsupported"}, status=409)
+    body = await _trust_json(request)
+    if body is None:
+        return web.json_response({"ok": False, "error": "bad-request"}, status=400)
+    vid = _callback_id(body)
+    if not vid:
+        return web.json_response({"ok": False, "error": "voicemail_id required"}, status=400)
+    store = ensure_runtime(request.app)
+    result = store.request_callback(vid)
+    if result is None:
+        _log_safe(f"callback request id={vid} missing")
+        return web.json_response({"ok": False, "error": "not-found"}, status=404)
+    item = result["item"]
+    created = bool(result["created"])
+    _log_safe(
+        f"callback request id={vid} from={item.get('caller') or item.get('caller_pretty') or ''} "
+        f"{'pending' if created else 'idempotent'}"
+    )
+    event_fired = False
+    if created:
+        payload = callback_event_data(item, str(item.get("callback_requested_at") or ""))
+        status, _body = await ha_fire_event(_box(request.app).get("session"), CALLBACK_EVENT, payload)
+        event_fired = 200 <= status < 300
+        await _after_change(request.app)
+    return web.json_response(
+        {
+            "ok": True,
+            "voicemail_id": vid,
+            "idempotent": not created,
+            "event": CALLBACK_EVENT if event_fired else "",
+            "event_fired": event_fired,
+            **callback_view(item),
+        }
+    )
+
+
+async def api_callback_status(request: web.Request) -> web.Response:
+    """Set returned, failed, or cancelled after a human-approved call, or for a dry run.
+
+    Does not dial. Pending is set only by request_callback.
+    """
+    denied = deny_mutation(request)
+    if denied:
+        return denied
+    if legacy_enabled():
+        return web.json_response({"ok": False, "error": "legacy-unsupported"}, status=409)
+    body = await _trust_json(request)
+    if body is None:
+        return web.json_response({"ok": False, "error": "bad-request"}, status=400)
+    vid = _callback_id(body)
+    if not vid:
+        return web.json_response({"ok": False, "error": "voicemail_id required"}, status=400)
+    status_name = str(body.get("status") or "").strip().lower()
+    if status_name not in inbox_store.CALLBACK_TERMINAL:
+        return web.json_response({"ok": False, "error": "bad-status"}, status=400)
+    note = re.sub(r"\s+", " ", call_summary.plain_text(body.get("note") or "")).strip()[:160]
+    store = ensure_runtime(request.app)
+    result = store.set_callback_status(vid, status_name, note)
+    if result is None:
+        _log_safe(f"callback status id={vid} missing")
+        return web.json_response({"ok": False, "error": "not-found"}, status=404)
+    if result.get("error"):
+        code = str(result["error"])
+        return web.json_response(
+            {"ok": False, "error": code, "voicemail_id": vid, **callback_view(result.get("item") or {})},
+            status=400 if code == "bad-status" else 409,
+        )
+    item = result["item"]
+    changed = bool(result.get("changed"))
+    _log_safe(
+        f"callback status id={vid} from={item.get('caller') or ''} status={status_name} "
+        f"changed={'yes' if changed else 'no'}"
+    )
+    if changed:
+        await _after_change(request.app)
+    return web.json_response(
+        {
+            "ok": True,
+            "voicemail_id": vid,
+            "idempotent": not changed,
+            **callback_view(item),
+        }
+    )
 
 
 async def api_play(request: web.Request) -> web.Response:
@@ -1524,6 +1707,8 @@ def make_app() -> web.Application:
     app.router.add_post("/api/clear_one", api_clear_one)
     app.router.add_post("/api/clear_all", api_clear_all)
     app.router.add_post("/api/mark_heard", api_mark_heard)
+    app.router.add_post("/api/request_callback", api_request_callback)
+    app.router.add_post("/api/callback_status", api_callback_status)
     app.router.add_post("/api/play", api_play)
     app.router.add_get("/api/audio/{call_id}", api_audio)
     app.router.add_get("/api/trust", api_trust_get)
