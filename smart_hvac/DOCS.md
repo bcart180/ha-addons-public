@@ -107,17 +107,18 @@ session to **admin** users. For any non-admin user (for example a wall/Echo Show
 **view only** and shows a banner linking to the Climate panel; it has no other write path.
 
 ## 0.4.0: defrost, presets, next change, events
-- **Defrost** (0.8.9, `defrost_aware` default **on**): a heat pump that is defrosting is heating-in-progress, not a
-  failure. The app does not treat it as a short cycle, a manual change, or a missed setpoint, and it does not
-  write that cycle. It is also not counted as heat delivered (learned warm-up and sleep coast skip it).
+- **Defrost** (0.8.9, `defrost_aware` default **on**): a heat pump that is defrosting is not a missed setpoint.
+  The app does not chase the setpoint that cycle and does not treat the spell as a manual change. It is also
+  not counted as heat delivered (learned warm-up and sleep coast skip it). The short-cycle guard still blocks
+  a heat/cool flip inside the minimum cycle, including the 10 minutes after a defrost ends.
   Reported: `hvac_action` `defrosting` or `preheating` (any zone). Inferred, because some heads only ever report
   `heating` / `idle`: zones with `heat_pump: true` that are not radiant, in heat mode, outdoor temperature known
-  and at or below 40°F, and the room — or a supply temperature the climate entity already reports — falling at
-  least 0.5°F per 3 minutes while the unit is heating or has just gone idle from heating. Cool mode is never
-  inferred. Unknown outdoor temperature means no inference. Each window is at most 15 minutes, and at most 4
-  windows may start per hour; past either limit normal logic resumes (`defrost_stuck` past the cap). For 10
-  minutes after a window ends, the short-cycle guard and the setpoint chase stay skipped, and a mode or
-  setpoint blip in that window is not taken as a new manual hold.
+  and at or below 40°F (a Celsius weather temperature is converted first), and the room — or a supply temperature
+  the climate entity already reports — falling at least 0.5°F per 3 minutes while the unit is heating or has just
+  gone idle from heating. Cool mode is never inferred. Unknown outdoor temperature means no inference. Each window
+  is at most 15 minutes, and at most 4 windows may start per hour; past either limit normal logic resumes
+  (`defrost_stuck` past the cap). For 10 minutes after a window ends, a same-mode setpoint chase is held, and a
+  mode or setpoint blip in that window is not taken as a new manual hold. The short-cycle guard is not skipped.
   The zone payload sets `defrosting: true` (and `defrost` / `defrost_inferred`). The card and the history graph
   show a Defrosting badge and a shaded band, including an inferred defrost that is not in recorder history.
   `defrost_aware: false` restores the previous guards. A state file that omits the option still behaves as off,

@@ -221,12 +221,13 @@ def decide(inp, unit, cfg=None):
         last_mode = inp.get("last_mode")
         last_sp = _num(inp.get("last_setpoint"))
         # 0.8.9: the engine sets defrosting while a heat pump is defrosting and for ~10 min after.
-        # That is heating-in-progress: do not hold for a short cycle, and do not chase the setpoint
-        # because the room dropped. A reversing-valve mode correction still falls through.
+        # That only holds a same-mode setpoint chase (the room drop is not "not reaching setpoint").
+        # It must not bypass the short-cycle guard: a heat/cool flip inside min_cycle_s still holds
+        # (SA M1). Shared-mode lock stays the backstop after the guard.
         thawing = bool(inp.get("defrosting"))
         if mode != last_mode and last_mode in ("heat", "cool") and mode in ("heat", "cool"):
             since = _num(inp.get("now_ts")) - (_num(inp.get("last_mode_change_ts")) or 0)
-            if since < c["min_cycle_s"] and not thawing:
+            if since < c["min_cycle_s"]:
                 return hold("short_cycle_guard", prof)
         if thawing and mode == last_mode and last_sp is not None and abs(last_sp - target) >= 0.5:
             return hold("defrosting", prof)

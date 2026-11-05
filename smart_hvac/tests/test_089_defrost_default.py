@@ -8,7 +8,6 @@ import yaml
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "rootfs", "app"))
 sys.path.insert(0, os.path.dirname(__file__))
 
-from engine import DEFROST_GRACE_S  # noqa: E402
 from server import load_options  # noqa: E402
 from test_051_defrost_aware import room, setup, step  # noqa: E402
 
@@ -75,6 +74,20 @@ def test_supply_drop_infers_when_the_room_holds():
     assert r["lr"]["defrosting"] is True and r["lr"]["defrost_inferred"] is True
 
 
+def test_celsius_outdoor_uses_the_40f_gate():
+    e, ha, clk = setup()
+    ha.s["weather.w"] = ("cloudy", {"temperature": 10, "temperature_unit": "C", "cloud_coverage": 100})
+    room(ha, 66.0, "heating")
+    step(e, clk, 180)
+    room(ha, 64.0, "heating")
+    assert step(e, clk, 180)["lr"]["defrost"] is None  # 10 C = 50 F, above 40 F
+    ha.s["weather.w"] = ("cloudy", {"temperature": 0, "temperature_unit": "°C", "cloud_coverage": 100})
+    room(ha, 66.0, "heating")
+    step(e, clk, 180)
+    room(ha, 64.0, "heating")
+    assert step(e, clk, 180)["lr"]["defrosting"] is True  # 0 C = 32 F
+
+
 def test_cool_mode_is_not_an_inferred_defrost():
     e, ha, clk = setup()
     room(ha, 66.0, "heating")
@@ -115,28 +128,43 @@ def test_defrost_during_a_hold_is_not_a_short_cycle():
     assert e.snapshot()["zones"][0]["override_until"] == held
 
 
-def test_grace_skips_short_cycle_then_the_guard_returns():
+def _hot_room(ha, mode="heat"):
+    """SA M1 room: 82 F inside, 75 F outside, mode unchanged. Wants cool, but the cycle is too short."""
+    st, at = ha.s["climate.lr"]
+    ha.s["climate.lr"] = (mode, dict(at, hvac_action="idle", temperature=71, current_temperature=82))
+    ha.s["sensor.lr_t"] = ("82", {})
+    ha.s["weather.w"] = ("sunny", {"temperature": 75, "cloud_coverage": 100})
+
+
+def test_defrost_and_grace_do_not_flip_mode_inside_min_cycle():
     e, ha, clk = setup()
     e.st["last_change"]["lr"] = clk.t
     room(ha, 66, "defrosting")
-    step(e, clk, 120)
-    room(ha, 66, "heating")
-    assert step(e, clk, 60)["lr"]["defrosting"] is False
+    _hot_room(ha, "heat")
+    ha.s["climate.lr"] = ("heat", dict(ha.s["climate.lr"][1], hvac_action="defrosting"))
+    ha.calls.clear()
+    active = step(e, clk, 100)
+    assert active["lr"]["defrosting"] is True
+    assert active["lr"]["action"] == "hold" and active["lr"]["mode"] == "heat"
+    assert active["lr"]["reason"] == "short_cycle_guard"
+    assert not [c for c in ha.calls if c[0] == "set_hvac_mode"]
+    room(ha, 82, "heating")
+    assert step(e, clk, 60)["lr"]["defrosting"] is False  # window ended; grace is on
+    _hot_room(ha, "heat")
+    ha.calls.clear()
+    grace = step(e, clk, 60)
+    assert grace["lr"]["defrosting"] is False
+    assert grace["lr"]["action"] == "hold" and grace["lr"]["mode"] == "heat"
+    assert grace["lr"]["reason"] == "short_cycle_guard"
+    assert not [c for c in ha.calls if c[0] == "set_hvac_mode"]
+    # The other direction: a cool head that would want heat also stays cool.
     ha.s["climate.lr"] = ("cool", dict(ha.s["climate.lr"][1], hvac_action="idle", temperature=71))
-    ha.s["sensor.lr_t"] = ("66", {})
-    r = step(e, clk, 60)
-    assert r["lr"]["defrosting"] is False
-    assert r["lr"]["reason"] != "short_cycle_guard"
-    assert r["lr"]["action"] == "set" and r["lr"]["mode"] == "heat"
-    # Past the grace, a real heat->cool decision is a short cycle again. The live mode still matches
-    # the app's last write, so this is the guard and not a manual hold.
-    clk.t += DEFROST_GRACE_S
-    e.st["last_change"]["lr"] = clk.t - 120
-    ha.s["climate.lr"] = ("heat", dict(ha.s["climate.lr"][1], hvac_action="idle", temperature=71))
-    ha.s["sensor.lr_t"] = ("76", {})
-    ha.s["weather.w"] = ("sunny", {"temperature": 85, "cloud_coverage": 100})
-    r2 = step(e, clk, 30)
-    assert r2["lr"]["reason"] == "short_cycle_guard"
+    ha.s["sensor.lr_t"] = ("60", {})
+    ha.s["weather.w"] = ("cloudy", {"temperature": 30, "cloud_coverage": 100})
+    e.st["last_change"]["lr"] = clk.t
+    stayed = step(e, clk, 30)
+    assert stayed["lr"]["action"] == "hold" and stayed["lr"]["mode"] == "cool"
+    assert stayed["lr"]["reason"] == "short_cycle_guard"
 
 
 def test_inferred_defrost_is_not_heat_delivered():

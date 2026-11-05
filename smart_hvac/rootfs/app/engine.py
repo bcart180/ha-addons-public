@@ -45,7 +45,8 @@ DEFROST_TIMEOUT_S = 30 * 60
 #  * every exemption window (reported or inferred) is capped at DEFROST_AWARE_CAP_S and at most
 #    DEFROST_AWARE_MAX_PER_HOUR windows may start in any 60 min; past either limit normal short-cycle / hold
 #    logic resumes, so a failing unit is never masked (past the cap it is flagged defrost_stuck as in 0.4.1).
-#  * for DEFROST_GRACE_S after an exempt window ends normally, short-cycle and setpoint-chase stay skipped.
+#  * for DEFROST_GRACE_S after an exempt window ends normally, a same-mode setpoint chase is held.
+#    The short-cycle guard is NOT skipped (SA M1): a heat/cool flip inside min_cycle_s still holds.
 #  * the official hvac_action defrosting / preheating is always honoured (HA dev blog 2024-07-07) and counts
 #    as heating-in-progress. It is not heat delivered (learned warm-up / coast do not record it).
 #  * fallback inference only on heat_pump zones that are not heat_only (not radiant, not the spare heater),
@@ -321,6 +322,15 @@ class Engine:
         unit = str((cattr or {}).get("temperature_unit") or "").upper().lstrip("\u00b0")
         f = t * 9 / 5 + 32 if unit == "C" else t
         return t if 30 <= f <= 110 else None
+
+    @staticmethod
+    def _outdoor_f(value, unit):
+        """Defrost's 40 F gate. A Celsius weather temperature is converted; no unit means Fahrenheit."""
+        t = _num(value)
+        if t is None:
+            return None
+        u = str(unit or "").upper().lstrip("\u00b0")
+        return t * 9.0 / 5.0 + 32.0 if u == "C" else t
 
     def _indoor_stale(self, states, z, now):
         """0.8.7: True when the zone's `indoor` sensor has not reported for `indoor_stale_min` minutes.
@@ -712,8 +722,9 @@ class Engine:
             dact, inferred, grace = act, False, False
             if aware:
                 self.st["defrost_since"].pop(name, None)
+                outdoor_f = self._outdoor_f(outdoor, wattr.get("temperature_unit") if w is not None else None)
                 defrost, stuck, inferred, grace = self._defrost_aware(
-                    name, z, act, cl, indoor, outdoor, cattr, now)
+                    name, z, act, cl, indoor, outdoor_f, cattr, now)
                 if inferred:
                     dact = "defrosting"
             else:
