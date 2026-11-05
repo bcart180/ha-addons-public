@@ -267,8 +267,19 @@
     $("s-reason").textContent = s.reason || "Not stated";
     $("s-reason").classList.toggle("dim", !s.reason);
     const cb = $("s-callback");
-    if (s.callback_tel) { cb.href = s.callback_tel; cb.textContent = s.callback_display || s.callback; cb.classList.remove("dim"); }
-    else { cb.removeAttribute("href"); cb.textContent = "None given"; cb.classList.add("dim"); }
+    const spokenPhone = $("s-callback-phone");
+    if (s.callback) { cb.textContent = s.callback_display || s.callback; cb.classList.remove("dim"); }
+    else { cb.textContent = "None given"; cb.classList.add("dim"); }
+    const spoken = String(s.callback || "").replace(/\D/g, "");
+    const callerDigits = String(v.caller_digits || "").replace(/\D/g, "");
+    const sameNumber = spoken && callerDigits && spoken.slice(-10) === callerDigits.slice(-10);
+    if (s.callback_tel && !sameNumber) {
+      spokenPhone.href = s.callback_tel;
+      spokenPhone.classList.remove("hidden");
+    } else {
+      spokenPhone.classList.add("hidden");
+      spokenPhone.removeAttribute("href");
+    }
     $("s-note").textContent = s.source === "voice"
       ? "Summarized during the call. Check the transcript."
       : "Auto-summary from the transcript. Check the transcript.";
@@ -293,8 +304,12 @@
       const left = editMode
         ? `<input type="checkbox" class="edit-check" data-id="${esc(v.voicemail_id)}" ${selected.has(v.voicemail_id) ? "checked" : ""} aria-label="Select" />`
         : `<div class="${avatarClass}" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-4.4 0-8 2-8 4.5V21h16v-2.5C20 14 16.4 14 12 14z"/></svg></div>`;
+      const cbLabel = v.callback_status === "pending" ? "Callback requested"
+        : v.callback_status === "returned" ? "Returned"
+        : v.callback_status === "failed" ? "Failed"
+        : "";
       const cb = v.tel && !editMode
-        ? `<a class="cb-btn" href="${esc(v.tel)}" title="Call back" aria-label="Call back">${phoneSvg()}</a>`
+        ? `<button type="button" class="cb-btn${v.callback_status === "pending" ? " pending" : ""}" title="Call back" aria-label="Call back">${phoneSvg()}</button>`
         : `<span></span>`;
       // 0.5.5: server-masked preview only; never the raw snippet (a number would show in full).
       const preview = (v.summary && v.summary.reason) || previewText(v.preview || "") || "No transcript";
@@ -308,10 +323,14 @@
           </div>
           <div class="meta">${meta}</div>
           <div class="snippet">${esc(preview)}</div>
+          ${cbLabel ? `<div class="cb-state">${esc(cbLabel)}</div>` : ""}
         </div>
         ${cb}`;
-      const cbLink = li.querySelector(".cb-btn");
-      if (cbLink) cbLink.addEventListener("click", (ev) => ev.stopPropagation());
+      const cbBtn = li.querySelector(".cb-btn");
+      if (cbBtn) cbBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        requestCallback(v);
+      });
       li.addEventListener("click", (ev) => {
         if (editMode) {
           const id = v.voicemail_id;
@@ -352,16 +371,12 @@
     $("d-when").textContent = `${v.caller_title === v.caller_pretty ? ((v.summary && v.summary.name) || "Unknown") : v.caller_title} — ${v.timestamp_display || v.date_display}`;
     const num = $("d-number");
     num.textContent = v.caller_pretty || v.caller_title;
-    num.href = v.tel || "#";
     const stirEl = $("d-stir");
     const stirText = stirLabel(v.stir);
     stirEl.textContent = stirText;
     stirEl.className = `stir-badge ${(v.stir && v.stir.status) || ""}${stirText ? "" : " hidden"}`;
     $("btn-allow").classList.toggle("hidden", !v.caller_digits);
-    const callTop = $("btn-call-top");
-    if (v.tel) { callTop.href = v.tel; callTop.classList.remove("hidden"); }
-    else { callTop.removeAttribute("href"); }
-
+    renderCallback(v);
     renderSummary(v);
     $("d-transcript").innerHTML = linkPhones(polishTranscript(v.transcript || v.snippet || "No transcript"));
 
@@ -419,6 +434,7 @@
       if (current) {
         const again = items.find((x) => x.voicemail_id === current.voicemail_id);
         if (!again) showList();
+        else { current = again; renderCallback(current); }
       }
     } catch (e) {
       subEl.textContent = `Error: ${e.message}`;
@@ -426,7 +442,84 @@
   }
 
   // Events
+  function localTime(iso) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+
+  function stampCallback(v, body) {
+    if (!v || !body) return;
+    v.callback_status = body.callback_status || "";
+    v.callback_requested_at = body.callback_requested_at || "";
+    v.callback_status_at = body.callback_status_at || "";
+    v.callback_note = body.callback_note || "";
+  }
+
+  function renderCallback(v) {
+    const status = (v && v.callback_status) || "";
+    const pending = status === "pending";
+    const canCall = !!(v && v.tel);
+    const top = $("btn-call-top");
+    top.classList.toggle("hidden", !canCall);
+    top.classList.toggle("pending", pending);
+    top.disabled = !canCall;
+    const ask = $("btn-callback");
+    ask.classList.toggle("hidden", pending || !canCall);
+    ask.disabled = pending || !canCall;
+    $("callback-actions").classList.toggle("hidden", !pending);
+    const line = $("callback-line");
+    const when = localTime(v && v.callback_status_at);
+    if (status === "returned") line.textContent = when ? `Returned · ${when}` : "Returned";
+    else if (status === "failed") line.textContent = when ? `Failed · ${when}` : "Failed";
+    else if (pending) line.textContent = "Callback requested";
+    else if (status === "cancelled") line.textContent = "Cancelled";
+    else line.textContent = "";
+    const open = $("btn-open-phone");
+    if (canCall) { open.href = v.tel; open.classList.remove("hidden"); }
+    else { open.classList.add("hidden"); open.removeAttribute("href"); }
+  }
+
+  async function requestCallback(v) {
+    if (!v) return;
+    try {
+      const body = await api("api/request_callback", {
+        method: "POST",
+        body: JSON.stringify({ voicemail_id: v.voicemail_id }),
+      });
+      stampCallback(v, body);
+      const row = items.find((x) => x.voicemail_id === v.voicemail_id);
+      if (row && row !== v) stampCallback(row, body);
+      showToast(body.idempotent ? "Callback already requested" : "Callback requested");
+      renderList();
+      if (current && current.voicemail_id === v.voicemail_id) renderCallback(current);
+    } catch (e) {
+      showToast(e.message === "not-found" ? "That voicemail is not in the inbox." : e.message);
+    }
+  }
+
+  async function setCallbackStatus(v, status) {
+    if (!v) return;
+    try {
+      const body = await api("api/callback_status", {
+        method: "POST",
+        body: JSON.stringify({ voicemail_id: v.voicemail_id, status }),
+      });
+      stampCallback(v, body);
+      const row = items.find((x) => x.voicemail_id === v.voicemail_id);
+      if (row && row !== v) stampCallback(row, body);
+      renderList();
+      if (current && current.voicemail_id === v.voicemail_id) renderCallback(current);
+    } catch (e) {
+      showToast(e.message === "not-found" ? "That voicemail is not in the inbox." : e.message);
+    }
+  }
+
   $("btn-back").addEventListener("click", showList);
+  $("btn-call-top").addEventListener("click", () => requestCallback(current));
+  $("btn-callback").addEventListener("click", () => requestCallback(current));
+  $("btn-callback-returned").addEventListener("click", () => setCallbackStatus(current, "returned"));
+  $("btn-callback-cancel").addEventListener("click", () => setCallbackStatus(current, "cancelled"));
   $("btn-edit").addEventListener("click", () => {
     editMode = !editMode;
     selected.clear();

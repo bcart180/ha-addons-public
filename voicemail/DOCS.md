@@ -165,7 +165,7 @@ If Google returns 403, the folder is not visible to this scope. Fix the share or
 
 | UI | Behavior |
 | --- | --- |
-| Call back | `tel:+1…` |
+| Call back | Queues a pending callback request. Does not dial. See below. |
 | Play | In-app audio from `/api/audio/{call_id}` |
 | Speaker | Configured `media_player` only, when a Media file exists |
 | Trash / Clear all | Built-in store, or pyscript while legacy mode is on |
@@ -175,6 +175,21 @@ If Google returns 403, the folder is not visible to this scope. Fix the share or
 | Always Allow | Adds the number to the allow list (allowed callers skip screening). Undo for 10 seconds |
 | Numbers (shield) | Lists blocked and allowed numbers; add or remove, each with Undo |
 | Caller ID badge | Twilio STIR/SHAKEN result for that call (verified A/B/C, failed, not verified). Signal only |
+| Open on phone | Secondary `tel:` link. Not the Call back action. |
+
+## Callback requests (0.5.7)
+
+Call back does not place a call. It records a **pending callback request** for that voicemail and fires the Home Assistant event `callcatch_callback_requested`. A person approves any real outbound call somewhere else. This add-on never dials a third party: no Twilio `<Dial>`, no outbound SIP, and no `place_phone_call`, including when `dry_run` is on and when `mock` is on. The request is still saved in those cases.
+
+| | |
+| --- | --- |
+| `POST /api/request_callback` | Body `{"voicemail_id": "…"}`. Sets `callback_status` to `pending` and `callback_requested_at` to an ISO timestamp. Ingress mutation gate (same as clear / mark heard). A second request while pending returns the current pending row and does not fire another event. |
+| `POST /api/callback_status` | Body `{"voicemail_id": "…", "status": "returned"\|"failed"\|"cancelled", "note": "optional"}`. Only from `pending`. The same status again is a no-op. Unknown id is `404`. |
+| Event | `callcatch_callback_requested` with `voicemail_id`, `from_masked` (`•••1234`), `display_name` (spoken name, if any), `summary` (short, numbers masked), `requested_at`. No full E.164, because the shared sensor does not publish From either. |
+| Panel | **Call back** asks for the request. While pending: **Mark returned** and **Cancel request**. After a return: `Returned · {local time}`. **Open on phone** is the optional `tel:` link. |
+| Sensor | `callback_status` and `callback_requested_at` only. No callback note and no phone number. |
+
+An unknown id is rejected. Logs use the existing mask (`•••1234`) and never include a full number or a token.
 
 ## Allow and block lists
 
@@ -216,7 +231,7 @@ Home Assistant authenticates the user before Supervisor proxies into this App. T
 | --- | --- |
 | Health (`/api/health`) | Open inside the container so the Docker health check can reach it. No host port is published. |
 | Inbox, audio, diag (`/api/voicemails`, `/api/audio/{call_id}`, `/api/diag`) | Ingress proxy `172.30.32.2` plus `X-Remote-User-Id` (or legacy `X-Hass-User-ID`), or `Authorization: Bearer` with `ingest_token`. A sibling on `172.30.0.0/16` without one of those is refused. |
-| Mutations (`/api/clear_*`, `/api/mark_heard`, `/api/play`, `/api/trust*`) | Peer must be the ingress proxy `172.30.32.2` and the request must carry `X-Remote-User-Id` (or legacy `X-Hass-User-ID`) |
+| Mutations (`/api/clear_*`, `/api/mark_heard`, `/api/play`, `/api/trust*`, `/api/request_callback`, `/api/callback_status`) | Peer must be the ingress proxy `172.30.32.2` and the request must carry `X-Remote-User-Id` (or legacy `X-Hass-User-ID`) |
 | Ingest (`/api/ingest`) | Supervisor network, plus `Authorization: Bearer`. The header is checked before the body is read. Ingress is not required, so Voice can post. |
 
 Implications:

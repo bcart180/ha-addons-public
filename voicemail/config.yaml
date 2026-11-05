@@ -1,5 +1,5 @@
 name: CallCatch
-version: "0.5.6"
+version: "0.5.7"
 slug: voicemail
 description: Your Personalized Voicemail. iPhone-style house inbox (list + detail) via Supervisor ingress
 url: https://github.com/bcart180/ha-addons-public/tree/main/voicemail
