@@ -92,6 +92,15 @@ def test_short_cycle_released_after_min():
     r = decide(base(indoor_temp=76, outdoor_temp=85, last_mode="heat", last_mode_change_ts=NOW - 1000), LR)
     assert r["mode"] == "cool"
 
+def test_defrosting_skips_short_cycle_and_setpoint_chase():
+    blocked = decide(base(indoor_temp=76, outdoor_temp=85, last_mode="heat", last_mode_change_ts=NOW - 300), LR)
+    assert blocked["reason"] == "short_cycle_guard"
+    freed = decide(base(indoor_temp=76, outdoor_temp=85, last_mode="heat",
+                        last_mode_change_ts=NOW - 300, defrosting=True), LR)
+    assert freed["reason"] != "short_cycle_guard" and freed["action"] == "set" and freed["mode"] == "cool"
+    chase = decide(base(defrosting=True), LR)  # heat already, setpoint 65 vs target 71
+    assert chase["action"] == "hold" and chase["reason"] == "defrosting"
+
 def test_override_holds():
     assert decide(base(override_active=True), LR)["reason"] == "manual_override"
 

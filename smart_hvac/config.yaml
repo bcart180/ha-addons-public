@@ -1,5 +1,5 @@
 name: Smart HVAC
-version: "0.8.8"
+version: "0.8.9"
 slug: smart_hvac
 description: Smart thermostat for multi-zone mini-split systems. All heads share one outdoor unit, so they are always kept in the same heat/cool mode. Presence-, weather- and sun-aware, plus radiant floor (Ingress panel)
 url: https://github.com/bcart180/ha-addons-public/tree/main/smart_hvac
@@ -29,6 +29,9 @@ options:
   forecast_entity: ""
   min_cycle_min: 15
   override_hours: 2
+  # Heat-pump defrost: reported hvac_action, or inferred when a head only reports heating/idle.
+  # false restores the previous short-cycle and setpoint-chase behavior.
+  defrost_aware: true
   # Bath radiant: floor setpoint cap 85, air shutoff 80 (owner, 30 Oct).
   radiant_setpoint_max: 85
   radiant_air_shutoff: 80
@@ -84,7 +87,7 @@ schema:
   radiant_floor_cap: float(70,95)
   vacation_heat: float(50,68)?
   vacation_cool: float(76,90)?
-  defrost_aware: bool?
+  defrost_aware: bool
   learned_preheat: bool?
   away_delay_min: int(0,120)?
   sleep_coast_max_min: int(0,180)?

@@ -40,17 +40,22 @@ EVENT_KINDS = ("hold", "window", "vacation", "defrost", "preheat", "defrost_stuc
 # MA L1 (0.4.1): a unit stuck reporting defrosting / preheating must not freeze the app forever. After this
 # long in one continuous spell the app goes back to normal logic and records a defrost_stuck event.
 DEFROST_TIMEOUT_S = 30 * 60
-# 0.5.1 `defrost_aware` (off by default; off = exactly the 0.5.0 behaviour above). When on (MA conditions):
+# 0.5.1 `defrost_aware`. Shipped default is on (config.yaml, 0.8.9). A missing key still means off, so the
+# 0.5.0 golden stays byte-identical when the option is absent or false. When on (MA conditions):
 #  * every exemption window (reported or inferred) is capped at DEFROST_AWARE_CAP_S and at most
 #    DEFROST_AWARE_MAX_PER_HOUR windows may start in any 60 min; past either limit normal short-cycle / hold
 #    logic resumes, so a failing unit is never masked (past the cap it is flagged defrost_stuck as in 0.4.1).
-#  * the official hvac_action defrosting / preheating is always honoured (HA dev blog 2024-07-07).
-#  * fallback inference only on zones flagged `heat_pump`, in heat mode, while the unit reports heating,
-#    with a KNOWN outdoor temp at or below DEFROST_INFER_OUTDOOR_MAX_F, when the room temp falls by at least
-#    DEFROST_INFER_DROP_F per 3 min (HA forum thread 789890: 3-min derivative gated on heating + outdoor).
+#  * for DEFROST_GRACE_S after an exempt window ends normally, short-cycle and setpoint-chase stay skipped.
+#  * the official hvac_action defrosting / preheating is always honoured (HA dev blog 2024-07-07) and counts
+#    as heating-in-progress. It is not heat delivered (learned warm-up / coast do not record it).
+#  * fallback inference only on heat_pump zones that are not heat_only (not radiant, not the spare heater),
+#    in heat mode, with a KNOWN outdoor temp at or below DEFROST_INFER_OUTDOOR_MAX_F, when the room or a
+#    reported supply temperature falls by at least DEFROST_INFER_DROP_F per 3 min. The unit must be heating,
+#    or just have been heating and gone idle (these heads never report defrosting). Cool mode never infers.
 #    Unknown / unavailable outdoor temp -> no inference. Debug logs only; no new entities, writes or perms.
 DEFROST_AWARE_CAP_S = 15 * 60
 DEFROST_AWARE_MAX_PER_HOUR = 4
+DEFROST_GRACE_S = 10 * 60
 DEFROST_INFER_OUTDOOR_MAX_F = 40.0
 DEFROST_INFER_DROP_F = 0.5  # per 3 minutes
 DEFROST_INFER_RATE_S = 180
@@ -72,6 +77,68 @@ def _ts(iso):
 
 def _num(x):
     return core._num(x)
+
+
+def _supply_f(cattr):
+    """Supply-air temperature when the climate entity already reports one. Otherwise the room is the signal."""
+    for key in ("supply_temperature", "supply_temp"):
+        v = _num((cattr or {}).get(key))
+        if v is not None:
+            return v
+    return None
+
+
+def _step_intervals(pts, end):
+    out = []
+    for i, (t, on) in enumerate(pts):
+        if not on:
+            continue
+        t2 = pts[i + 1][0] if i + 1 < len(pts) else end
+        if t2 > t:
+            out.append((t, t2))
+    return out
+
+
+def _union_intervals(intervals):
+    merged = []
+    for a, b in sorted(intervals):
+        if b <= a:
+            continue
+        if not merged or a > merged[-1][1]:
+            merged.append([a, b])
+        else:
+            merged[-1][1] = max(merged[-1][1], b)
+    return [(a, b) for a, b in merged]
+
+
+def _intervals_to_steps(intervals):
+    pts = []
+    for a, b in intervals:
+        pts.append([int(a), 1])
+        pts.append([int(b), 0])
+    return pts
+
+
+def _event_intervals(events, kind, start, end):
+    """Pair start/end events into [start, end] intervals clipped to the window. An open span runs to `end`."""
+    open_t = None
+    iv = []
+    for row in sorted(events or [], key=lambda e: e[0]):
+        if len(row) < 3 or row[1] != kind:
+            continue
+        t, what = row[0], row[2]
+        if what == "start":
+            if open_t is None:
+                open_t = t
+        elif open_t is not None:
+            iv.append((max(open_t, start), min(t, end)))
+            open_t = None
+        else:
+            iv.append((start, min(t, end)))
+    if open_t is not None:
+        a = max(open_t, start)
+        iv.append((a, end if end > a else a + 1))
+    return [(a, b) for a, b in iv if b > a]
 
 
 class Engine:
@@ -140,20 +207,25 @@ class Engine:
         samples = v.get("samples")
         if not isinstance(samples, list):
             samples = []
-        good = [s for s in samples if isinstance(s, list) and len(s) == 3 and n(s[0]) and n(s[1])
-                and (s[2] is None or isinstance(s[2], str))]
+        good = [s for s in samples if isinstance(s, list) and len(s) in (3, 4) and n(s[0]) and n(s[1])
+                and (s[2] is None or isinstance(s[2], str))
+                and (len(s) == 3 or s[3] is None or n(s[3]))]
         eps = v.get("episodes")
         if not isinstance(eps, list):
             eps = []
         geps = [t for t in eps if n(t)]
         since = v.get("since")
         exempt = v.get("exempt")
+        ended = v.get("ended")
         bad = (good != v.get("samples") or geps != v.get("episodes") or not (since is None or n(since))
-               or not isinstance(exempt, bool))
+               or not isinstance(exempt, bool) or not (ended is None or n(ended)))
         if bad:
             log.debug("state: malformed defrost_aware entry for %s reset", name)
-        return {"samples": good, "episodes": geps, "since": since if n(since) else None,
-                "exempt": exempt if isinstance(exempt, bool) else False}
+        out = {"samples": good, "episodes": geps, "since": since if n(since) else None,
+               "exempt": exempt if isinstance(exempt, bool) else False}
+        if n(ended):
+            out["ended"] = ended
+        return out
 
     def _sanitize_state(self):
         st = self.st
@@ -361,36 +433,60 @@ class Engine:
         v = _num(self.opts.get("radiant_setpoint_max"))
         return min(v if v is not None else RADIANT_SETPOINT_MAX_DEFAULT, RADIANT_ROOM_CAP_MAX)
 
-    def _defrost_aware(self, name, z, act, cl, indoor, outdoor, now):
+    def _defrost_grace(self, st, now):
+        ended = _num(st.get("ended"))
+        return ended is not None and 0 <= now - ended <= DEFROST_GRACE_S
+
+    def _defrost_aware(self, name, z, act, cl, indoor, outdoor, cattr, now):
         """0.5.1 bounded defrost exemption (only called with defrost_aware on). Returns
-        (exempt, stuck, inferred). Read-only: keeps a few room-temp samples in the add-on state file."""
+        (exempt, stuck, inferred, grace). Read-only: keeps a few temperature samples in the state file.
+        grace is true for DEFROST_GRACE_S after an exempt window ends, and never while a window is refused
+        (hourly budget or the 15 min cap) so a stuck unit is not masked."""
         st = self.st.setdefault("defrost_aware", {}).setdefault(
             name, {"samples": [], "episodes": [], "since": None, "exempt": False})
         official = act in DEFROST_ACTIONS
         tin, tout = _num(indoor), _num(outdoor)
+        supply = _supply_f(cattr)
         guess = False
-        if not official and z.get("heat_pump") and cl == "heat" and act == "heating":
+        # Radiant (heat_only) and the spare heater are not heat pumps. Cool never looks like a defrost.
+        if not official and z.get("heat_pump") and not z.get("heat_only") and cl == "heat":
             if tout is None:
                 log.debug("defrost %s: outdoor temp unknown, no inference", name)
             elif tout > DEFROST_INFER_OUTDOOR_MAX_F:
                 log.debug("defrost %s: outdoor %.1f above %.0f, no inference", name, tout,
                           DEFROST_INFER_OUTDOOR_MAX_F)
             elif tin is not None:
-                prev = [s for s in st["samples"] if s[2] == "heating" and 0 < now - s[0] <= DEFROST_SAMPLE_MAX_AGE_S]
-                if prev:
-                    t0, v0, _ = prev[-1]
-                    rate = (v0 - tin) * DEFROST_INFER_RATE_S / (now - t0)
-                    guess = rate >= DEFROST_INFER_DROP_F
-                    log.debug("defrost %s: room %.2f F per 3 min while heating -> inferred=%s", name, rate, guess)
+                fresh = [s for s in st["samples"] if 0 < now - s[0] <= DEFROST_SAMPLE_MAX_AGE_S]
+                if act == "heating":
+                    prev = [s for s in fresh if s[2] == "heating"]
+                    baseline = prev[-1] if prev else None
+                elif act == "idle" and fresh and fresh[-1][2] == "heating":
+                    # These heads go idle for a defrost; they never report hvac_action defrosting.
+                    baseline = fresh[-1]
+                else:
+                    baseline = None
+                if baseline is not None:
+                    t0, v0 = baseline[0], baseline[1]
+                    rates = [(v0 - tin) * DEFROST_INFER_RATE_S / (now - t0)]
+                    sold = _num(baseline[3]) if len(baseline) >= 4 else None
+                    if supply is not None and sold is not None:
+                        rates.append((sold - supply) * DEFROST_INFER_RATE_S / (now - t0))
+                    guess = any(r >= DEFROST_INFER_DROP_F for r in rates)
+                    log.debug("defrost %s: room %.2f F per 3 min while %s -> inferred=%s", name, rates[0], act, guess)
         if tin is not None:
             st["samples"] = [s for s in st["samples"] if now - s[0] <= DEFROST_SAMPLE_MAX_AGE_S][-5:]
-            st["samples"].append([now, tin, act])
+            row = [now, tin, act]
+            if supply is not None:
+                row.append(supply)
+            st["samples"].append(row)
         st["episodes"] = [t for t in st["episodes"] if now - t < 3600]
         if not (official or guess):
             if st["since"] is not None:
                 log.debug("defrost %s: window ended after %ds", name, now - st["since"])
+                if st.get("exempt"):
+                    st["ended"] = now
             st["since"], st["exempt"] = None, False
-            return False, False, False
+            return False, False, False, self._defrost_grace(st, now)
         if st["since"] is None:  # a new window starts
             st["since"] = now
             st["exempt"] = len(st["episodes"]) < DEFROST_AWARE_MAX_PER_HOUR
@@ -400,11 +496,11 @@ class Engine:
                 log.debug("defrost %s: %d windows in the last hour, not exempt (normal logic)", name,
                           len(st["episodes"]))
         if not st["exempt"]:
-            return False, False, False
+            return False, False, False, False
         if now - st["since"] > DEFROST_AWARE_CAP_S:
             log.debug("defrost %s: window over %ds cap, normal logic", name, DEFROST_AWARE_CAP_S)
-            return False, True, False
-        return True, False, not official
+            return False, True, False, False
+        return True, False, not official, False
 
     def prune_zones(self):
         """MA L2 (0.4.1): drop events / active kinds / defrost timers of zones no longer in the options."""
@@ -518,16 +614,18 @@ class Engine:
             except ValueError:
                 return None
 
-        indoor, setpt, heat, outdoor = [], [], [], []
+        indoor, setpt, heat, outdoor, defrost_raw = [], [], [], [], []
         for row in by.get(zone.get("climate"), []):
             t, a = ts(row), row.get("attributes") or {}
             if t is None:
                 continue
             st = row.get("state")
             # Off is never heating (some units report a stale hvac_action=heating while off).
-            on = st not in ("off", None) and (a.get("hvac_action") == "heating" if a.get("hvac_action")
-                                              else st == "heat")
+            # defrosting / preheating is not heat delivered: it gets its own band, not the heating band.
+            act = a.get("hvac_action")
+            on = st not in ("off", None) and (act == "heating" if act else st == "heat")
             heat.append([int(t), 1 if on else 0])
+            defrost_raw.append([int(t), 1 if st not in ("off", None) and act in DEFROST_ACTIONS else 0])
             setpt.append([int(t), _num(a.get("temperature")) if st not in ("off", None) else None])
             if not zone.get("indoor") and _num(a.get("current_temperature")) is not None:
                 indoor.append([int(t), _num(a.get("current_temperature"))])
@@ -547,8 +645,14 @@ class Engine:
             step = len(pts) / self.MAX_POINTS
             return [pts[int(i * step)] for i in range(self.MAX_POINTS)] + [pts[-1]]
 
+        # Inferred defrosts never show up in recorder hvac_action. Union those event spans with any
+        # reported defrosting / preheating so the graph band survives a heating=0 sample in the middle.
+        div = _step_intervals(defrost_raw, now) + _event_intervals(
+            self.st.get("events", {}).get(zone["name"], []), "defrost", now - secs, now)
+        defrost = _intervals_to_steps(_union_intervals(div))
         return {"zone": zone["name"], "range": rng, "start": int(now - secs), "end": int(now),
-                "indoor": thin(indoor), "setpoint": thin(setpt), "heating": thin(heat), "outdoor": thin(outdoor)}
+                "indoor": thin(indoor), "setpoint": thin(setpt), "heating": thin(heat),
+                "defrost": defrost, "outdoor": thin(outdoor)}
 
     # ---------- main loop ----------
     def evaluate(self):
@@ -605,10 +709,11 @@ class Engine:
             # detect a manual change made in HA since the app's last command -> override
             act = cattr.get("hvac_action") if cl is not None else None
             aware = bool(self.opts.get("defrost_aware"))
-            dact, inferred = act, False
+            dact, inferred, grace = act, False, False
             if aware:
                 self.st["defrost_since"].pop(name, None)
-                defrost, stuck, inferred = self._defrost_aware(name, z, act, cl, indoor, outdoor, now)
+                defrost, stuck, inferred, grace = self._defrost_aware(
+                    name, z, act, cl, indoor, outdoor, cattr, now)
                 if inferred:
                     dact = "defrosting"
             else:
@@ -620,7 +725,8 @@ class Engine:
                 else:
                     self.st["defrost_since"].pop(name, None)
             last = self.st["last_cmd"].get(name)
-            if last and cl is not None and not defrost and not self._override_active(name, now):
+            # Grace matches an active defrost: the reversing valve and the room drop are not a person.
+            if last and cl is not None and not defrost and not grace and not self._override_active(name, now):
                 if (cl != last.get("mode") and cl != "off") or (
                         _num(setpt) is not None and _num(last.get("setpoint")) is not None
                         and abs(_num(setpt) - _num(last["setpoint"])) > OWN_WRITE_TOLERANCE_F and cl != "off"):
@@ -718,15 +824,20 @@ class Engine:
                 "last_setpoint": eff_setpt,
                 "last_mode_change_ts": self.st["last_change"].get(name, 0),
                 "app_turned_off": name in self.st["app_off"],
+                # Active defrost, or the short grace after one ends. Off when the option is off.
+                "defrosting": bool(aware and (defrost or grace)),
             }
             cfg = self._cfg(z)
+            # Defrost is heating-in-progress for the guards above, but it is not heat delivered and it is
+            # not passive drift. Pass a non-heating, non-idle action so neither learner records the drop.
+            learn_action = "defrosting" if defrost else act
             if self.opts.get("learned_preheat") and not z.get("heat_only"):
                 # 0.6.1: learn this zone's real warm-up / cool-down rate; size the pre-wake lead from it
                 try:
                     if not isinstance(self.st.get("warmup"), dict):
                         self.st["warmup"] = {}  # hardening: wrong shape -> reset (like 0.5.1 state sanitizing)
                     wu = self.st["warmup"]
-                    wu[name] = core.warmup_step(wu.get(name), cl, act, indoor, setpt, outdoor, now)
+                    wu[name] = core.warmup_step(wu.get(name), cl, learn_action, indoor, setpt, outdoor, now)
                     fam = cl if cl in ("heat", "cool") else "heat"
                     home_t = cfg.get("home", core.DEFAULTS["home"])
                     gap = None if indoor is None else (home_t - indoor if fam == "heat" else indoor - home_t)
@@ -745,7 +856,7 @@ class Engine:
                     if not isinstance(self.st.get("coast"), dict):
                         self.st["coast"] = {}
                     co = self.st["coast"]
-                    co[name] = core.coast_step(co.get(name), cl, act, indoor, setpt, outdoor, now)
+                    co[name] = core.coast_step(co.get(name), cl, learn_action, indoor, setpt, outdoor, now)
                     adv = core.sleep_advance(
                         co[name]["samples"], outdoor, indoor, cfg.get("sleep", core.DEFAULTS["sleep"]), smax)
                     cfg["sleep_advance_min"] = adv
@@ -757,6 +868,9 @@ class Engine:
             if vac:  # vacation setback on the splits: core's away path with the vacation targets
                 cfg["away_heat"], cfg["away_cool"] = self.vacation_targets()
             r = core.decide(inp, z, cfg)
+            if grace and not defrost and r.get("reason") == "defrosting":
+                # Post-defrost grace skips the setpoint chase without leaving a Defrosting badge up.
+                r = dict(r, reason="no_change")
             if defrost and r["action"] == "set" and r.get("reason") != "window_open":
                 # busy defrosting / pre-heating: no write, no mode-change timestamp, no missed-setpoint retry
                 r = {"action": "hold", "mode": cl, "setpoint": setpt, "reason": dact, "profile": r.get("profile")}
@@ -819,6 +933,7 @@ class Engine:
             results[name]["defrost"] = dact if defrost else None
             results[name]["defrost_stuck"] = stuck
             if aware:
+                results[name]["defrosting"] = bool(defrost)
                 results[name]["defrost_inferred"] = inferred
             results[name]["next"] = None if (vac or defrost) else self.next_change(inp, z, cfg, r)
             if name in results_lead:

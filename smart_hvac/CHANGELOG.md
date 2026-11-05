@@ -1,3 +1,11 @@
+## 0.8.9 — 2026-11-05
+
+- Heat-pump defrost is on by default (`defrost_aware: true`). A zone whose `hvac_action` is `defrosting` or `preheating` is treated as heating-in-progress: it is not a short cycle, not a manual change, and not a missed setpoint, so the app does not write that cycle. It is not counted as heat delivered. The zone payload includes `defrosting`.
+- Heads that never report those actions (only `heating` and `idle`) still get a defrost when `heat_pump: true` (not radiant, not the spare heater): heat mode, known outdoor temperature at or below 40°F, and the room or a reported supply temperature falling at least 0.5°F per 3 minutes while heating, or just after heating stops. Cool mode is never inferred. Each window is capped at 15 minutes and 4 per hour. For 10 minutes after a window ends, the short-cycle guard and the setpoint chase stay skipped, and a mode or setpoint blip in that window is not taken as a new manual hold.
+- The thermostat card and history graph show a Defrosting badge and a shaded band, including an inferred defrost that never appears in recorder history.
+- Set `defrost_aware: false` to restore the previous guards. Mode lock, split logic and the spare bathroom heater are unchanged. No new entities, services or permissions.
+- Sources: https://developers.home-assistant.io/blog/2024/07/07/climate-hvacaction-defrosting/ and https://community.home-assistant.io/t/helper-script-to-detect-defrost-status-for-heat-pump/789890
+
 ## 0.8.8 — 2026-11-04
 
 - When the unit's own `current_temperature` is used as the room-temperature fallback (sensor unavailable or stale via `indoor_stale_min`), a value outside 30–110 °F (converted from °C when the unit reports `temperature_unit: C`) is treated as missing, so the zone holds (`missing:indoor_temp`) and makes no change.

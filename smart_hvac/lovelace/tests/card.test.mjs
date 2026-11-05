@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { buildRequest, clampSetpoint, buildSeries, statusOf, graphSvg, fmtTime, canWrite, ingressCookie,
   openIngress, postWrite, DEFAULT_ZONES, ADDON_SLUG, radiantCap, buildPreset, getState, nextLine, eventSpans,
-  eventStrip, PRESETS } from "../smart-hvac-card.js";
+  eventStrip, PRESETS, mergeDefrostEvents } from "../smart-hvac-card.js";
 
 const [LR, , BATH] = DEFAULT_ZONES;
 const SRC = fs.readFileSync(new URL("../smart-hvac-card.js", import.meta.url), "utf8");
@@ -174,6 +174,29 @@ test("0.4.0 event strip: spans, open spans run to now, clipped, escaped kinds on
   assert.match(svg, /<title>Defrost<\/title>/);
   assert.doesNotMatch(svg, /bogus/);
   assert.equal(eventSpans([], 0, 1).length, 0);
+});
+
+test("0.8.9 inferred defrost: badge and shaded band without a recorder defrost action", async () => {
+  const st = { state: "heat", attributes: { hvac_action: "heating", temperature: 71 } };
+  const zr = { defrosting: true, defrost: "defrosting", defrost_inferred: true };
+  const s = statusOf(st, LR, false, zr);
+  assert.equal(s.status, "Defrosting");
+  assert.match(s.why, /not a manual change/);
+  assert.equal(statusOf({ state: "cool", attributes: { hvac_action: "cooling" } }, LR, false).status, "Cooling");
+  const hist = { [LR.entity]: [
+    { s: "heat", a: { temperature: 71, hvac_action: "heating" }, lu: 1000 },
+    { s: "heat", a: { temperature: 71, hvac_action: "idle" }, lu: 2000 }] };
+  const ser = buildSeries(hist, { ...LR, indoor: null }, null, 0, 4000);
+  assert.deepEqual(ser.defrost.map((p) => p[1]), [0, 0]);
+  const merged = mergeDefrostEvents({ ...ser, indoor: [[0, 70]] }, [[1500, "defrost", "start"], [2500, "defrost", "end"]]);
+  assert.deepEqual(merged.defrost.map((p) => p[1]), [1, 0]);
+  assert.match(graphSvg(merged, "America/New_York"), /Defrosting/);
+  const { glanceRow } = await import("../smart-hvac-card.js");
+  const hass = { states: { [LR.entity]: st, [LR.indoor]: { state: "64" } } };
+  const until = Math.floor(Date.now() / 1000) + 3600;
+  const row = glanceRow(hass, LR, { zones: [{ name: LR.zone, override_until: until }],
+    last: { zones: { [LR.zone]: zr } } }, false, "America/New_York");
+  assert.equal(row.doing, "Defrosting");
 });
 
 test("0.4.1 defrost_stuck shows on the event strip", () => {

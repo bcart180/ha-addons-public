@@ -23,7 +23,12 @@ log = logging.getLogger("smart_hvac")
 
 def load_options(path=OPTIONS):
     with open(path) as f:
-        return json.load(f)
+        opts = json.load(f)
+    # Shipped default is on. A saved options file from before 0.8.9 omits the key; fill it in.
+    # An explicit false stays off. The engine still treats a missing key as off (0.5.0 golden).
+    if isinstance(opts, dict):
+        opts.setdefault("defrost_aware", True)
+    return opts
 
 
 @web.middleware
