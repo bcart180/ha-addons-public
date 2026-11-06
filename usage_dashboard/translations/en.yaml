@@ -1,0 +1,10 @@
+configuration:
+  snapshot_path:
+    name: Snapshot file
+    description: >-
+      JSON file inside the add-on data directory. Default is
+      /data/usage_snapshot.json. If that file is missing, the panel shows the
+      bundled snapshot and labels it bundled. Re-read does not contact a usage API.
+  log_level:
+    name: Log level
+    description: Server log verbosity.
