@@ -14,6 +14,8 @@ def test_canvas_is_pure_black():
     assert re.search(r"--bg:\s*#000\b", CSS)
     assert '<meta name="theme-color" content="#000000"' in HTML
     assert "soft-slate.css" not in HTML
+    assert not (STATIC / "soft-slate.css").exists()
+    assert 'data-filter="needs_callback"' in HTML
 
 
 def test_no_branding_in_visible_chrome():

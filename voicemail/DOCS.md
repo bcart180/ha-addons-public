@@ -166,6 +166,9 @@ If Google returns 403, the folder is not visible to this scope. Fix the share or
 | UI | Behavior |
 | --- | --- |
 | Call back | Queues a pending callback request. Does not dial. See below. |
+| Needs callback / Urgent / Spam / Done | Filters the list. The badge counts needs-callback follow-ups, not unheard messages. |
+| Prepare draft | Shows a text reply and a call brief from transcript facts. Copy or queue it. Nothing is sent. |
+| Done / Snooze | Moves follow-up state. Snooze holds the prior state until the time you pick. |
 | Play | In-app audio from `/api/audio/{call_id}` |
 | Speaker | Configured `media_player` only, when a Media file exists |
 | Trash / Clear all | Built-in store, or pyscript while legacy mode is on |
@@ -187,9 +190,64 @@ Call back does not place a call. It records a **pending callback request** for t
 | `POST /api/callback_status` | Body `{"voicemail_id": "…", "status": "returned"\|"failed"\|"cancelled", "note": "optional"}`. Only from `pending`. The same status again is a no-op. Unknown id is `404`. |
 | Event | `callcatch_callback_requested` with `voicemail_id`, `from_masked` (`•••1234`), `display_name` (spoken name, if any), `summary` (short, numbers masked), `requested_at`. No full E.164, because the shared sensor does not publish From either. |
 | Panel | **Call back** asks for the request. While pending: **Mark returned** and **Cancel request**. After a return: `Returned · {local time}`. **Open on phone** is the optional `tel:` link. |
-| Sensor | `callback_status` and `callback_requested_at` only. No callback note and no phone number. |
+| Sensor | `callback_status` and `callback_requested_at` only. No callback note and no phone number. Rows also carry `followup_state`, `known_contact`, and `alert_silent` (no note, draft, history, or number). The attribute `needs_callback` counts follow-ups that are not hangups or spam. `quiet` is the policy below, without a live clock. |
 
 An unknown id is rejected. Logs use the existing mask (`•••1234`) and never include a full number or a token.
+
+## Follow-up state (0.6.0)
+
+Stored fields: `followup_state`, `followup_due`, `followup_prior`, `draft_id`, `call_ref`, `outcome_note` (at most 280 characters), `last_actor` (`bryson` or `agent`), and `history`. Ingest cannot set them. A row saved before 0.6.0 keeps working: a pending callback reads as `queued`, and a transcript that asks for a call reads as `needs_callback` until you change it.
+
+| | |
+| --- | --- |
+| `POST /api/followup` | Body `{"id": "…", "state": "…", "snooze_until": "optional ISO-8601"}`. `voicemail_id` is accepted as `id`. Ingress mutation gate. `actor` is `bryson` (default) or `agent`. Moving to `approved` requires `number` (the caller or a spoken number) and `purpose` (a verbatim transcript phrase). Moving to `in_progress` requires that approved record. An illegal move, including `new` → `in_progress`, is `409`. A URL, script, or other unsafe text is `400`. |
+| Snooze | `state` `snoozed` needs `snooze_until`. The previous state is restored by posting that state, or on its own once the time has passed. |
+| Draft | The panel builds it from the card. Queue draft only records `draft_ready`. CallCatch does not send mail or place a call. |
+| Compatibility | `request_callback` still sets `callback_status` `pending` and fires the same masked event. `callback_status` still sets `returned`, `failed`, or `cancelled` from `pending`. Those writes update `followup_state` to match. |
+
+## Queued callbacks (read-only)
+
+`GET /api/callback_requests` lists rows that are `callback_status` `pending` or follow-up `queued`, except a row that is still snoozed. POST to that path is `405`. `GET /api/callback_status` is not implemented (`404`). The body has no transcript, no callback digits, and no full number.
+
+Same read gate as `GET /api/voicemails`: the ingress proxy plus `X-Remote-User-Id` (or legacy `X-Hass-User-ID`), or `Authorization: Bearer` with `ingest_token`.
+
+```json
+{
+  "ok": true,
+  "v": "0.6.0",
+  "count": 1,
+  "quiet": {
+    "tz": "America/New_York",
+    "start": "00:00:00",
+    "end": "06:00:00",
+    "active": false,
+    "exception": "urgent_known_contact"
+  },
+  "callbacks": [
+    {
+      "voicemail_id": "vm-1",
+      "followup_state": "queued",
+      "callback_status": "pending",
+      "callback_requested_at": "2026-11-06T15:04:00.000+00:00",
+      "from_masked": "•••0100",
+      "display_name": "Sam",
+      "purpose": "about the gate",
+      "urgency": "normal",
+      "known_contact": true,
+      "medical": false,
+      "check_transcript": false,
+      "alert_silent": false,
+      "quiet_hold": false
+    }
+  ]
+}
+```
+
+`quiet.active` is true from midnight until 06:00 America/New_York. `quiet_hold` is true in that window unless the row is urgent and the caller is a known contact (a saved name, or trust allow). A medical row sets `check_transcript` and leaves `purpose` empty. `purpose` is at most 120 characters and numbers in it are last-4 only.
+
+## Quiet hours
+
+The default window is midnight–06:00 ET. The blueprint (`quiet_start` `00:00:00`, `quiet_end` `06:00:00`, Home Assistant local time) delivers silently in that window. An urgent voicemail from a known contact is the exception. Hangup (under 5 seconds) and spam are logbook only (`alert_silent`) and are not in the needs-callback count. This does not change mail routing or the inbound voicemail script.
 
 ## Allow and block lists
 
@@ -213,13 +271,13 @@ A blocked number is rejected only when the carrier attests it at STIR level A. O
 `blueprints/callcatch_new_voicemail.yaml` is an automation blueprint. To use it, go to Settings → Automations & Scenes → Blueprints → Import and paste the raw GitHub URL. Then create one automation per phone.
 
 - **One push per new voicemail.** It triggers when the newest `recent_items` entry on `sensor.inbound_voicemails` changes and is unheard. The push shows the caller, a "caller ID verified" or "failed check" label from STIR/SHAKEN (a label only), and the first transcript line.
-- **Buttons:** Call back (`tel:`), Mark heard, Block, Open CallCatch (the ingress panel `/47b3c4e5_voicemail`). Withheld or non-numeric callers get no Call back or Block button.
-- **Action IDs** are `ACTION_<context.id>_HEARD|BLOCK|UNDO`, so two notifications can never answer each other.
-- **Mark heard** fires the HA event `callcatch_command` `{cmd: mark_heard, voicemail_id}`. CallCatch subscribes to that one event on the Supervisor Core websocket with its own Supervisor token and ignores every other `cmd`.
-- **Block** runs `hassio.addon_stdin` on CallCatch Voice (`{cmd: block, number}`), then replaces the same notification (same tag, passive) with **Undo** (10 min).
-- **Undo only unblocks** (`{cmd: unblock}`). It does not restore an earlier state: if the number was on the allow list before Block, it is not put back (re-add it in Numbers), and if you had already blocked it by hand, Undo removes that block too. The inbox's own Undo restores the previous list exactly.
+- **Buttons:** Call back, Mark heard, Open CallCatch (the ingress panel `/47b3c4e5_voicemail`). Call back is shown for a known caller (sensor `caller_masked` is `•••` plus 4 digits, or `known_contact`). Withheld callers get Mark heard and Open CallCatch only. The push has no `tel:` link.
+- **Action IDs** are `ACTION_<context.id>_CALLBACK|HEARD`, so two notifications can never answer each other.
+- **Call back** fires `callcatch_command` `{cmd: request_callback, voicemail_id}`. CallCatch queues `callback_status=pending` and fires `callcatch_callback_requested` with a masked number. A second press while pending does not fire another event. This does not dial.
+- **Mark heard** fires `callcatch_command` `{cmd: mark_heard, voicemail_id}`. CallCatch subscribes to that event on the Supervisor Core websocket with its own Supervisor token and ignores every other `cmd`.
+- **Block** is not on the push. The sensor has no full number, so the push cannot block. Report Spam in the inbox still adds the number to the CallCatch Voice block list.
 - **Quiet hours** (default 00:00–06:00, HA local time, which is ET for this house) deliver silently: iOS `interruption-level: passive` with no sound, and the Android `CallCatch quiet` channel at low importance.
-- **`dry_run` defaults to ON.** It writes a logbook line ("Would notify…") and stops: no push, no block, no mark heard.
+- **`dry_run` defaults to ON.** It writes a logbook line ("Would notify…") and stops: no push, no queue, no mark heard.
 - **Exactly one push per voicemail.** Today `pyscript/inbound_voicemail.py` sends the voicemail push (`notify.mobile_app_<your_phone>`, tag `voicemail_<short_id>`). The blueprint pushes only when `sensor.voicemail_pipeline` reports `push_owner: blueprint`. Any other value, or no value, means it logs "skipped" and stops. It also uses the same tag and `apns-collapse-id`, so an overlap would replace in place rather than stack.
 - **Keep the blueprint's dry_run ON until the pyscript `inbound_voicemail.py` push is turned off** (set `PUSH_OWNER = "blueprint"` there, staged separately in ha-automation-tests, which needs its own CoS GO). Do not change pyscript from this add-on.
 
@@ -231,7 +289,8 @@ Home Assistant authenticates the user before Supervisor proxies into this App. T
 | --- | --- |
 | Health (`/api/health`) | Open inside the container so the Docker health check can reach it. No host port is published. |
 | Inbox, audio, diag (`/api/voicemails`, `/api/audio/{call_id}`, `/api/diag`) | Ingress proxy `172.30.32.2` plus `X-Remote-User-Id` (or legacy `X-Hass-User-ID`), or `Authorization: Bearer` with `ingest_token`. A sibling on `172.30.0.0/16` without one of those is refused. |
-| Mutations (`/api/clear_*`, `/api/mark_heard`, `/api/play`, `/api/trust*`, `/api/request_callback`, `/api/callback_status`) | Peer must be the ingress proxy `172.30.32.2` and the request must carry `X-Remote-User-Id` (or legacy `X-Hass-User-ID`) |
+| Mutations (`/api/clear_*`, `/api/mark_heard`, `/api/play`, `/api/trust*`, `/api/request_callback`, `/api/callback_status`, `/api/followup`) | Peer must be the ingress proxy `172.30.32.2` and the request must carry `X-Remote-User-Id` (or legacy `X-Hass-User-ID`) |
+| Queued callbacks (`GET /api/callback_requests`) | Same gate as the inbox. GET only. Masked metadata, no transcript. |
 | Ingest (`/api/ingest`) | Supervisor network, plus `Authorization: Bearer`. The header is checked before the body is read. Ingress is not required, so Voice can post. |
 
 Implications:

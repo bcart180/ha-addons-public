@@ -13,6 +13,7 @@
   let current = null;
   let mediaPlayer = "";
   let editMode = false;
+  let listFilter = "all";
   let selected = new Set();
   let pollTimer = null;
   let toastTimer = null;
@@ -253,50 +254,121 @@
     return u && u !== "normal" ? `<span class="urgency-pill ${u}">${URGENCY_LABEL[u]}</span>` : "";
   }
 
+  function quoteOf(span) {
+    return span && span.quote ? String(span.quote) : "";
+  }
+
+  function bindQuote(button, quote) {
+    const text = String(quote || "");
+    button.classList.toggle("hidden", !text);
+    button.onclick = () => highlightQuote(text);
+  }
+
+  function highlightQuote(quote) {
+    const el = $("d-transcript");
+    const needle = esc(String(quote || ""));
+    if (!needle || !el) return;
+    const base = el.dataset.plain || "";
+    const html = linkPhones(base);
+    if (!needle || html.indexOf(needle) < 0) return;
+    el.innerHTML = html.replace(needle, `<mark class="heard-mark">${needle}</mark>`);
+    const mark = el.querySelector("mark");
+    if (mark && mark.scrollIntoView) mark.scrollIntoView({ block: "nearest" });
+  }
+
   function renderSummary(v) {
     const box = $("d-summary");
-    const s = v.summary;
-    if (!s || !(s.name || s.reason || s.callback)) { box.classList.add("hidden"); return; }
+    const card = v.card || {};
+    const has = card.who || card.wants || card.callback || card.heard_quote || card.medical;
+    if (!has) { box.classList.add("hidden"); return; }
     box.classList.remove("hidden");
-    const u = URGENCY_LABEL[s.urgency] ? s.urgency : "normal";
+    const u = card.urgency_quote && URGENCY_LABEL[card.urgency] ? card.urgency : "normal";
     const pill = $("s-urgency");
-    pill.textContent = URGENCY_LABEL[u];
-    pill.className = `urgency-pill ${u}`;
-    $("s-name").textContent = s.name || "Not stated";
-    $("s-name").classList.toggle("dim", !s.name);
-    $("s-reason").textContent = s.reason || "Not stated";
-    $("s-reason").classList.toggle("dim", !s.reason);
+    pill.textContent = u === "normal" ? "" : URGENCY_LABEL[u];
+    pill.className = `urgency-pill ${u}${u === "normal" ? " hidden" : ""}`;
+    $("s-name").textContent = card.who || "";
+    $("s-name-from").textContent = card.who ? (card.who_provenance || "") : "";
+    $("s-reason").textContent = card.wants || "";
     const cb = $("s-callback");
+    cb.textContent = card.callback ? (card.callback_display || card.callback) : "";
+    cb.classList.toggle("dim", !card.callback);
     const spokenPhone = $("s-callback-phone");
-    if (s.callback) { cb.textContent = s.callback_display || s.callback; cb.classList.remove("dim"); }
-    else { cb.textContent = "None given"; cb.classList.add("dim"); }
-    const spoken = String(s.callback || "").replace(/\D/g, "");
+    const spoken = String(card.callback || "").replace(/\D/g, "");
     const callerDigits = String(v.caller_digits || "").replace(/\D/g, "");
     const sameNumber = spoken && callerDigits && spoken.slice(-10) === callerDigits.slice(-10);
-    if (s.callback_tel && !sameNumber) {
-      spokenPhone.href = s.callback_tel;
+    const tel = spoken
+      ? (spoken.length === 11 ? `tel:+${spoken}` : (spoken.length === 10 ? `tel:+1${spoken}` : ""))
+      : "";
+    if (tel && !sameNumber) {
+      spokenPhone.href = tel;
       spokenPhone.classList.remove("hidden");
     } else {
       spokenPhone.classList.add("hidden");
       spokenPhone.removeAttribute("href");
     }
-    $("s-note").textContent = s.source === "voice"
-      ? "Summarized during the call. Check the transcript."
-      : "Auto-summary from the transcript. Check the transcript.";
+    $("s-heard").textContent = card.heard_quote ? `“${card.heard_quote}”` : "";
+    bindQuote($("s-name-quote"), quoteOf(card.who_quote));
+    bindQuote($("s-reason-quote"), quoteOf(card.wants_quote));
+    bindQuote($("s-callback-quote"), quoteOf(card.callback_quote));
+    bindQuote($("s-heard-quote"), card.heard_quote || "");
+    $("s-note").textContent = card.medical ? "Check transcript" : (card.note || "");
+  }
+
+  const FOLLOWUP_LABEL = {
+    needs_callback: "Needs callback",
+    queued: "Queued",
+    draft_ready: "Draft ready",
+    approved: "Approved",
+    in_progress: "In progress",
+    returned: "Returned",
+    no_answer: "No answer",
+    failed: "Failed",
+    cancelled: "Cancelled",
+    snoozed: "Snoozed",
+    spam: "Spam",
+    done: "Done",
+    fyi: "FYI",
+  };
+
+  function needsBadge(v) {
+    return v.followup_state === "needs_callback" && !v.alert_silent;
+  }
+
+  function passesFilter(v) {
+    const st = v.followup_state || "";
+    if (listFilter === "needs_callback") {
+      return st === "needs_callback" || st === "queued" || st === "draft_ready" || st === "approved" || st === "in_progress" || st === "no_answer";
+    }
+    if (listFilter === "urgent") return !!(v.summary && v.summary.urgency === "urgent") && st !== "spam";
+    if (listFilter === "spam") return st === "spam" || v.trust_verdict === "blocked";
+    if (listFilter === "done") return st === "done" || st === "returned" || st === "cancelled" || st === "fyi";
+    return true;
   }
 
   function renderList() {
     listEl.innerHTML = "";
+    const needs = items.filter(needsBadge).length;
+    const badge = $("followup-badge");
+    badge.textContent = needs ? String(needs) : "";
+    badge.classList.toggle("hidden", !needs);
+    badge.setAttribute("aria-label", `${needs} need callback`);
     if (!items.length) {
       emptyEl.classList.remove("hidden");
+      emptyEl.textContent = "No Recents";
       subEl.textContent = "No voicemails";
       return;
     }
+    const visible = items.map((v, idx) => ({ v, idx })).filter((row) => passesFilter(row.v));
+    if (!visible.length) {
+      emptyEl.classList.remove("hidden");
+      emptyEl.textContent = "Nothing in this filter";
+      subEl.textContent = `${items.length} message${items.length === 1 ? "" : "s"}`;
+      return;
+    }
     emptyEl.classList.add("hidden");
-    const unheard = items.filter((x) => !x.heard).length;
-    subEl.textContent = `${items.length} message${items.length === 1 ? "" : "s"}${unheard ? ` · ${unheard} new` : ""}`;
+    subEl.textContent = `${visible.length} shown`;
 
-    items.forEach((v, idx) => {
+    visible.forEach(({ v, idx }) => {
       const li = document.createElement("li");
       li.className = "vm-row" + (v.heard ? "" : " unheard") + (current && current.voicemail_id === v.voicemail_id ? " active" : "");
       li.dataset.index = String(idx);
@@ -304,21 +376,23 @@
       const left = editMode
         ? `<input type="checkbox" class="edit-check" data-id="${esc(v.voicemail_id)}" ${selected.has(v.voicemail_id) ? "checked" : ""} aria-label="Select" />`
         : `<div class="${avatarClass}" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-4.4 0-8 2-8 4.5V21h16v-2.5C20 14 16.4 14 12 14z"/></svg></div>`;
-      const cbLabel = v.callback_status === "pending" ? "Callback requested"
+      const cbLabel = FOLLOWUP_LABEL[v.followup_state]
+        || (v.callback_status === "pending" ? "Callback requested"
         : v.callback_status === "returned" ? "Returned"
         : v.callback_status === "failed" ? "Failed"
-        : "";
+        : "");
       const cb = v.tel && !editMode
         ? `<button type="button" class="cb-btn${v.callback_status === "pending" ? " pending" : ""}" title="Call back" aria-label="Call back">${phoneSvg()}</button>`
         : `<span></span>`;
       // 0.5.5: server-masked preview only; never the raw snippet (a number would show in full).
       const preview = (v.summary && v.summary.reason) || previewText(v.preview || "") || "No transcript";
+      const title = (v.card && v.card.who) || v.caller_title;
       const meta = [v.date_display, v.duration_sec ? fmt(v.duration_sec) : ""].filter(Boolean).map(esc).join(" · ");
       li.innerHTML = `
         ${left}
         <div class="main">
           <div class="top">
-            <div class="name">${v.heard ? "" : '<span class="dot-unheard"></span>'}${esc(v.caller_title)}</div>
+            <div class="name">${v.heard ? "" : '<span class="dot-unheard"></span>'}${esc(title)}</div>
             ${urgencyPill(v.summary)}
           </div>
           <div class="meta">${meta}</div>
@@ -340,6 +414,7 @@
         }
         openDetail(idx);
       });
+      bindSwipe(li, v);
       listEl.appendChild(li);
     });
   }
@@ -378,7 +453,11 @@
     $("btn-allow").classList.toggle("hidden", !v.caller_digits);
     renderCallback(v);
     renderSummary(v);
-    $("d-transcript").innerHTML = linkPhones(polishTranscript(v.transcript || v.snippet || "No transcript"));
+    const plain = polishTranscript(v.transcript || v.snippet || "No transcript");
+    const transcriptEl = $("d-transcript");
+    transcriptEl.dataset.plain = plain;
+    transcriptEl.innerHTML = linkPhones(plain);
+    $("draft-sheet").classList.add("hidden");
 
     // Contacts suggest: pick first linked phone in transcript that differs from caller
     const matches = [...String(v.transcript || "").matchAll(phoneRe)].map((m) => m[1]);
@@ -434,7 +513,7 @@
       if (current) {
         const again = items.find((x) => x.voicemail_id === current.voicemail_id);
         if (!again) showList();
-        else { current = again; renderCallback(current); }
+        else { current = again; renderCallback(current); renderSummary(current); }
       }
     } catch (e) {
       subEl.textContent = `Error: ${e.message}`;
@@ -454,6 +533,65 @@
     v.callback_requested_at = body.callback_requested_at || "";
     v.callback_status_at = body.callback_status_at || "";
     v.callback_note = body.callback_note || "";
+    if (body.followup_state) v.followup_state = body.followup_state;
+  }
+
+  function bindSwipe(li, v) {
+    let startX = null;
+    li.addEventListener("pointerdown", (ev) => {
+      if (editMode) return;
+      startX = ev.clientX;
+    });
+    li.addEventListener("pointerup", (ev) => {
+      if (startX == null || editMode) { startX = null; return; }
+      const dx = ev.clientX - startX;
+      startX = null;
+      if (dx <= -72) setFollowup(v, "done");
+      else if (dx >= 72) setFollowup(v, "spam");
+    });
+    li.addEventListener("pointercancel", () => { startX = null; });
+  }
+
+  function showDraft(v) {
+    const draft = (v && v.draft) || { text: "", brief: "" };
+    $("draft-text").textContent = draft.text || "";
+    $("draft-brief").textContent = draft.brief || "";
+    $("draft-note").textContent = "Queue only. CallCatch does not send this.";
+    $("draft-sheet").classList.remove("hidden");
+  }
+
+  async function setFollowup(v, state, extra) {
+    if (!v) return;
+    try {
+      const body = await api("api/followup", {
+        method: "POST",
+        body: JSON.stringify(Object.assign({ id: v.voicemail_id, state: state, actor: "bryson" }, extra || {})),
+      });
+      stampCallback(v, body);
+      const row = items.find((x) => x.voicemail_id === v.voicemail_id);
+      if (row && row !== v) stampCallback(row, body);
+      renderList();
+      if (current && current.voicemail_id === v.voicemail_id) {
+        renderCallback(current);
+        renderSummary(current);
+      }
+    } catch (e) {
+      showToast(e.message === "not-found" ? "That voicemail is not in the inbox." : e.message);
+    }
+  }
+
+  async function queueDraft(v) {
+    if (!v) return;
+    const pipeline = ["queued", "draft_ready", "approved", "in_progress", "no_answer"];
+    if (!pipeline.includes(v.followup_state)) await requestCallback(v);
+    if (v.followup_state === "queued") await setFollowup(v, "draft_ready");
+    showDraft(v);
+  }
+
+  function doneTarget(v) {
+    const st = (v && v.followup_state) || "";
+    if (st === "queued" || st === "draft_ready" || st === "approved" || st === "in_progress") return "cancelled";
+    return "done";
   }
 
   function renderCallback(v) {
@@ -520,6 +658,27 @@
   $("btn-callback").addEventListener("click", () => requestCallback(current));
   $("btn-callback-returned").addEventListener("click", () => setCallbackStatus(current, "returned"));
   $("btn-callback-cancel").addEventListener("click", () => setCallbackStatus(current, "cancelled"));
+  $("filters").addEventListener("click", (ev) => {
+    const btn = ev.target.closest("button[data-filter]");
+    if (!btn) return;
+    listFilter = btn.dataset.filter || "all";
+    $("filters").querySelectorAll("button").forEach((el) => {
+      el.setAttribute("aria-pressed", el === btn ? "true" : "false");
+    });
+    renderList();
+  });
+  $("btn-draft").addEventListener("click", () => showDraft(current));
+  $("btn-draft-copy").addEventListener("click", async () => {
+    const text = [$("draft-text").textContent, $("draft-brief").textContent].filter(Boolean).join("\n\n");
+    try { await navigator.clipboard.writeText(text); showToast("Draft copied"); }
+    catch (_) { showToast("Could not copy the draft"); }
+  });
+  $("btn-draft-queue").addEventListener("click", () => queueDraft(current));
+  $("btn-done").addEventListener("click", () => setFollowup(current, doneTarget(current)));
+  $("btn-snooze").addEventListener("click", () => {
+    const until = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
+    setFollowup(current, "snoozed", { snooze_until: until });
+  });
   $("btn-edit").addEventListener("click", () => {
     editMode = !editMode;
     selected.clear();

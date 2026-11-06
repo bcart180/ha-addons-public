@@ -401,9 +401,12 @@ def test_blueprint_without_raw_caller_has_no_number_actions():
     item = inbox_store.item_from_payload({"voicemail_id": "s2", "from": "+15555550142", "transcript_text": "Caller: hi"})
     row = inbox_store.sensor_state([item])["attributes"]["recent_items"][0]
     env, v = _bp_vars()
-    caller = env.from_string(v["caller"]).render(newest=row).strip()
-    assert caller == ""
-    assert "5550142" not in caller
+    masked = env.from_string(v["caller_masked"]).render(newest=row).strip()
+    assert masked == "•••0142"
+    assert "5555550142" not in masked and "caller" not in v
+    blueprint = (ROOT / "blueprints" / "callcatch_new_voicemail.yaml").read_text(encoding="utf-8")
+    assert "tel:" not in blueprint
+    assert re.search(r"newest\.caller(?!_)", blueprint) is None
 
 
 def test_readme_documents_recorder_exclude():

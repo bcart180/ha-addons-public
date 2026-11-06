@@ -5,10 +5,12 @@ blueprint:
   name: CallCatch - new voicemail notification
   description: >-
     One push per new voicemail with the caller, the first transcript line, and
-    the buttons Call back, Mark heard, Block, and Open CallCatch. Mark heard
-    fires the `callcatch_command` event that CallCatch listens for. Block sends
-    `{cmd: block}` to CallCatch Voice via hassio.addon_stdin, then offers Undo.
-    Quiet hours (HA local time, default 12-6 AM) deliver silently.
+    the buttons Call back, Mark heard, and Open CallCatch. Call back and Mark
+    heard fire `callcatch_command`. Call back only queues a callback request.
+    It does not dial. The sensor has no full number, so this push has no phone link.
+    Quiet hours default to midnight–06:00 ET (HA local time). Alerts hold
+    except an urgent voicemail from a known contact. Hangup and spam stay
+    logbook-only.
     One push per voicemail: it pushes only when the pyscript pipeline reports
     push_owner "blueprint" (otherwise inbound_voicemail.py already pushed and
     this logs a skip). Same tag as the pyscript push, so iOS collapses any overlap.
@@ -40,6 +42,7 @@ blueprint:
             - domain: sensor
     voice_addon:
       name: CallCatch Voice add-on slug
+      description: Kept for existing automations. This push does not block or dial. Report Spam in the inbox does.
       default: 47b3c4e5_twilio_house_voice
       selector:
         text: {}
@@ -95,7 +98,8 @@ variables:
   newest: "{{ new_items[0] if new_items | count > 0 else {} }}"
   old_newest_id: "{{ old_items[0].voicemail_id if old_items | count > 0 else '' }}"
   voicemail_id: "{{ newest.voicemail_id | default('') }}"
-  caller: "{{ newest.caller | default('') }}"
+  # Masked only. Call back queues by voicemail id and does not dial.
+  caller_masked: "{{ newest.caller_masked | default('', true) }}"
   caller_label: >-
     {# masked by the add-on (contact name, or •••1234); never the full number #}
     {{ newest.caller_label_masked | default('', true) or 'Unknown caller' }}
@@ -108,6 +112,14 @@ variables:
   # 0.3.7 post-call summary. The add-on publishes these already masked
   # (callback as "•••1234"); rows without them fall back to the masked first line.
   urgency: "{{ newest.urgency | default('normal', true) }}"
+  known_contact: "{{ newest.known_contact | default(false) }}"
+  # Known caller: a stored number (last 4 only) or a saved contact. Not a dial.
+  can_queue: >-
+    {{ caller_masked | regex_match('^•••[0-9]{4}$') or known_contact == true or known_contact == 'true' or known_contact == 'True' }}
+  urgent_known: >-
+    {{ urgency == 'urgent' and (known_contact == true or known_contact == 'true' or known_contact == 'True') }}
+  alert_silent: >-
+    {{ newest.alert_silent == true or newest.alert_silent == 'true' or newest.alert_silent == 'True' }}
   summary_line: >-
     {% set parts = [] %}
     {% if newest.summary_name | default('') %}{% set parts = parts + [newest.summary_name] %}{% endif %}
@@ -118,20 +130,18 @@ variables:
     {{ ('Urgent: ' if urgency == 'urgent' else '') ~ (summary_line if (newest.summary_reason | default('')) else first_line) }}
   stir_note: >-
     {{ {'passed': ' (caller ID verified)', 'failed': ' (caller ID failed check)'}.get(newest.stir_status | default(''), '') }}
-  can_call: "{{ caller | regex_match('^[+]?[0-9]{7,15}$') }}"
   quiet: >-
     {% set n = now().strftime('%H:%M:%S') %}
-    {% if quiet_start <= quiet_end %}{{ quiet_start <= n < quiet_end }}
-    {% else %}{{ n >= quiet_start or n < quiet_end }}{% endif %}
+    {% if quiet_start <= quiet_end %}{% set in_window = quiet_start <= n < quiet_end %}
+    {% else %}{% set in_window = n >= quiet_start or n < quiet_end %}{% endif %}
+    {{ in_window and not urgent_known }}
   push_tag: "{{ 'voicemail_' ~ newest.short_id if newest.short_id | default('') else 'callcatch-' ~ voicemail_id }}"
   action_heard: "ACTION_{{ context.id }}_HEARD"
-  action_block: "ACTION_{{ context.id }}_BLOCK"
-  action_undo: "ACTION_{{ context.id }}_UNDO"
+  action_callback: "ACTION_{{ context.id }}_CALLBACK"
   push_data: >-
     {% set ns = namespace(acts=[]) %}
-    {% if can_call %}{% set ns.acts = ns.acts + [{'action': 'URI', 'title': 'Call back', 'uri': 'tel:' ~ caller}] %}{% endif %}
+    {% if can_queue %}{% set ns.acts = ns.acts + [{'action': action_callback, 'title': 'Call back'}] %}{% endif %}
     {% set ns.acts = ns.acts + [{'action': action_heard, 'title': 'Mark heard'}] %}
-    {% if can_call %}{% set ns.acts = ns.acts + [{'action': action_block, 'title': 'Block', 'destructive': true}] %}{% endif %}
     {% set ns.acts = ns.acts + [{'action': 'URI', 'title': 'Open CallCatch', 'uri': open_path}] %}
     {% set d = {'tag': push_tag, 'group': 'voicemail', 'url': open_path, 'clickAction': open_path,
                 'apns_headers': {'apns-collapse-id': push_tag}, 'actions': ns.acts} %}
@@ -170,6 +180,17 @@ actions:
             Not pushed: push_owner is '{{ push_owner or 'unset' }}', so inbound_voicemail.py sends this voicemail's one push.
           entity_id: !input voicemail_sensor
       - stop: another sender owns the push
+  - if:
+      - condition: template
+        value_template: "{{ alert_silent }}"
+    then:
+      - action: logbook.log
+        data:
+          name: CallCatch notify (silent)
+          message: >-
+            Not pushed: hangup or spam stays in the logbook only.
+          entity_id: !input voicemail_sensor
+      - stop: silent item
   - domain: mobile_app
     type: notify
     device_id: !input notify_device
@@ -180,55 +201,24 @@ actions:
       - trigger: event
         event_type: mobile_app_notification_action
         event_data:
-          action: "{{ action_heard }}"
+          action: "{{ action_callback }}"
       - trigger: event
         event_type: mobile_app_notification_action
         event_data:
-          action: "{{ action_block }}"
+          action: "{{ action_heard }}"
     timeout:
       seconds: !input action_timeout
     continue_on_timeout: false
   - choose:
+      - conditions: "{{ wait.trigger.event.data.action == action_callback and can_queue }}"
+        sequence:
+          - event: callcatch_command
+            event_data:
+              cmd: request_callback
+              voicemail_id: "{{ voicemail_id }}"
       - conditions: "{{ wait.trigger.event.data.action == action_heard }}"
         sequence:
           - event: callcatch_command
             event_data:
               cmd: mark_heard
               voicemail_id: "{{ voicemail_id }}"
-      - conditions: "{{ wait.trigger.event.data.action == action_block and can_call }}"
-        sequence:
-          - action: hassio.addon_stdin
-            data:
-              addon: "{{ voice_addon }}"
-              input:
-                cmd: block
-                number: "{{ caller }}"
-          - domain: mobile_app
-            type: notify
-            device_id: !input notify_device
-            title: "Blocked {{ caller_label }}"
-            message: Future calls from this number are rejected.
-            data:
-              tag: "{{ push_tag }}"
-              group: voicemail
-              channel: CallCatch quiet
-              importance: low
-              push:
-                interruption-level: passive
-              actions:
-                - action: "{{ action_undo }}"
-                  title: Undo
-          - wait_for_trigger:
-              - trigger: event
-                event_type: mobile_app_notification_action
-                event_data:
-                  action: "{{ action_undo }}"
-            timeout:
-              minutes: 10
-            continue_on_timeout: false
-          - action: hassio.addon_stdin
-            data:
-              addon: "{{ voice_addon }}"
-              input:
-                cmd: unblock
-                number: "{{ caller }}"
