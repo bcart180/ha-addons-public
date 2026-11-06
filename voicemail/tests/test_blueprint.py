@@ -92,6 +92,17 @@ def test_quiet_hours_are_silent():
             assert ctx["push_data"]["importance"] == "low"
 
 
+def test_quiet_hours_release_only_urgent_known_contacts():
+    """Midnight–06:00 ET holds everyone except an urgent call from a known contact."""
+    bp = _bp()
+    text = BP.read_text(encoding="utf-8")
+    assert 'default: "00:00:00"' in text and 'default: "06:00:00"' in text
+    held = _render(bp["variables"]["quiet"], "03:30", quiet_start="00:00:00", quiet_end="06:00:00", urgent_known=False)
+    released = _render(bp["variables"]["quiet"], "03:30", quiet_start="00:00:00", quiet_end="06:00:00", urgent_known=True)
+    daytime = _render(bp["variables"]["quiet"], "14:00", quiet_start="00:00:00", quiet_end="06:00:00", urgent_known=False)
+    assert held is True and released is False and daytime is False
+
+
 def test_single_push_owner_guard_before_any_push():
     bp = _bp()
     v = bp["variables"]
@@ -108,4 +119,7 @@ def test_single_push_owner_guard_before_any_push():
     assert [("stop" if "stop" in st else st.get("action")) for st in guard["then"]] == ["logbook.log", "stop"]
     # The guard sits before the first push; nothing before it can notify.
     first_push = next(i for i, st in enumerate(actions) if st.get("type") == "notify")
-    assert first_push == 2
+    assert first_push == 3
+    silent = actions[2]
+    assert "alert_silent" in silent["if"][0]["value_template"]
+    assert [("stop" if "stop" in st else st.get("action")) for st in silent["then"]] == ["logbook.log", "stop"]

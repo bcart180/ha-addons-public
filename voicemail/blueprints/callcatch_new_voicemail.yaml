@@ -8,7 +8,9 @@ blueprint:
     the buttons Call back, Mark heard, Block, and Open CallCatch. Mark heard
     fires the `callcatch_command` event that CallCatch listens for. Block sends
     `{cmd: block}` to CallCatch Voice via hassio.addon_stdin, then offers Undo.
-    Quiet hours (HA local time, default 12-6 AM) deliver silently.
+    Quiet hours default to midnight–06:00 ET (HA local time). Alerts hold
+    except an urgent voicemail from a known contact. Hangup and spam stay
+    logbook-only.
     One push per voicemail: it pushes only when the pyscript pipeline reports
     push_owner "blueprint" (otherwise inbound_voicemail.py already pushed and
     this logs a skip). Same tag as the pyscript push, so iOS collapses any overlap.
@@ -108,6 +110,11 @@ variables:
   # 0.3.7 post-call summary. The add-on publishes these already masked
   # (callback as "•••1234"); rows without them fall back to the masked first line.
   urgency: "{{ newest.urgency | default('normal', true) }}"
+  known_contact: "{{ newest.known_contact | default(false) }}"
+  urgent_known: >-
+    {{ urgency == 'urgent' and (known_contact == true or known_contact == 'true' or known_contact == 'True') }}
+  alert_silent: >-
+    {{ newest.alert_silent == true or newest.alert_silent == 'true' or newest.alert_silent == 'True' }}
   summary_line: >-
     {% set parts = [] %}
     {% if newest.summary_name | default('') %}{% set parts = parts + [newest.summary_name] %}{% endif %}
@@ -121,8 +128,9 @@ variables:
   can_call: "{{ caller | regex_match('^[+]?[0-9]{7,15}$') }}"
   quiet: >-
     {% set n = now().strftime('%H:%M:%S') %}
-    {% if quiet_start <= quiet_end %}{{ quiet_start <= n < quiet_end }}
-    {% else %}{{ n >= quiet_start or n < quiet_end }}{% endif %}
+    {% if quiet_start <= quiet_end %}{% set in_window = quiet_start <= n < quiet_end %}
+    {% else %}{% set in_window = n >= quiet_start or n < quiet_end %}{% endif %}
+    {{ in_window and not urgent_known }}
   push_tag: "{{ 'voicemail_' ~ newest.short_id if newest.short_id | default('') else 'callcatch-' ~ voicemail_id }}"
   action_heard: "ACTION_{{ context.id }}_HEARD"
   action_block: "ACTION_{{ context.id }}_BLOCK"
@@ -170,6 +178,17 @@ actions:
             Not pushed: push_owner is '{{ push_owner or 'unset' }}', so inbound_voicemail.py sends this voicemail's one push.
           entity_id: !input voicemail_sensor
       - stop: another sender owns the push
+  - if:
+      - condition: template
+        value_template: "{{ alert_silent }}"
+    then:
+      - action: logbook.log
+        data:
+          name: CallCatch notify (silent)
+          message: >-
+            Not pushed: hangup or spam stays in the logbook only.
+          entity_id: !input voicemail_sensor
+      - stop: silent item
   - domain: mobile_app
     type: notify
     device_id: !input notify_device

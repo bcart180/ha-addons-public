@@ -35,7 +35,7 @@ import share_import
 APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC = APP_DIR / "static"
 EXAMPLE = APP_DIR / "example_voicemails.json"
-VERSION = "0.5.7"
+VERSION = "0.6.0"
 AUDIO_LIMIT = 25 * 1024 * 1024
 SENSOR_RE = re.compile(r"sensor\.[a-z0-9_]+")
 RT = web.AppKey("rt", dict)
@@ -325,6 +325,8 @@ def normalize_item(raw: dict) -> dict:
     snippet_raw = raw.get("snippet") or ""
     transcript_raw = raw.get("transcript") or snippet_raw or ""
     summary = call_summary.for_display(call_summary.stored_or_extract(raw))
+    facts = call_summary.card(raw)
+    follow_state = inbox_store.effective_followup(raw)
     return {
         "voicemail_id": raw.get("voicemail_id") or raw.get("message_id") or cid,
         "caller_title": str(caller),
@@ -347,6 +349,13 @@ def normalize_item(raw: dict) -> dict:
         "stir": inbox_store.stir_summary(raw.get("stir_verstat")),
         "trust_verdict": raw.get("trust_verdict") or "",
         "summary": summary,
+        "followup_state": follow_state,
+        "followup_due": str(raw.get("followup_due") or "") if follow_state == "snoozed" else "",
+        "alert_silent": call_summary.alert_silent(raw),
+        "known_contact": call_summary.known_contact(raw),
+        "card": facts,
+        "draft": call_summary.build_draft(facts),
+        "history": inbox_store.masked_history(raw),
         **callback_view(raw),
         # 0.5.5: list preview is always masked server-side (never the raw snippet). Detail keeps full text.
         "preview": (summary.get("reason") or "")
@@ -1098,6 +1107,7 @@ async def api_request_callback(request: web.Request) -> web.Response:
             "idempotent": not created,
             "event": CALLBACK_EVENT if event_fired else "",
             "event_fired": event_fired,
+            "followup_state": inbox_store.effective_followup(item),
             **callback_view(item),
         }
     )
@@ -1147,7 +1157,111 @@ async def api_callback_status(request: web.Request) -> web.Response:
             "ok": True,
             "voicemail_id": vid,
             "idempotent": not changed,
+            "followup_state": inbox_store.effective_followup(item),
             **callback_view(item),
+        }
+    )
+
+
+def _followup_body(item: dict, *, idempotent: bool, event_fired: bool) -> dict:
+    state = inbox_store.effective_followup(item)
+    note = re.sub(r"\s+", " ", call_summary.plain_text(item.get("outcome_note") or "")).strip()[:280]
+    actor = str(item.get("last_actor") or "")
+    return {
+        "ok": True,
+        "voicemail_id": str(item.get("voicemail_id") or ""),
+        "idempotent": idempotent,
+        "event_fired": event_fired,
+        "followup_state": state,
+        "followup_due": str(item.get("followup_due") or "") if state == "snoozed" else "",
+        "draft_id": str(item.get("draft_id") or ""),
+        "call_ref": str(item.get("call_ref") or ""),
+        "outcome_note": note,
+        "last_actor": actor if actor in inbox_store.FOLLOWUP_ACTORS else "",
+        "history": inbox_store.masked_history(item),
+        **callback_view(item),
+    }
+
+
+async def api_followup(request: web.Request) -> web.Response:
+    """Allowlisted follow-up transition. Admin ingress only. Does not dial or send.
+
+    Body: ``{"id"|"voicemail_id", "state", "snooze_until"?}``. Optional
+    ``actor`` (bryson|agent), ``number``, ``purpose``, ``outcome_note``,
+    ``call_ref``. URLs and scripts are rejected.
+    """
+    denied = deny_mutation(request)
+    if denied:
+        return denied
+    if legacy_enabled():
+        return web.json_response({"ok": False, "error": "legacy-unsupported"}, status=409)
+    body = await _trust_json(request)
+    if body is None:
+        return web.json_response({"ok": False, "error": "bad-request"}, status=400)
+    for value in body.values():
+        if isinstance(value, str) and inbox_store._UNSAFE_TEXT.search(value):
+            return web.json_response({"ok": False, "error": "bad-field"}, status=400)
+    vid = str(body.get("id") or body.get("voicemail_id") or "").strip()[:80]
+    if not vid:
+        return web.json_response({"ok": False, "error": "voicemail_id required"}, status=400)
+    state = str(body.get("state") or "").strip().lower()
+    actor = str(body.get("actor") or "bryson").strip().lower()
+    store = ensure_runtime(request.app)
+    result = store.transition_followup(
+        vid,
+        state,
+        snooze_until=str(body.get("snooze_until") or "").strip(),
+        actor=actor,
+        number=str(body.get("number") or ""),
+        purpose=str(body.get("purpose") or ""),
+        outcome_note=re.sub(r"\s+", " ", call_summary.plain_text(body.get("outcome_note") or "")).strip()[:280],
+        call_ref=str(body.get("call_ref") or "").strip(),
+        draft_id=str(body.get("draft_id") or "").strip(),
+    )
+    if result is None:
+        return web.json_response({"ok": False, "error": "not-found"}, status=404)
+    if result.get("error"):
+        code = str(result["error"])
+        status = 400 if code.startswith("bad-") else 409
+        return web.json_response(
+            {"ok": False, "error": code, "voicemail_id": vid, **callback_view(result.get("item") or {})},
+            status=status,
+        )
+    item = result["item"]
+    event_fired = False
+    if result.get("fire_event"):
+        payload = callback_event_data(item, str(item.get("callback_requested_at") or ""))
+        status, _body = await ha_fire_event(_box(request.app).get("session"), CALLBACK_EVENT, payload)
+        event_fired = 200 <= status < 300
+    if result.get("changed"):
+        await _after_change(request.app)
+    _log_safe(
+        f"followup id={vid} from={item.get('caller') or ''} state={item.get('followup_state') or ''} "
+        f"changed={'yes' if result.get('changed') else 'no'}"
+    )
+    return web.json_response(_followup_body(item, idempotent=not result.get("changed"), event_fired=event_fired))
+
+
+async def api_callback_requests(request: web.Request) -> web.Response:
+    """GET queued and pending callbacks. Metadata only: no transcript, no full number.
+
+    Same read gate as the inbox. This route does not dial, send, or change state.
+    POST /api/callback_status stays the only callback_status route.
+    """
+    denied = deny_sensitive_read(request)
+    if denied:
+        return denied
+    if legacy_enabled():
+        return web.json_response({"ok": False, "error": "legacy-unsupported", "count": 0, "callbacks": []}, status=409)
+    store = ensure_runtime(request.app)
+    rows = [inbox_store.callback_queue_row(item) for item in store.list_items() if inbox_store.in_callback_queue(item)]
+    return web.json_response(
+        {
+            "ok": True,
+            "v": VERSION,
+            "count": len(rows),
+            "quiet": call_summary.quiet_status(),
+            "callbacks": rows,
         }
     )
 
@@ -1709,6 +1823,8 @@ def make_app() -> web.Application:
     app.router.add_post("/api/mark_heard", api_mark_heard)
     app.router.add_post("/api/request_callback", api_request_callback)
     app.router.add_post("/api/callback_status", api_callback_status)
+    app.router.add_post("/api/followup", api_followup)
+    app.router.add_get("/api/callback_requests", api_callback_requests)
     app.router.add_post("/api/play", api_play)
     app.router.add_get("/api/audio/{call_id}", api_audio)
     app.router.add_get("/api/trust", api_trust_get)

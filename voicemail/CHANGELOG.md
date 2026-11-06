@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0 — 2026-11-06
+
+- **Follow-up inbox.** Each voicemail has a follow-up state: `new`, `seen`, `needs_callback` (default when the caller asked for a callback), `queued`, `draft_ready`, `approved`, `in_progress`, `returned`, `no_answer`, `failed`, `cancelled`, `fyi`, `spam`, `done`, and `snoozed`. `POST /api/followup` is admin-only and allowlists those moves. `new` to `in_progress` is rejected. `in_progress` requires an approved record that names a number already on the call and a purpose quoted from the transcript. `no_answer` can return to the queue at most twice. Nothing on this path dials or sends.
+- **0.5.7 callbacks still queue only.** `POST /api/request_callback` and `POST /api/callback_status` keep their events and stored fields. A new request sets follow-up `queued` and still fires `callcatch_callback_requested` with a masked number. `GET /api/callback_status` is not a route.
+- **Read-only queue.** `GET /api/callback_requests` lists queued and pending callbacks: masked caller, short purpose, urgency, and quiet-hours hold. No transcript and no full number. Same read gate as the inbox.
+- **Who / wants / callback.** The detail card quotes the transcript. A field with no span is blank. Medical messages stay verbatim and say "Check transcript". Prepare draft builds a queue-only note from those facts and does not send it.
+- **Quieter counts.** The badge counts `needs_callback`, not unheard. Hangups under 5 seconds and spam stay out of that count. Quiet hours default to midnight–06:00 America/New_York. The notification blueprint holds alerts in that window except an urgent voicemail from a known contact. Mail routing is unchanged.
+- **Unused Soft Slate file removed.** `soft-slate.css` was not loaded. The Plaid theme stays.
+- No new options, secrets, or dry_run change. This add-on still does not dial.
+
 ## 0.5.7 — 2026-11-05
 
 - **Callback request, not a dial.** Call back in the list and on the detail screen queues a pending request (`POST /api/request_callback`). It sets `callback_status=pending` and `callback_requested_at`, and fires the Home Assistant event `callcatch_callback_requested` (voicemail id, masked from, display name, short summary, requested_at). A second request while pending is a no-op. `POST /api/callback_status` sets `returned`, `failed`, or `cancelled` (optional note) after a human-approved outbound call elsewhere, or from **Mark returned** / **Cancel request** in the panel. Returned shows `Returned · {local time}`.

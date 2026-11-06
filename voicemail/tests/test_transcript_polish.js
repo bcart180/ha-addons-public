@@ -137,8 +137,10 @@ eq(
   "House mid-line is not a speaker"
 );
 
-const detail = appJs.indexOf('linkPhones(polishTranscript(v.transcript || v.snippet || "No transcript"))');
-if (detail < 0) failures.push("detail transcript does not polish before linkPhones");
+const detailInline = appJs.includes('linkPhones(polishTranscript(v.transcript || v.snippet || "No transcript"))');
+const detailStepped = appJs.includes('polishTranscript(v.transcript || v.snippet || "No transcript")')
+  && appJs.includes("linkPhones(plain)");
+if (!detailInline && !detailStepped) failures.push("detail transcript does not polish before linkPhones");
 if (!appJs.includes("previewText(v.preview")) failures.push("list preview must use the server-masked v.preview");
 if (/const preview = [^\n]*v\.snippet/.test(appJs)) failures.push("list preview must never use the raw snippet (0.5.5)");
 const share = appJs.slice(appJs.indexOf('id="btn-share"') === -1 ? appJs.indexOf("btn-share") : 0);
@@ -150,12 +152,13 @@ if (
   failures.push("share sheet should keep the stored transcript");
 }
 if (!/^slug:\s*voicemail\s*$/m.test(config)) failures.push("slug must stay voicemail");
-if (!/^version:\s*"0\.5\.7"\s*$/m.test(config)) failures.push("config version must be 0.5.7");
-if (!changelog.startsWith("# Changelog\n\n## 0.5.7 — 2026-11-05\n")) failures.push("changelog missing 0.5.7 entry");
+if (!/^version:\s*"0\.6\.0"\s*$/m.test(config)) failures.push("config version must be 0.6.0");
+if (!changelog.startsWith("# Changelog\n\n## 0.6.0 — 2026-11-06\n")) failures.push("changelog missing 0.6.0 entry");
+if (!/## 0\.5\.7 — 2026-11-05\n/.test(changelog)) failures.push("changelog must keep the 0.5.7 entry");
 if (!/## 0\.1\.9 — 2026-10-29\n/.test(changelog)) failures.push("changelog must keep the 0.1.9 entry");
 if (!/## 0\.1\.8 — 2026-10-29\n/.test(changelog)) failures.push("changelog must keep the 0.1.8 packaging entry");
 if (!/## 0\.1\.7 — 2026-10-28\n/.test(changelog)) failures.push("changelog must keep the 0.1.7 entry");
-if (!/VERSION = "0\.5\.7"/.test(server)) failures.push("server.py VERSION must match 0.5.7");
+if (!/VERSION = "0\.6\.0"/.test(server)) failures.push("server.py VERSION must match 0.6.0");
 if (/^image:/m.test(config)) failures.push("config must not set an image field");
 if (!/^ingress_panel:\s*true\s*$/m.test(config)) failures.push("ingress_panel must stay true");
 if (/bedroom_homepod|HomePod/.test([server, config, appJs, indexHtml].join("\n"))) {

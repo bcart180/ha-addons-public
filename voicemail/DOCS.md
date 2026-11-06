@@ -166,6 +166,9 @@ If Google returns 403, the folder is not visible to this scope. Fix the share or
 | UI | Behavior |
 | --- | --- |
 | Call back | Queues a pending callback request. Does not dial. See below. |
+| Needs callback / Urgent / Spam / Done | Filters the list. The badge counts needs-callback follow-ups, not unheard messages. |
+| Prepare draft | Shows a text reply and a call brief from transcript facts. Copy or queue it. Nothing is sent. |
+| Done / Snooze | Moves follow-up state. Snooze holds the prior state until the time you pick. |
 | Play | In-app audio from `/api/audio/{call_id}` |
 | Speaker | Configured `media_player` only, when a Media file exists |
 | Trash / Clear all | Built-in store, or pyscript while legacy mode is on |
@@ -187,9 +190,64 @@ Call back does not place a call. It records a **pending callback request** for t
 | `POST /api/callback_status` | Body `{"voicemail_id": "…", "status": "returned"\|"failed"\|"cancelled", "note": "optional"}`. Only from `pending`. The same status again is a no-op. Unknown id is `404`. |
 | Event | `callcatch_callback_requested` with `voicemail_id`, `from_masked` (`•••1234`), `display_name` (spoken name, if any), `summary` (short, numbers masked), `requested_at`. No full E.164, because the shared sensor does not publish From either. |
 | Panel | **Call back** asks for the request. While pending: **Mark returned** and **Cancel request**. After a return: `Returned · {local time}`. **Open on phone** is the optional `tel:` link. |
-| Sensor | `callback_status` and `callback_requested_at` only. No callback note and no phone number. |
+| Sensor | `callback_status` and `callback_requested_at` only. No callback note and no phone number. Rows also carry `followup_state`, `known_contact`, and `alert_silent` (no note, draft, history, or number). The attribute `needs_callback` counts follow-ups that are not hangups or spam. `quiet` is the policy below, without a live clock. |
 
 An unknown id is rejected. Logs use the existing mask (`•••1234`) and never include a full number or a token.
+
+## Follow-up state (0.6.0)
+
+Stored fields: `followup_state`, `followup_due`, `followup_prior`, `draft_id`, `call_ref`, `outcome_note` (at most 280 characters), `last_actor` (`bryson` or `agent`), and `history`. Ingest cannot set them. A row saved before 0.6.0 keeps working: a pending callback reads as `queued`, and a transcript that asks for a call reads as `needs_callback` until you change it.
+
+| | |
+| --- | --- |
+| `POST /api/followup` | Body `{"id": "…", "state": "…", "snooze_until": "optional ISO-8601"}`. `voicemail_id` is accepted as `id`. Ingress mutation gate. `actor` is `bryson` (default) or `agent`. Moving to `approved` requires `number` (the caller or a spoken number) and `purpose` (a verbatim transcript phrase). Moving to `in_progress` requires that approved record. An illegal move, including `new` → `in_progress`, is `409`. A URL, script, or other unsafe text is `400`. |
+| Snooze | `state` `snoozed` needs `snooze_until`. The previous state is restored by posting that state, or on its own once the time has passed. |
+| Draft | The panel builds it from the card. Queue draft only records `draft_ready`. CallCatch does not send mail or place a call. |
+| Compatibility | `request_callback` still sets `callback_status` `pending` and fires the same masked event. `callback_status` still sets `returned`, `failed`, or `cancelled` from `pending`. Those writes update `followup_state` to match. |
+
+## Queued callbacks (read-only)
+
+`GET /api/callback_requests` lists rows that are `callback_status` `pending` or follow-up `queued`, except a row that is still snoozed. POST to that path is `405`. `GET /api/callback_status` is not implemented (`404`). The body has no transcript, no callback digits, and no full number.
+
+Same read gate as `GET /api/voicemails`: the ingress proxy plus `X-Remote-User-Id` (or legacy `X-Hass-User-ID`), or `Authorization: Bearer` with `ingest_token`.
+
+```json
+{
+  "ok": true,
+  "v": "0.6.0",
+  "count": 1,
+  "quiet": {
+    "tz": "America/New_York",
+    "start": "00:00:00",
+    "end": "06:00:00",
+    "active": false,
+    "exception": "urgent_known_contact"
+  },
+  "callbacks": [
+    {
+      "voicemail_id": "vm-1",
+      "followup_state": "queued",
+      "callback_status": "pending",
+      "callback_requested_at": "2026-11-06T15:04:00.000+00:00",
+      "from_masked": "•••0100",
+      "display_name": "Sam",
+      "purpose": "about the gate",
+      "urgency": "normal",
+      "known_contact": true,
+      "medical": false,
+      "check_transcript": false,
+      "alert_silent": false,
+      "quiet_hold": false
+    }
+  ]
+}
+```
+
+`quiet.active` is true from midnight until 06:00 America/New_York. `quiet_hold` is true in that window unless the row is urgent and the caller is a known contact (a saved name, or trust allow). A medical row sets `check_transcript` and leaves `purpose` empty. `purpose` is at most 120 characters and numbers in it are last-4 only.
+
+## Quiet hours
+
+The default window is midnight–06:00 ET. The blueprint (`quiet_start` `00:00:00`, `quiet_end` `06:00:00`, Home Assistant local time) delivers silently in that window. An urgent voicemail from a known contact is the exception. Hangup (under 5 seconds) and spam are logbook only (`alert_silent`) and are not in the needs-callback count. This does not change mail routing or the inbound voicemail script.
 
 ## Allow and block lists
 
@@ -231,7 +289,8 @@ Home Assistant authenticates the user before Supervisor proxies into this App. T
 | --- | --- |
 | Health (`/api/health`) | Open inside the container so the Docker health check can reach it. No host port is published. |
 | Inbox, audio, diag (`/api/voicemails`, `/api/audio/{call_id}`, `/api/diag`) | Ingress proxy `172.30.32.2` plus `X-Remote-User-Id` (or legacy `X-Hass-User-ID`), or `Authorization: Bearer` with `ingest_token`. A sibling on `172.30.0.0/16` without one of those is refused. |
-| Mutations (`/api/clear_*`, `/api/mark_heard`, `/api/play`, `/api/trust*`, `/api/request_callback`, `/api/callback_status`) | Peer must be the ingress proxy `172.30.32.2` and the request must carry `X-Remote-User-Id` (or legacy `X-Hass-User-ID`) |
+| Mutations (`/api/clear_*`, `/api/mark_heard`, `/api/play`, `/api/trust*`, `/api/request_callback`, `/api/callback_status`, `/api/followup`) | Peer must be the ingress proxy `172.30.32.2` and the request must carry `X-Remote-User-Id` (or legacy `X-Hass-User-ID`) |
+| Queued callbacks (`GET /api/callback_requests`) | Same gate as the inbox. GET only. Masked metadata, no transcript. |
 | Ingest (`/api/ingest`) | Supervisor network, plus `Authorization: Bearer`. The header is checked before the body is read. Ingress is not required, so Voice can post. |
 
 Implications:

@@ -46,7 +46,7 @@ spec.loader.exec_module(mod)
 assert (APP / "server.py").is_file()
 assert (APP / "static" / "index.html").is_file()
 assert (APP / "static" / "app.js").is_file()
-assert (APP / "static" / "soft-slate.css").is_file()
+assert not (APP / "static" / "soft-slate.css").exists()
 example_path = APP / "example_voicemails.json"
 assert example_path.is_file()
 example = example_path.read_text()
@@ -63,9 +63,9 @@ assert "555-0101" in example and "555-0102" in example and "555-0103" in example
 
 config = (ROOT / "config.yaml").read_text()
 assert "slug: voicemail" in config
-assert 'version: "0.5.7"' in config
+assert 'version: "0.6.0"' in config
 assert "image:" not in config
-assert mod.VERSION == "0.5.7"
+assert mod.VERSION == "0.6.0"
 
 GREETING = "House: Hi, you've reached the house. This is the assistant. How may I help you?"
 MAPPED = "Assistant: Hi, you've reached the house. This is the assistant. How may I help you?"

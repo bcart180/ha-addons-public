@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 URGENCY = ("low", "normal", "urgent")
 NAME_MAX = 60
@@ -423,3 +425,256 @@ def caller_label(item: dict) -> str:
         return title
     num = item.get("caller") or item.get("caller_pretty") or ""
     return mask_number(strip_format(num)) if digits(strip_format(num)) else ""
+
+
+# ---- 0.6.0 follow-up card, quiet hours, draft (no network, no model) ----
+
+QUIET_TZ = "America/New_York"
+QUIET_START = "00:00:00"
+QUIET_END = "06:00:00"
+QUIET_EXCEPTION = "urgent_known_contact"
+MEDICAL_NOTE = "Check transcript"
+HANGUP_SEC = 5
+
+_MEDICAL = re.compile(
+    r"\b(doctor|dr\.?|physician|clinic|hospital|pharmacy|prescription|"
+    r"diagnos(?:is|ed|es)|symptom|patient|medical|mri|lab results?|"
+    r"blood (?:test|work)|veterans?)\b",
+    re.I,
+)
+_ASK_CALLBACK = re.compile(
+    r"\b(call me back|please call|call back|give me a call|return my call|"
+    r"callback|call me at|reach me at|call us back)\b",
+    re.I,
+)
+_NO_CALLBACK = re.compile(r"\bno need to call(?: me)? back\b", re.I)
+_NOT_A_CONTACT = {"unknown", "unknown caller", "private", "anonymous", "withheld"}
+
+
+def _span(hay: str, needle: str) -> dict | None:
+    """Exact slice of ``hay``. Blank when the needle is not present."""
+    if not needle or not hay:
+        return None
+    idx = hay.lower().find(needle.lower())
+    if idx < 0:
+        return None
+    end = idx + len(needle)
+    return {"quote": hay[idx:end], "start": idx, "end": end}
+
+
+def is_medical(transcript: Any) -> bool:
+    return bool(_MEDICAL.search(caller_text(strip_format(transcript))))
+
+
+def asks_for_callback(transcript: Any, caller: Any = "") -> bool:
+    """True when the caller spoke a number or asked to be called back.
+
+    A caller-id number alone is not a request. "No need to call back" wins.
+    """
+    base = strip_format(transcript)
+    text = caller_text(base)
+    if _NO_CALLBACK.search(text):
+        return False
+    # A number spoken in the message is a callback, including the caller's own.
+    if _spoken_numbers(base):
+        return True
+    if _ASK_CALLBACK.search(text) and valid_callback(digits(caller)):
+        return True
+    return False
+
+
+def is_hangup(item: dict) -> bool:
+    """A connected call under 5 seconds. Missing duration is not a hangup."""
+    try:
+        duration = int(item.get("duration_sec") or 0)
+    except (TypeError, ValueError):
+        return False
+    return 0 < duration < HANGUP_SEC
+
+
+def known_contact(item: dict) -> bool:
+    """Allow-list, or a stored title that is a name rather than a number."""
+    if str(item.get("trust_verdict") or "") == "allow":
+        return True
+    title = str(item.get("caller_title") or "").strip()
+    if not title or title.lower() in _NOT_A_CONTACT:
+        return False
+    if not re.search(r"[A-Za-z]", strip_format(title)):
+        return False
+    if set(_clean(title, NAME_MAX)) <= set("•0123456789+()-. "):
+        return False
+    return True
+
+
+def alert_silent(item: dict) -> bool:
+    """Hangup under 5s and spam stay out of actionable counts."""
+    if str(item.get("trust_verdict") or "") == "blocked":
+        return True
+    if str(item.get("followup_state") or "") == "spam":
+        return True
+    return is_hangup(item)
+
+
+def quiet_active(now: datetime | None = None) -> bool:
+    """Midnight–06:00 America/New_York, end exclusive. Default from CoS."""
+    zone = ZoneInfo(QUIET_TZ)
+    clock = now or datetime.now(zone)
+    if clock.tzinfo is None:
+        clock = clock.replace(tzinfo=zone)
+    else:
+        clock = clock.astimezone(zone)
+    seconds = clock.hour * 3600 + clock.minute * 60 + clock.second
+    return 0 <= seconds < 6 * 3600
+
+
+def quiet_status(now: datetime | None = None) -> dict:
+    return {
+        "tz": QUIET_TZ,
+        "start": QUIET_START,
+        "end": QUIET_END,
+        "active": quiet_active(now),
+        "exception": QUIET_EXCEPTION,
+    }
+
+
+def quiet_hold(item: dict, now: datetime | None = None) -> bool:
+    """Hold alerts in quiet hours. Urgent calls from known contacts still pass."""
+    if not quiet_active(now):
+        return False
+    summary = stored_or_extract(item)
+    if summary.get("urgency") == "urgent" and known_contact(item):
+        return False
+    return True
+
+
+def _reason_span(base: str) -> dict | None:
+    text = caller_text(base)
+    for sentence in _sentences(text):
+        for pat in _REASON_PATTERNS:
+            match = pat.search(sentence)
+            if not match:
+                continue
+            fragment = match.group(1).strip().rstrip(".!?").strip()
+            if len(fragment) <= 3:
+                continue
+            found = _span(base, fragment)
+            if found:
+                return found
+    return None
+
+
+def _callback_span(base: str, caller: Any) -> dict | None:
+    cd = digits(caller)
+    chosen = None
+    for match in SPOKEN_RUN_RE.finditer(base):
+        number = digits(EXT_SPLIT_RE.sub("", match.group(0)))
+        if not valid_callback(number):
+            continue
+        span = {
+            "quote": match.group(0),
+            "start": match.start(),
+            "end": match.end(),
+            "digits": number,
+        }
+        if not _same_number(number, cd):
+            return span
+        if chosen is None:
+            chosen = span
+    return chosen
+
+
+def _urgency_span(base: str) -> tuple[str, dict | None]:
+    match = _URGENT.search(base)
+    if match:
+        return "urgent", {"quote": match.group(0), "start": match.start(), "end": match.end()}
+    match = _LOW.search(base)
+    if match:
+        return "low", {"quote": match.group(0), "start": match.start(), "end": match.end()}
+    return "normal", None
+
+
+def card(item: dict) -> dict:
+    """Who / wants / callback. A field with no transcript span is blank.
+
+    Medical rows keep the verbatim slice only, plus "Check transcript".
+    No dates or diagnoses are inferred. No network and no model.
+    """
+    transcript = item.get("transcript") or item.get("snippet") or ""
+    caller = item.get("caller") or item.get("caller_pretty") or item.get("caller_digits") or ""
+    base = strip_format(transcript)
+    medical = is_medical(base)
+    name = extract_name(caller_text(base))
+    who_span = _span(base, name) if name else None
+    wants_span = _reason_span(base)
+    callback_span = _callback_span(base, caller)
+    urgency, urgency_span = _urgency_span(base)
+    heard = wants_span or who_span
+    blank = {
+        "who": "",
+        "who_provenance": "",
+        "who_quote": None,
+        "wants": "",
+        "wants_provenance": "",
+        "wants_quote": None,
+        "callback": "",
+        "callback_display": "",
+        "callback_provenance": "",
+        "callback_quote": None,
+        "heard_quote": "",
+        "heard_span": None,
+        "urgency": "normal",
+        "urgency_quote": None,
+        "medical": medical,
+        "note": MEDICAL_NOTE if medical else "",
+    }
+    if who_span:
+        blank["who"] = who_span["quote"]
+        blank["who_provenance"] = "said in message"
+        blank["who_quote"] = {k: who_span[k] for k in ("quote", "start", "end")}
+    if wants_span:
+        blank["wants"] = wants_span["quote"]
+        blank["wants_provenance"] = "said in message"
+        blank["wants_quote"] = wants_span
+    if callback_span:
+        blank["callback"] = callback_span["digits"]
+        blank["callback_display"] = pretty_number(callback_span["digits"])
+        blank["callback_provenance"] = "said in message"
+        blank["callback_quote"] = {k: callback_span[k] for k in ("quote", "start", "end")}
+    if heard:
+        blank["heard_quote"] = heard["quote"]
+        blank["heard_span"] = {k: heard[k] for k in ("quote", "start", "end")}
+    if urgency_span:
+        blank["urgency"] = urgency
+        blank["urgency_quote"] = urgency_span
+    return blank
+
+
+def build_draft(facts: dict) -> dict:
+    """Copy/approve text from card facts. Nothing here is sent."""
+    who = str(facts.get("who") or "")
+    wants = str(facts.get("wants") or "")
+    heard = str(facts.get("heard_quote") or "")
+    if facts.get("medical"):
+        quote = heard or wants or who
+        text = f"\"{quote}\" {MEDICAL_NOTE}." if quote else f"{MEDICAL_NOTE}."
+        brief = f"{MEDICAL_NOTE}. Do not add medical details."
+    else:
+        parts = ["I got your message."]
+        if who:
+            parts.insert(0, f"Hi {who}.")
+        if wants:
+            parts.append(f'You said: "{wants}"')
+        text = " ".join(parts)
+        brief_parts = []
+        shown = str(facts.get("callback_display") or "")
+        if shown:
+            brief_parts.append(f"Call {shown}.")
+        if wants:
+            brief_parts.append(f'About: "{wants}"')
+        brief_parts.append("Confirm only what was said. Nothing is sent from CallCatch.")
+        brief = " ".join(brief_parts)
+    return {
+        "text": _URL.sub("(link)", text),
+        "brief": _URL.sub("(link)", brief),
+        "queued_only": True,
+    }

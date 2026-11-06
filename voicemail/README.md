@@ -1,11 +1,11 @@
 # CallCatch
 
-Your Personalized Voicemail. iPhone-style house inbox for Home Assistant. The list and detail screens use the Soft Slate house theme (`soft-slate.css`); that file is the design system, not the product name.
+Your Personalized Voicemail. iPhone-style house inbox for Home Assistant. The list and detail screens use the Plaid theme (black canvas, one accent) in `style.css`.
 
 - **Ingress only** (sidebar panel behind HA login). No host ports. No public webhook / Cloudflare Access.
 - Inbox store under `/data`. Publishes `sensor.inbound_voicemails` (count and recent items) for dashboards and the notification blueprint. Its attributes carry masked fields only (`•••1234`); full numbers and transcripts stay in the admin panel.
 - CallCatch Voice posts transcripts and audio to `POST /api/ingest` with the `ingest_token` bearer secret.
-- Actions: in-app playback, optional speaker (`media_player`, blank by default), clear one / clear all, mark heard. Call back queues a pending request for a human-approved outbound call elsewhere; this add-on never dials. A secondary Open on phone link can still use `tel:`.
+- Actions: in-app playback, optional speaker (`media_player`, blank by default), clear one / clear all, mark heard. Call back queues a pending request for a human-approved outbound call elsewhere; this add-on never dials. A draft is a copy/approve note and is not sent. A secondary Open on phone link can still use `tel:`.
 - Audio is stored under `/media/callcatch` or `/share/callcatch`, or in a Google Drive folder. Playback streams through this App. See [DOCS.md](DOCS.md).
 
 ## Install
