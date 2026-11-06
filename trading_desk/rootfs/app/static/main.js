@@ -130,8 +130,8 @@
       var w = el.clientWidth || 600;
       chart = new uPlot({ width: w, height: 240, legend: { show: false }, cursor: { y: false },
         scales: { x: { time: true } },
-        axes: [{ stroke: "#5a6b7c", grid: { stroke: "#eef3f8" } },
-               { stroke: "#5a6b7c", grid: { stroke: "#eef3f8" }, size: 70, values: function (u, v) { return v.map(function (x) { return "$" + Math.round(x).toLocaleString(); }); } }],
+        axes: [{ stroke: "#9aa6b4", grid: { stroke: "#262b31" }, ticks: { stroke: "#262b31" } },
+               { stroke: "#9aa6b4", grid: { stroke: "#262b31" }, ticks: { stroke: "#262b31" }, size: 70, values: function (u, v) { return v.map(function (x) { return "$" + Math.round(x).toLocaleString(); }); } }],
         series: [{}, { stroke: "#2a9d8f", width: 2.5, fill: "rgba(42,157,143,.12)" }] }, [t, e], el);
     }
     if (RANGE === "1D") { var cv = S.curve || {}; paint(cv.t, cv.equity); return; }
