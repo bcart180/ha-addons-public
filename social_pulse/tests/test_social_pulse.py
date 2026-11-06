@@ -52,10 +52,15 @@ class XTests(unittest.TestCase):
         self.assertIn("error", out[-1])  # not in fixture -> shown as error, not fabricated
 
     def test_missing_token_marks_everything_unavailable(self):
-        snap = c.collect({"x_accounts": HANDLES, "zones": ZONES}, NOW)
+        snap = c.collect({"x_accounts": HANDLES, "zones": ZONES,
+                          "cloudflare_account_id": "0000000000000000000000000000c001"}, NOW)
         self.assertTrue(all("x_bearer_token not set" in a["error"] for a in snap["x"]))
         for s in snap["sites"]:
             self.assertFalse(s["requests_7d"]["available"])
+            self.assertIsNone(s["requests_7d"]["value"])
+            self.assertIsNone(s["rum_visits_30d"]["value"])
+            self.assertIn("cloudflare_api_token not set", s["error"])
+            self.assertNotIn("disabled", (s.get("rum_status_detail") or "").lower())
 
 
 class CloudflareTests(unittest.TestCase):
@@ -83,6 +88,151 @@ class CloudflareTests(unittest.TestCase):
     def test_graphql_guard_rejects_mutations(self):
         with self.assertRaises(ValueError):
             c._graphql("mutation{x}", "t")
+
+    def test_uniques_are_labeled_summed_not_deduped(self):
+        for s in self.sites.values():
+            self.assertIn("not deduplicated across the 7 days", s["uniques_7d"]["note"].lower())
+            self.assertIn("not deduplicated across the 30 days", s["uniques_30d"]["note"].lower())
+            self.assertEqual(s["uniques_7d"]["source"], "edge")
+            self.assertEqual(s["page_views_7d"]["source"], "edge")
+            self.assertIn("not sampled browser visits", s["page_views_7d"]["note"].lower())
+
+    def test_seven_and_thirty_day_windows_from_sample(self):
+        w = self.sites["site-a.example"]
+        b = self.sites["site-b.example"]
+        self.assertEqual(w["requests_7d"]["value"], 12109)
+        self.assertEqual(w["windows"]["edge_requests"]["pct"], 87.8)
+        self.assertEqual(w["windows"]["edge_requests"]["pct"], round(100.0 * 12109 / 13786, 1))
+        self.assertEqual(w["windows"]["edge_page_views"]["pct"], 83.9)
+        self.assertEqual(w["rum_visits_30d"]["value"], 20)
+        self.assertEqual(w["rum_visits_7d"]["value"], 20)
+        self.assertEqual(w["rum_visits_7d"]["source"], "web_analytics")
+        self.assertFalse(w["rum_referrers_7d"]["available"])
+        self.assertTrue(w["rum_referrers"]["available"])
+        self.assertEqual(b["rum_visits_7d"]["value"], 30)
+        self.assertEqual(b["rum_visits_30d"]["value"], 40)
+        self.assertEqual(b["windows"]["rum_visits"]["pct"], 75.0)
+        us7 = dict(w["countries_7d"]["value"])["US"]
+        self.assertEqual(dict(w["countries_30d"]["value"])["US"], us7 + 679)
+        self.assertFalse(w["prev7"]["available"])
+        self.assertNotIn("disabled", w["prev7"]["reason"].lower())
+
+    def test_rum7_query_wins_over_the_daily_slice(self):
+        raw = fx("cf_raw.json")
+        raw["site-a.example"]["rum7"] = {"data": {"viewer": {"accounts": [{
+            "daily": [{"count": 5, "dimensions": {"date": "2026-10-31"}, "sum": {"visits": 4}}],
+            "pages": [{"count": 5, "dimensions": {"requestPath": "/stay"}}],
+            "refs": [{"count": 5, "dimensions": {"refererHost": "news.example"}}],
+        }]}}, "errors": None}
+        s = c.cf_normalize(raw, ZONES[:1], NOW)[0]
+        self.assertEqual(s["rum_visits_7d"]["value"], 4)
+        self.assertEqual(s["rum_pageloads_7d"]["value"], 5)
+        self.assertEqual(s["rum_visits_30d"]["value"], 20)
+        self.assertEqual(s["rum_top_pages_7d"]["value"][0], ["/stay", 5])
+        self.assertEqual(s["rum_referrers_7d"]["value"][0], ["news.example", 5])
+        self.assertEqual(s["rum_status"], "ok")
+
+    def test_scope_miss_keeps_edge_and_does_not_invent_visits(self):
+        zone = fx("cf_raw.json")["site-a.example"]
+        calls = []
+
+        def gql(q, token):
+            calls.append(q)
+            self.assertTrue(q.lstrip().startswith("query"))
+            self.assertNotIn("mutation", q.lower())
+            if "rumPageload" in q:
+                raise RuntimeError("HTTP Error 403: Forbidden")
+            return zone["zone"]
+
+        raw = c.cf_fetch_raw(ZONES[:1], "0000000000000000000000000000c001", "tok", NOW, gql)
+        rum_calls = [q for q in calls if "rumPageload" in q]
+        self.assertEqual(len(rum_calls), 2)
+        self.assertTrue(any('date_geq:"2026-10-03"' in q for q in rum_calls))
+        self.assertTrue(any('date_geq:"2026-10-26"' in q and "limit:10" in q for q in rum_calls))
+        s = c.cf_normalize(raw, ZONES[:1], NOW)[0]
+        self.assertEqual(s["requests_7d"]["value"], 12109)
+        self.assertFalse(s["rum_visits_7d"]["available"])
+        self.assertFalse(s["rum_visits_30d"]["available"])
+        self.assertIsNone(s["rum_visits_7d"]["value"])
+        self.assertIsNone(s["rum_visits_30d"]["value"])
+        self.assertEqual(s["rum_status"], "missing_scope")
+        detail = s["rum_status_detail"]
+        self.assertIn("Account Analytics", detail)
+        self.assertIn("does not need to be replaced", detail)
+        self.assertIn("Edge request metrics are unaffected", detail)
+        self.assertNotIn("disabled", detail.lower())
+        self.assertNotIn("rotat", detail.lower())
+
+    def test_optional_rum7_failure_uses_daily_sample_not_edge(self):
+        sample = fx("cf_raw.json")["site-a.example"]
+
+        def gql(q, token):
+            if "rumPageload" in q and 'date_geq:"2026-10-26"' in q:
+                raise RuntimeError("timeout talking to analytics")
+            if "rumPageload" in q:
+                return sample["rum"]
+            return sample["zone"]
+
+        raw = c.cf_fetch_raw(ZONES[:1], "0000000000000000000000000000c001", "tok", NOW, gql)
+        s = c.cf_normalize(raw, ZONES[:1], NOW)[0]
+        self.assertEqual(s["requests_7d"]["value"], 12109)
+        self.assertEqual(s["rum_status"], "ok")
+        self.assertEqual(s["rum_visits_30d"]["value"], 20)
+        self.assertEqual(s["rum_visits_7d"]["value"], 20)
+        self.assertIn("not estimated from edge requests", s["rum_visits_7d"]["note"].lower())
+        self.assertFalse(s["rum_referrers_7d"]["available"])
+        self.assertTrue(s["rum_referrers"]["available"])
+        self.assertNotIn("disabled", s["rum_referrers_7d"]["reason"].lower())
+
+    def test_bad_ids_are_not_sent(self):
+        calls = []
+        zones = [{"name": "evil.example", "zone_id": 'abc"; mutation {', "rum_site_tag": "zzzz"}]
+        raw = c.cf_fetch_raw(zones, "not-an-account", "tok", NOW, lambda q, t: calls.append(q))
+        self.assertEqual(calls, [])
+        s = c.cf_normalize(raw, zones, NOW)[0]
+        self.assertFalse(s["requests_7d"]["available"])
+        self.assertIsNone(s["rum_visits_30d"]["value"])
+        self.assertNotIn("mutation", json.dumps(s).lower())
+
+    def test_prev7_change_requires_full_prior_window(self):
+        start = dt.date(2026, 10, 19)
+        days = []
+        for i in range(14):
+            day = start + dt.timedelta(days=i)
+            days.append({"dimensions": {"date": day.isoformat()},
+                         "sum": {"requests": 20 if i >= 7 else 10, "pageViews": 1, "bytes": 1, "threats": 0, "countryMap": []},
+                         "uniq": {"uniques": 1}})
+        zone = [{"name": "synth.example", "zone_id": "0000000000000000000000000000a001"}]
+        raw = {"synth.example": {"zone": {"data": {"viewer": {"zones": [{"daily": days, "paths": []}]}}}}}
+        s = c.cf_normalize(raw, zone, NOW)[0]
+        self.assertTrue(s["prev7"]["available"])
+        self.assertEqual(s["prev7"]["requests"]["prior"], 70)
+        self.assertEqual(s["prev7"]["requests"]["current"], 140)
+        self.assertEqual(s["prev7"]["requests"]["change_pct"], 100.0)
+        short = {"synth.example": {"zone": {"data": {"viewer": {"zones": [{"daily": days[1:], "paths": []}]}}}}}
+        s2 = c.cf_normalize(short, zone, NOW)[0]
+        self.assertFalse(s2["prev7"]["available"])
+        self.assertNotIn("requests", s2["prev7"])
+        zeros = []
+        for i in range(14):
+            day = start + dt.timedelta(days=i)
+            zeros.append({"dimensions": {"date": day.isoformat()},
+                          "sum": {"requests": 0 if i < 7 else 5, "pageViews": 0, "bytes": 0, "threats": 0, "countryMap": []},
+                          "uniq": {"uniques": 0}})
+        zraw = {"synth.example": {"zone": {"data": {"viewer": {"zones": [{"daily": zeros, "paths": []}]}}}}}
+        s3 = c.cf_normalize(zraw, zone, NOW)[0]
+        self.assertIsNone(s3["prev7"]["requests"]["change_pct"])
+        self.assertIn("undefined", s3["prev7"]["requests"]["change_reason"])
+
+    def test_successful_empty_sample_is_zero_not_permission(self):
+        zone = fx("cf_raw.json")["site-a.example"]["zone"]
+        empty = {"data": {"viewer": {"accounts": [{"daily": [], "pages": [], "refs": []}]}}, "errors": None}
+        raw = {"site-a.example": {"zone": zone, "rum": empty, "rum7": empty}}
+        s = c.cf_normalize(raw, ZONES[:1], NOW)[0]
+        self.assertEqual(s["rum_status"], "ok")
+        self.assertEqual(s["rum_visits_30d"]["value"], 0)
+        self.assertTrue(s["rum_visits_30d"]["available"])
+        self.assertEqual(s["rum_visits_7d"]["value"], 0)
 
 
 class SecurityTests(unittest.TestCase):
@@ -208,6 +358,43 @@ class IngressAllowlistTests(unittest.TestCase):
     def test_allowed_source_is_served(self):
         base = self.serve({"127.0.0.1"})
         self.assertEqual(json.loads(urllib.request.urlopen(base + "/api/health").read()), {"ok": True})
+
+
+class SiteDashboardTests(unittest.TestCase):
+    def test_panel_separates_edge_sampled_and_summed_uniques(self):
+        static = os.path.join(APP, "static")
+        js = open(os.path.join(static, "app.js"), encoding="utf-8").read()
+        html = open(os.path.join(static, "index.html"), encoding="utf-8").read()
+        css = open(os.path.join(static, "soft-slate.css"), encoding="utf-8").read()
+        blob = "\n".join((js, html, css))
+        for host in ("winchestergetaway.com", "hideawaytavernlcv.com"):
+            self.assertIn(host, html)
+            self.assertIn(host, js)
+        self.assertIn("rum_visits", js)
+        self.assertIn("Summed daily uniques", js)
+        self.assertIn("Not deduplicated", js)
+        self.assertIn("Edge requests", js)
+        self.assertIn("Sampled", js)
+        self.assertIn("Nothing here is estimated", js)
+        self.assertIn("soft-slate.css", html)
+        self.assertIn("#e8eef4", css)
+        self.assertIn("#2a9d8f", css)
+        self.assertIn("--radius: 14px", css)
+        self.assertNotIn("disabled", blob.lower())
+        self.assertNotIn("rotat", blob.lower())
+        self.assertIsNone(re.search(r"requests_7d\"\]\s*=\s*\d", js))
+
+    def test_docs_explain_the_permission_gap(self):
+        docs = open(os.path.join(ADDON, "DOCS.md"), encoding="utf-8").read()
+        self.assertIn("Account Analytics", docs)
+        self.assertIn("not deduplicated", docs.lower())
+        self.assertIn("winchestergetaway.com", docs)
+        self.assertIn("hideawaytavernlcv.com", docs)
+        self.assertNotIn("disabled", docs.lower())
+        self.assertNotIn("rotat", docs.lower())
+        cfg = open(os.path.join(ADDON, "config.yaml"), encoding="utf-8").read()
+        self.assertIn('version: "0.3.0"', cfg)
+        self.assertRegex(cfg, r"zones:\s*\[\]")
 
 
 if __name__ == "__main__":
