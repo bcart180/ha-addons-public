@@ -1461,10 +1461,10 @@ async def api_ingest(request: web.Request) -> web.Response:
 
 
 # --------------------------------------------------------------------------
-# HA event bus: the notification's "Mark heard" button fires
-# `callcatch_command` {cmd: mark_heard, voicemail_id}. CallCatch listens on
-# the Supervisor Core websocket proxy with its own SUPERVISOR_TOKEN. No other
-# add-on calls this App, and no new port is opened.
+# HA event bus: notification buttons fire `callcatch_command`.
+# mark_heard and request_callback are accepted. request_callback queues only.
+# CallCatch listens on the Supervisor Core websocket with SUPERVISOR_TOKEN.
+# No other add-on calls this App, and no new port is opened.
 # --------------------------------------------------------------------------
 
 COMMAND_EVENT = "callcatch_command"
@@ -1478,25 +1478,45 @@ def _truthy(value: Any) -> bool:
 
 
 async def handle_command(app: web.Application, data: Any) -> dict:
-    """Apply one callcatch_command event. Only mark_heard is accepted."""
-    if not isinstance(data, dict) or data.get("cmd") != "mark_heard":
+    """Apply one callcatch_command. mark_heard and request_callback only.
+
+    request_callback records a pending queue row and fires the masked
+    callcatch_callback_requested event. It does not dial.
+    """
+    if not isinstance(data, dict) or data.get("cmd") not in ("mark_heard", "request_callback"):
         return {"ok": False, "error": "unknown-cmd"}
+    cmd = str(data.get("cmd"))
     vid = inbox_store.safe_id(data.get("voicemail_id") or "")
     if not vid:
         return {"ok": False, "error": "voicemail_id required"}
     if _truthy(data.get("dry_run")):
-        log.info("command dry_run mark_heard (no change)")
+        log.info("command dry_run %s (no change)", cmd)
         return {"ok": True, "dry_run": True}
+    if cmd == "mark_heard":
+        if legacy_enabled():
+            status, _ = await ha_call_service(
+                _box(app)["session"], "pyscript", "inbound_voicemail_mark_heard", {"voicemail_id": vid}
+            )
+            return {"ok": status < 300, "status": status}
+        store = ensure_runtime(app)
+        if not store.mark_heard(voicemail_id=vid):
+            return {"ok": False, "error": "not-found"}
+        await _after_change(app)
+        return {"ok": True}
     if legacy_enabled():
-        status, _ = await ha_call_service(
-            _box(app)["session"], "pyscript", "inbound_voicemail_mark_heard", {"voicemail_id": vid}
-        )
-        return {"ok": status < 300, "status": status}
+        return {"ok": False, "error": "legacy-unsupported"}
     store = ensure_runtime(app)
-    if not store.mark_heard(voicemail_id=vid):
+    result = store.request_callback(vid)
+    if result is None:
         return {"ok": False, "error": "not-found"}
-    await _after_change(app)
-    return {"ok": True}
+    event_fired = False
+    if result["created"]:
+        item = result["item"]
+        payload = callback_event_data(item, str(item.get("callback_requested_at") or ""))
+        status, _body = await ha_fire_event(_box(app).get("session"), CALLBACK_EVENT, payload)
+        event_fired = 200 <= status < 300
+        await _after_change(app)
+    return {"ok": True, "idempotent": not result["created"], "event_fired": event_fired}
 
 
 async def command_listener_once(app: web.Application, url: str, token: str) -> None:

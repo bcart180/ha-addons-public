@@ -41,6 +41,45 @@ async def test_handle_command_mark_heard_and_guards(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_handle_command_request_callback_queues_and_does_not_dial(monkeypatch, tmp_path):
+    mod = _load(monkeypatch, tmp_path)
+    fired = []
+    services = []
+
+    async def fake_fire(_session, event_type, data):
+        fired.append((event_type, data))
+        return 200, {"ok": True, "mock": True}
+
+    async def fake_service(*_args, **_kwargs):
+        services.append(True)
+        return 200, {}
+
+    mod.ha_fire_event = fake_fire
+    mod.ha_call_service = fake_service
+    async with TestClient(TestServer(mod.make_app())) as client:
+        app = client.server.app
+        store, vid = _seed(mod, app)
+        assert (await mod.handle_command(app, {"cmd": "place_phone_call", "voicemail_id": vid}))["error"] == "unknown-cmd"
+        dry = await mod.handle_command(app, {"cmd": "request_callback", "voicemail_id": vid, "dry_run": True})
+        assert dry["dry_run"] is True
+        assert store.get(vid)["callback_status"] == ""
+        first = await mod.handle_command(app, {"cmd": "request_callback", "voicemail_id": vid})
+        assert first["ok"] is True and first["event_fired"] is True and first["idempotent"] is False
+        assert store.get(vid)["callback_status"] == "pending"
+        assert store.get(vid)["followup_state"] == "queued"
+        second = await mod.handle_command(app, {"cmd": "request_callback", "voicemail_id": vid})
+        assert second["idempotent"] is True and second["event_fired"] is False
+        missing = await mod.handle_command(app, {"cmd": "request_callback", "voicemail_id": "nope555"})
+        assert missing["error"] == "not-found"
+    assert services == []
+    assert len(fired) == 1
+    assert fired[0][0] == "callcatch_callback_requested"
+    assert set(fired[0][1]) == {"voicemail_id", "from_masked", "display_name", "summary", "requested_at"}
+    assert fired[0][1]["from_masked"] == "•••0120"
+    assert "5555550120" not in repr(fired[0][1]) and "+15555550120" not in repr(fired[0][1])
+
+
+@pytest.mark.asyncio
 async def test_listener_auths_subscribes_and_applies_event(monkeypatch, tmp_path):
     mod = _load(monkeypatch, tmp_path)
     frames = []

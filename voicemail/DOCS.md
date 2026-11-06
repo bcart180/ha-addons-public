@@ -271,13 +271,13 @@ A blocked number is rejected only when the carrier attests it at STIR level A. O
 `blueprints/callcatch_new_voicemail.yaml` is an automation blueprint. To use it, go to Settings → Automations & Scenes → Blueprints → Import and paste the raw GitHub URL. Then create one automation per phone.
 
 - **One push per new voicemail.** It triggers when the newest `recent_items` entry on `sensor.inbound_voicemails` changes and is unheard. The push shows the caller, a "caller ID verified" or "failed check" label from STIR/SHAKEN (a label only), and the first transcript line.
-- **Buttons:** Call back (`tel:`), Mark heard, Block, Open CallCatch (the ingress panel `/47b3c4e5_voicemail`). Withheld or non-numeric callers get no Call back or Block button.
-- **Action IDs** are `ACTION_<context.id>_HEARD|BLOCK|UNDO`, so two notifications can never answer each other.
-- **Mark heard** fires the HA event `callcatch_command` `{cmd: mark_heard, voicemail_id}`. CallCatch subscribes to that one event on the Supervisor Core websocket with its own Supervisor token and ignores every other `cmd`.
-- **Block** runs `hassio.addon_stdin` on CallCatch Voice (`{cmd: block, number}`), then replaces the same notification (same tag, passive) with **Undo** (10 min).
-- **Undo only unblocks** (`{cmd: unblock}`). It does not restore an earlier state: if the number was on the allow list before Block, it is not put back (re-add it in Numbers), and if you had already blocked it by hand, Undo removes that block too. The inbox's own Undo restores the previous list exactly.
+- **Buttons:** Call back, Mark heard, Open CallCatch (the ingress panel `/47b3c4e5_voicemail`). Call back is shown for a known caller (sensor `caller_masked` is `•••` plus 4 digits, or `known_contact`). Withheld callers get Mark heard and Open CallCatch only. The push has no `tel:` link.
+- **Action IDs** are `ACTION_<context.id>_CALLBACK|HEARD`, so two notifications can never answer each other.
+- **Call back** fires `callcatch_command` `{cmd: request_callback, voicemail_id}`. CallCatch queues `callback_status=pending` and fires `callcatch_callback_requested` with a masked number. A second press while pending does not fire another event. This does not dial.
+- **Mark heard** fires `callcatch_command` `{cmd: mark_heard, voicemail_id}`. CallCatch subscribes to that event on the Supervisor Core websocket with its own Supervisor token and ignores every other `cmd`.
+- **Block** is not on the push. The sensor has no full number, so the push cannot block. Report Spam in the inbox still adds the number to the CallCatch Voice block list.
 - **Quiet hours** (default 00:00–06:00, HA local time, which is ET for this house) deliver silently: iOS `interruption-level: passive` with no sound, and the Android `CallCatch quiet` channel at low importance.
-- **`dry_run` defaults to ON.** It writes a logbook line ("Would notify…") and stops: no push, no block, no mark heard.
+- **`dry_run` defaults to ON.** It writes a logbook line ("Would notify…") and stops: no push, no queue, no mark heard.
 - **Exactly one push per voicemail.** Today `pyscript/inbound_voicemail.py` sends the voicemail push (`notify.mobile_app_<your_phone>`, tag `voicemail_<short_id>`). The blueprint pushes only when `sensor.voicemail_pipeline` reports `push_owner: blueprint`. Any other value, or no value, means it logs "skipped" and stops. It also uses the same tag and `apns-collapse-id`, so an overlap would replace in place rather than stack.
 - **Keep the blueprint's dry_run ON until the pyscript `inbound_voicemail.py` push is turned off** (set `PUSH_OWNER = "blueprint"` there, staged separately in ha-automation-tests, which needs its own CoS GO). Do not change pyscript from this add-on.
 

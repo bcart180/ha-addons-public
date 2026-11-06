@@ -9,6 +9,7 @@
 - **Quieter counts.** The badge counts `needs_callback`, not unheard. Hangups under 5 seconds and spam stay out of that count. Quiet hours default to midnight–06:00 America/New_York. The notification blueprint holds alerts in that window except an urgent voicemail from a known contact. Mail routing is unchanged.
 - **Unused Soft Slate file removed.** `soft-slate.css` was not loaded. The Plaid theme stays.
 - No new options, secrets, or dry_run change. This add-on still does not dial.
+- **Push Call back queues.** The notification Call back button no longer builds a `tel:` link from `newest.caller` (the sensor does not publish that field, so the button could not render). For a known caller — masked last-4 or a saved contact — it fires `callcatch_command` `{cmd: request_callback, voicemail_id}`, the same pending queue as the inbox. It does not dial. Withheld callers get no Call back button. Blocking stays in the inbox.
 
 ## 0.5.7 — 2026-11-05
 

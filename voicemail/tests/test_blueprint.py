@@ -35,12 +35,12 @@ def _render(template: str, at: str, **vars):
         return out
 
 
-def _vars(at="14:00", caller="+15555550130"):
+def _vars(at="14:00", caller_masked="•••0130", known_contact=False):
     v = _bp()["variables"]
+    newest = {"short_id": "AB12", "caller_masked": caller_masked, "known_contact": known_contact}
     ctx = {"quiet_start": "00:00:00", "quiet_end": "06:00:00", "open_path": "/47b3c4e5_voicemail",
-           "voicemail_id": "vm555", "caller": caller, "newest": {"short_id": "AB12"},
-           "context": {"id": "01CTX555"}}
-    for key in ("can_call", "quiet", "push_tag", "action_heard", "action_block", "action_undo"):
+           "voicemail_id": "vm555", "newest": newest, "context": {"id": "01CTX555"}}
+    for key in ("caller_masked", "known_contact", "can_queue", "quiet", "push_tag", "action_heard", "action_callback"):
         ctx[key] = _render(v[key], at, **ctx)
     ctx["push_data"] = _render(v["push_data"], at, **ctx)
     return ctx
@@ -54,9 +54,11 @@ def test_inputs_defaults_are_safe():
     assert inputs["open_path"]["default"] == "/47b3c4e5_voicemail"
     assert inputs["quiet_start"]["default"] == "00:00:00" and inputs["quiet_end"]["default"] == "06:00:00"
     text = BP.read_text(encoding="utf-8")
-    # Actions reach add-ons only through HA (event bus / Supervisor stdin), never add-on URLs.
+    # The push reaches CallCatch only through the HA event bus. It does not dial.
     assert "http://" not in text and "rest_command" not in text and "shell_command" not in text
-    assert "callcatch_command" in text and "hassio.addon_stdin" in text
+    assert "tel:" not in text and "hassio.addon_stdin" not in text
+    assert re.search(r"newest\.caller(?!_)", text) is None
+    assert "callcatch_command" in text and "request_callback" in text
 
 
 def test_dry_run_stops_before_any_push():
@@ -68,19 +70,26 @@ def test_dry_run_stops_before_any_push():
 
 def test_action_ids_unique_per_notification_and_buttons():
     ctx = _vars()
+    assert ctx["can_queue"] is True
     assert ctx["action_heard"] == "ACTION_01CTX555_HEARD"
-    assert ctx["action_block"] == "ACTION_01CTX555_BLOCK"
+    assert ctx["action_callback"] == "ACTION_01CTX555_CALLBACK"
     acts = ctx["push_data"]["actions"]
-    assert [a["title"] for a in acts] == ["Call back", "Mark heard", "Block", "Open CallCatch"]
-    assert acts[0] == {"action": "URI", "title": "Call back", "uri": "tel:+15555550130"}
-    assert acts[3]["uri"] == "/47b3c4e5_voicemail"
+    assert [a["title"] for a in acts] == ["Call back", "Mark heard", "Open CallCatch"]
+    assert acts[0] == {"action": "ACTION_01CTX555_CALLBACK", "title": "Call back"}
+    assert "uri" not in acts[0]
+    assert acts[2]["uri"] == "/47b3c4e5_voicemail"
     assert ctx["push_data"]["push"]["interruption-level"] == "active"
     # Same tag / collapse id as the pyscript push, so any overlap replaces in place.
     assert ctx["push_data"]["tag"] == "voicemail_AB12"
     assert ctx["push_data"]["apns_headers"] == {"apns-collapse-id": "voicemail_AB12"}
-    # Withheld numbers get no Call back / Block button.
-    anon = _vars(caller="anonymous")
+    # A saved contact with no masked digits still gets the queue button.
+    named = _vars(caller_masked="", known_contact=True)
+    assert [a["title"] for a in named["push_data"]["actions"]] == ["Call back", "Mark heard", "Open CallCatch"]
+    # Withheld callers get no Call back button. The push never dials.
+    anon = _vars(caller_masked="", known_contact=False)
     assert [a["title"] for a in anon["push_data"]["actions"]] == ["Mark heard", "Open CallCatch"]
+    raw = _vars(caller_masked="+15555550130", known_contact=False)
+    assert [a["title"] for a in raw["push_data"]["actions"]] == ["Mark heard", "Open CallCatch"]
 
 
 def test_quiet_hours_are_silent():
