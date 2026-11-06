@@ -1,0 +1,27 @@
+name: Usage
+version: "0.1.0"
+slug: usage_dashboard
+description: Weekly Grok Bot usage snapshot, read-only sidebar panel
+url: https://github.com/bcart180/ha-usage-dashboard
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: application
+boot: auto
+# Sidebar panel behind the HA login. No host ports are published.
+ingress: true
+ingress_port: 8098
+panel_icon: mdi:chart-donut
+panel_title: Usage
+# The panel is admin-only because that is the Supervisor default for ingress.
+# No Home Assistant API, no /config, no /share. Nothing is written outside /data.
+homeassistant_api: false
+backup: hot
+watchdog: http://[HOST]:[PORT:8098]/api/health
+options:
+  snapshot_path: /data/usage_snapshot.json
+  log_level: info
+schema:
+  snapshot_path: str
+  log_level: list(debug|info|warning|error)

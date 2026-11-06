@@ -10,6 +10,7 @@ Home Assistant add-on repository.
 | [Smart HVAC](smart_hvac/) | Smart thermostat for multi-zone mini-split systems: all heads share one outdoor unit, so they always stay in the same heat/cool mode. Presence/weather/sun-aware, plus radiant floor (Ingress panel "Climate"). Installs **off + dry run**. |
 | [Tesla Smart Charge](tesla_smart_charge/) | Lowest-amp off-peak Tesla charging that hits your target by departure. BLE first with cloud fallback; charge-now, pause and trip-mode helpers. Installs in **dry run**. |
 | [Social Pulse](social_pulse/) | Read-only X engagement + Cloudflare site traffic dashboard (Ingress panel). Tokens are password options only. |
+| [Usage](usage_dashboard/) | Read-only weekly Grok Bot usage snapshot (Ingress panel "Usage"). Canonical source: https://github.com/bcart180/ha-usage-dashboard |
 
 ## Install
 Settings → Apps → App Store → ⋮ → Repositories → add
@@ -36,6 +37,9 @@ cd voicemail && VM_MOCK=1 VM_ALLOW= ../venv/bin/python rootfs/app/server.py
 
 # Social Pulse (stdlib only, real-sample fixtures):
 python3 social_pulse/tests/test_social_pulse.py
+
+# Usage (stdlib only, bundled snapshot):
+python3 usage_dashboard/tests/test_usage_dashboard.py
 ```
 
 ## Docs
