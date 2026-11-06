@@ -1,7 +1,7 @@
 name: Social Pulse
-version: "0.2.1"
+version: "0.3.0"
 slug: social_pulse
-description: Read-only dashboard of X account engagement and Cloudflare site traffic (Ingress panel)
+description: Read-only X engagement and Cloudflare edge traffic, plus sampled Web Analytics when the token allows (Ingress panel)
 url: https://github.com/bcart180/ha-addons-public/tree/main/social_pulse
 arch:
   - aarch64
