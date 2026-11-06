@@ -1,0 +1,173 @@
+{
+  "schema_version": 1,
+  "source": "Grok Bot weekly report",
+  "source_tool": "CheckSubscriptionUsage",
+  "plan": "Ultra",
+  "snapshot_at": "2026-11-05T20:02:00-05:00",
+  "snapshot_label": "Nov 5, 2026, 8:02 PM ET",
+  "timezone": "America/New_York",
+  "week": {
+    "label": "This week",
+    "start_date": "2026-11-03",
+    "end_date": "2026-11-06",
+    "range_label": "Nov 3–Nov 6 UTC"
+  },
+  "weekly_limit": {
+    "used_percent": 37.4,
+    "shared_across_apps": true,
+    "grok_bot_percentage_points": 32.7,
+    "resets_at": "2026-11-10T14:44:00-05:00",
+    "resets_label": "Tue, Nov 10, 2026 · 2:44 PM ET",
+    "until_reset_at_snapshot": "4d 18h"
+  },
+  "extra_usage": {
+    "comes_from": "additional usage credits",
+    "dollar_figures_included": false
+  },
+  "activity_overall": {
+    "bot_to_bot_percent": 60,
+    "chats_percent": 26,
+    "routines_percent": 14,
+    "approximate": true,
+    "note": "Approximate from the source page. Bot rows are independently rounded."
+  },
+  "activities": ["Chats", "Routines", "Bot-to-Bot"],
+  "bots": [
+    {
+      "name": "VP",
+      "share_percent": 32,
+      "activity": [
+        {"name": "Chats", "percent": 6},
+        {"name": "Routines", "percent": "<1"},
+        {"name": "Bot-to-Bot", "percent": 26}
+      ]
+    },
+    {
+      "name": "Chief of Staff",
+      "share_percent": 24,
+      "activity": [
+        {"name": "Chats", "percent": 15},
+        {"name": "Routines", "percent": 4},
+        {"name": "Bot-to-Bot", "percent": 5}
+      ]
+    },
+    {
+      "name": "Security Audit",
+      "share_percent": 14,
+      "activity": [
+        {"name": "Chats", "percent": "<1"},
+        {"name": "Routines", "percent": "<1"},
+        {"name": "Bot-to-Bot", "percent": 14}
+      ]
+    },
+    {
+      "name": "Director, Airbnb",
+      "share_percent": 7,
+      "activity": [
+        {"name": "Chats", "percent": "<1"},
+        {"name": "Routines", "percent": "<1"},
+        {"name": "Bot-to-Bot", "percent": 7}
+      ]
+    },
+    {
+      "name": "Director, Inbox",
+      "share_percent": 7,
+      "activity": [
+        {"name": "Chats", "percent": "<1"},
+        {"name": "Routines", "percent": 6},
+        {"name": "Bot-to-Bot", "percent": 1}
+      ]
+    },
+    {
+      "name": "Side Hustle CEO",
+      "share_percent": 4,
+      "activity": [
+        {"name": "Chats", "percent": 2},
+        {"name": "Routines", "percent": 2},
+        {"name": "Bot-to-Bot", "percent": "<1"}
+      ]
+    },
+    {
+      "name": "Desk Lead",
+      "share_percent": 3,
+      "activity": [
+        {"name": "Chats", "percent": "<1"},
+        {"name": "Routines", "percent": 1},
+        {"name": "Bot-to-Bot", "percent": 2}
+      ]
+    },
+    {
+      "name": "Director, Tesla",
+      "share_percent": 2,
+      "activity": [
+        {"name": "Chats", "percent": 1},
+        {"name": "Routines", "percent": "<1"},
+        {"name": "Bot-to-Bot", "percent": 1}
+      ]
+    },
+    {
+      "name": "Director, Hideaway",
+      "share_percent": 2,
+      "activity": [
+        {"name": "Chats", "percent": "<1"},
+        {"name": "Routines", "percent": "<1"},
+        {"name": "Bot-to-Bot", "percent": 2}
+      ]
+    },
+    {
+      "name": "Director, YouTube & X Research",
+      "share_percent": 1,
+      "activity": [
+        {"name": "Chats", "percent": "<1"},
+        {"name": "Routines", "percent": "<1"},
+        {"name": "Bot-to-Bot", "percent": 1}
+      ]
+    },
+    {
+      "name": "Strategist",
+      "share_percent": 1,
+      "activity": [
+        {"name": "Chats", "percent": "<1"},
+        {"name": "Routines", "percent": "<1"},
+        {"name": "Bot-to-Bot", "percent": 1}
+      ]
+    },
+    {
+      "name": "Market Analyst",
+      "share_percent": 1,
+      "activity": [
+        {"name": "Chats", "percent": "<1"},
+        {"name": "Routines", "percent": "<1"},
+        {"name": "Bot-to-Bot", "percent": 1}
+      ]
+    },
+    {
+      "name": "Execution Trader",
+      "share_percent": 1,
+      "activity": [
+        {"name": "Chats", "percent": "<1"},
+        {"name": "Routines", "percent": 1},
+        {"name": "Bot-to-Bot", "percent": "<1"}
+      ]
+    },
+    {
+      "name": "Savings",
+      "share_percent": "<1",
+      "activity": null
+    },
+    {
+      "name": "Grok Bot Efficiency Optimizer",
+      "share_percent": "<1",
+      "activity": null
+    },
+    {
+      "name": "Other bots",
+      "share_percent": 1,
+      "activity": [
+        {"name": "Chats", "percent": "<1"},
+        {"name": "Routines", "percent": "<1"},
+        {"name": "Bot-to-Bot", "percent": 1}
+      ]
+    }
+  ]
+}
