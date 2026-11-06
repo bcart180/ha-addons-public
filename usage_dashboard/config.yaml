@@ -14,8 +14,9 @@ ingress: true
 ingress_port: 8098
 panel_icon: mdi:chart-donut
 panel_title: Usage
-# The panel is admin-only because that is the Supervisor default for ingress.
-# No Home Assistant API, no /config, no /share. Nothing is written outside /data.
+panel_admin: true
+# The panel is admin-only. No Home Assistant API, no /config, no /share.
+# Nothing is written outside /data.
 homeassistant_api: false
 backup: hot
 watchdog: http://[HOST]:[PORT:8098]/api/health
