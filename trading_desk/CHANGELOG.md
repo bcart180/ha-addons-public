@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2 — 2026-11-06
+
+- Presentation only: calm 2022 Model S Plaid surfaces (near-black cards, hairline borders, light-weight figures, quiet pills). Green and red stay on gain/loss and status. No data, order, or API changes. Still read-only.
+- Main-tab chart axis and grid use the same dark hairline colors (presentation constants only).
+
 ## 0.3.1 — 2026-11-02
 
 - Remove '(new)' name suffix; no functional change.
