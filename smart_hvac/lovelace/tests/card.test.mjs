@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { buildRequest, clampSetpoint, buildSeries, statusOf, graphSvg, fmtTime, canWrite, ingressCookie,
-  openIngress, postWrite, DEFAULT_ZONES, ADDON_SLUG, radiantCap, buildPreset, getState, nextLine, eventSpans,
+  openIngress, postWrite, DEFAULT_ZONES, ADDON_SLUG, LEGACY_SLUG, radiantCap, buildPreset, getState, nextLine, eventSpans,
   eventStrip, PRESETS, mergeDefrostEvents } from "../smart-hvac-card.js";
 
 const [LR, , BATH] = DEFAULT_ZONES;
@@ -47,6 +47,23 @@ test("admin: write goes POST through ingress with a session cookie (dedicated WS
   assert.equal(JSON.parse(f.calls[0].body).temperature, 72);
   assert.match(doc.cookie, /^ingress_session=S1;path=\/api\/hassio_ingress\/;SameSite=Strict;Secure$/);
   assert.equal(hass.ws[0].slug, ADDON_SLUG);
+});
+
+test("ingress tries the previous slug when the current one has no session", async () => {
+  assert.equal(ADDON_SLUG, "a1d3bd4b_smart_hvac");
+  assert.equal(LEGACY_SLUG, "47b3c4e5_smart_hvac");
+  const calls = [];
+  const hass = { user: { is_admin: true }, async callWS(m) {
+    calls.push((m.slug || "") + " " + m.type);
+    if (m.slug === ADDON_SLUG) throw new Error("unknown slug");
+    if (m.type === "supervisor/ingress/session") return { session: "OLD" };
+    if (m.type === "supervisor/ingress/info") return { ingress_url: "/api/hassio_ingress/LEG/" };
+    throw new Error(m.type);
+  } };
+  const doc = { cookie: "", location: { protocol: "http:" } };
+  assert.equal(await openIngress(hass, ADDON_SLUG, doc), "/api/hassio_ingress/LEG/");
+  assert.ok(calls.some((c) => c.startsWith(ADDON_SLUG)));
+  assert.ok(calls.some((c) => c.startsWith(LEGACY_SLUG)));
 });
 
 test("admin on older core: falls back to supervisor/api tunnel", async () => {

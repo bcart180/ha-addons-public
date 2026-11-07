@@ -19,7 +19,9 @@
  *   type: custom:smart-hvac-card
  *   layout: heater    # 0.8.2: ONLY the spare bathroom heater card (no zones needed)
  */
-export const ADDON_SLUG = "47b3c4e5_smart_hvac";
+export const ADDON_SLUG = "a1d3bd4b_smart_hvac";
+/** Previous Supervisor slug. Still tried if the current slug has no ingress session. Do not remove. */
+export const LEGACY_SLUG = "47b3c4e5_smart_hvac";
 export const RADIANT_CAP = 85;
 export const VACATION_ENTITY = "input_boolean.vacation_mode";
 export const DEFAULT_ZONES = [
@@ -149,7 +151,7 @@ export function ingressCookie(session, https) {
 
 /** Sanctioned frontend mechanism: dedicated supervisor/ingress/* commands, falling back to the
  * admin-only supervisor/api tunnel on older cores. Returns the add-on's ingress base URL. */
-export async function openIngress(hass, slug, doc) {
+async function openIngressOne(hass, slug, doc) {
   let session, url;
   try { session = (await hass.callWS({ type: "supervisor/ingress/session", slug })).session; }
   catch (e) { session = (await hass.callWS({ type: "supervisor/api", endpoint: "/ingress/session", method: "post" })).session; }
@@ -158,6 +160,17 @@ export async function openIngress(hass, slug, doc) {
   if (!session || !url) throw new Error("no ingress");
   doc.cookie = ingressCookie(session, doc.location?.protocol === "https:");
   return url.endsWith("/") ? url : url + "/";
+}
+
+/** Current slug first. The previous slug stays a fallback so older installs still open. */
+export async function openIngress(hass, slug, doc) {
+  const slugs = slug === ADDON_SLUG ? [ADDON_SLUG, LEGACY_SLUG] : [slug];
+  let err;
+  for (const s of slugs) {
+    try { return await openIngressOne(hass, s, doc); }
+    catch (e) { err = e; }
+  }
+  throw err || new Error("no ingress");
 }
 
 /** POST one card write to the add-on through ingress. Re-opens the session once on 401. */

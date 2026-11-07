@@ -175,6 +175,7 @@ class Engine:
             except (OSError, ValueError):
                 pass
         self._sanitize_state()
+        self._sanitize_prefs()
         # After a restart every "off" is treated as a person's off (M1), like the pyscript version.
         self.st["app_off"] = []
 
@@ -256,6 +257,27 @@ class Engine:
                 log.debug("state: malformed last_result zone %s dropped", name)
                 lr["zones"].pop(name)
 
+    def _sanitize_prefs(self):
+        """Drop a malformed preference blob. Absent prefs stay absent (older state files)."""
+        if "prefs" not in self.st:
+            return
+        p = self.st.get("prefs")
+        if not isinstance(p, dict):
+            log.debug("state: prefs is %s, not an object; dropped", type(p).__name__)
+            self.st.pop("prefs", None)
+            return
+        glob = p.get("global") if isinstance(p.get("global"), dict) else {}
+        zones = p.get("zones") if isinstance(p.get("zones"), dict) else {}
+        clean_g = {k: float(v) for k, v in glob.items() if k in self.PREF_KEYS and _num(v) is not None}
+        clean_z = {}
+        for name, row in zones.items():
+            if not isinstance(name, str) or not isinstance(row, dict):
+                continue
+            kept = {k: float(v) for k, v in row.items() if k in self.PREF_KEYS and _num(v) is not None}
+            if kept:
+                clean_z[name] = kept
+        self.st["prefs"] = {"global": clean_g, "zones": clean_z}
+
     def save(self):
         if not self.state_path:
             return
@@ -296,13 +318,81 @@ class Engine:
                 c[k] = float(self.opts[k])
         c["radiant_room_cap"] = self.radiant_room_cap  # air shutoff, default 80, clamp 85
         c["radiant_setpoint_max"] = self.radiant_setpoint_max  # 0.5.0: clamps a radiant window restore
+        glob = (self.st.get("prefs") or {}).get("global") if isinstance(self.st.get("prefs"), dict) else None
+        if isinstance(glob, dict):
+            for key in ("home", "guest", "sleep", "away_heat", "away_cool"):
+                if _num(glob.get(key)) is not None:
+                    c[key] = float(glob[key])
         # per-zone targets (radiant floor): comfort -> home/guest, sleep, away -> both away targets
         for src, dst in (("comfort", ("home", "guest")), ("sleep", ("sleep",)),
                          ("away", ("away_heat", "away_cool"))):
             if _num(zone.get(src)) is not None:
                 for k in dst:
                     c[k] = float(zone[src])
+        saved = None
+        if isinstance(self.st.get("prefs"), dict):
+            saved = (self.st["prefs"].get("zones") or {}).get(zone.get("name"))
+        if isinstance(saved, dict):
+            # A saved preference is the schedule target. It is not a hold.
+            for key in ("home", "sleep", "away_heat", "away_cool"):
+                if _num(saved.get(key)) is not None:
+                    c[key] = float(saved[key])
+            if _num(saved.get("home")) is not None:
+                c["guest"] = float(saved["home"])
         return c
+
+    PREF_KEYS = ("home", "sleep", "away_heat", "away_cool")
+
+    def _pref_bucket(self):
+        p = self.st.get("prefs")
+        if not isinstance(p, dict):
+            p = {"global": {}, "zones": {}}
+            self.st["prefs"] = p
+        if not isinstance(p.get("global"), dict):
+            p["global"] = {}
+        if not isinstance(p.get("zones"), dict):
+            p["zones"] = {}
+        return p
+
+    def set_zone_preference(self, name, key, temperature):
+        """Save a schedule comfort target. Does not start a hold and does not touch the climate entity."""
+        zone = self.zone(name)
+        if zone is None or key not in self.PREF_KEYS:
+            raise ValueError("bad preference")
+        t = _num(temperature)
+        if t is None:
+            raise ValueError("bad temperature")
+        t = round(float(t) * 2) / 2.0
+        hi = self.radiant_setpoint_max if zone.get("heat_only") else 84.0
+        if not 55 <= t <= hi:
+            raise ValueError("out of range")
+        z = self._pref_bucket()["zones"].setdefault(name, {})
+        z[key] = t
+        self.save()
+        return t
+
+    def preference_view(self, zone):
+        """Effective schedule targets and where each number came from. Read-only."""
+        cfg = self._cfg(zone)
+        out = {}
+        saved = {}
+        if isinstance(self.st.get("prefs"), dict):
+            saved = (self.st["prefs"].get("zones") or {}).get(zone.get("name")) or {}
+        glob = {}
+        if isinstance(self.st.get("prefs"), dict) and isinstance(self.st["prefs"].get("global"), dict):
+            glob = self.st["prefs"]["global"]
+        opt_key = {"home": "comfort", "sleep": "sleep", "away_heat": "away", "away_cool": "away"}
+        for key in self.PREF_KEYS:
+            if _num(saved.get(key)) is not None:
+                source = "zone"
+            elif _num(zone.get(opt_key[key])) is not None:
+                source = "zone_option"
+            elif _num(glob.get(key)) is not None:
+                source = "saved_schedule"
+            else:
+                source = "schedule"
+            out[key] = {"temperature": cfg.get(key), "source": source}
+        return out
 
     def _get(self, states, eid):
         if not eid:
@@ -369,6 +459,14 @@ class Engine:
         scheduled setpoint instead of mistaking the card's own write for a new manual change."""
         self.st["override_until"].pop(name, None)
         self.st["last_cmd"].pop(name, None)
+        self.save()
+
+    def resume_all(self):
+        """Drop every zone hold. Does not change the global schedule profile."""
+        for z in self.opts.get("zones", []) or []:
+            name = z.get("name")
+            self.st["override_until"].pop(name, None)
+            self.st["last_cmd"].pop(name, None)
         self.save()
 
     def note_card_write(self, name, mode=None, setpoint=None, fan_mode=None):
@@ -608,7 +706,8 @@ class Engine:
         secs = self.HISTORY_RANGES[rng]
         now = self.clock()
         start = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(now - secs))
-        ents = [e for e in (zone.get("climate"), zone.get("indoor"), self.opts.get("weather_entity")) if e]
+        ents = [e for e in (zone.get("climate"), zone.get("indoor"), zone.get("humidity"),
+                            self.opts.get("weather_entity")) if e]
         raw = self.ha.get_history(ents, start) or []
         by = {}
         for series in raw:
@@ -624,7 +723,7 @@ class Engine:
             except ValueError:
                 return None
 
-        indoor, setpt, heat, outdoor, defrost_raw = [], [], [], [], []
+        indoor, setpt, heat, cool, outdoor, humid, defrost_raw = [], [], [], [], [], [], []
         for row in by.get(zone.get("climate"), []):
             t, a = ts(row), row.get("attributes") or {}
             if t is None:
@@ -635,7 +734,10 @@ class Engine:
             act = a.get("hvac_action")
             on = st not in ("off", None) and (act == "heating" if act else st == "heat")
             heat.append([int(t), 1 if on else 0])
+            cool.append([int(t), 1 if st not in ("off", None) and act == "cooling" else 0])
             defrost_raw.append([int(t), 1 if st not in ("off", None) and act in DEFROST_ACTIONS else 0])
+            if _num(a.get("current_humidity")) is not None and not zone.get("humidity"):
+                humid.append([int(t), _num(a.get("current_humidity"))])
             setpt.append([int(t), _num(a.get("temperature")) if st not in ("off", None) else None])
             if not zone.get("indoor") and _num(a.get("current_temperature")) is not None:
                 indoor.append([int(t), _num(a.get("current_temperature"))])
@@ -643,6 +745,10 @@ class Engine:
             t, v = ts(row), _num(row.get("state"))
             if t is not None and v is not None:
                 indoor.append([int(t), v])
+        for row in by.get(zone.get("humidity"), []) if zone.get("humidity") else []:
+            t, v = ts(row), _num(row.get("state"))
+            if t is not None and v is not None:
+                humid.append([int(t), v])
         for row in by.get(self.opts.get("weather_entity"), []):
             t, v = ts(row), _num((row.get("attributes") or {}).get("temperature"))
             if t is not None and v is not None:
@@ -661,8 +767,8 @@ class Engine:
             self.st.get("events", {}).get(zone["name"], []), "defrost", now - secs, now)
         defrost = _intervals_to_steps(_union_intervals(div))
         return {"zone": zone["name"], "range": rng, "start": int(now - secs), "end": int(now),
-                "indoor": thin(indoor), "setpoint": thin(setpt), "heating": thin(heat),
-                "defrost": defrost, "outdoor": thin(outdoor)}
+                "indoor": thin(indoor), "setpoint": thin(setpt), "heating": thin(heat), "cooling": thin(cool),
+                "humidity": thin(humid), "defrost": defrost, "outdoor": thin(outdoor)}
 
     # ---------- main loop ----------
     def evaluate(self):
@@ -1131,9 +1237,11 @@ class Engine:
                 "vacation_heat": self.vacation_targets()[0], "vacation_cool": self.vacation_targets()[1],
                 "radiant_floor_cap": _num(self.opts.get("radiant_floor_cap")) or core.DEFAULTS.get("radiant_floor_cap"),
                 "shared_mode": getattr(self, "shared_mode", None),
+                "preferences": {z["name"]: self.preference_view(z) for z in self.opts.get("zones", []) or []},
                 "zones": [{"name": z["name"], "label": z.get("label", z["name"]),
                            "heat_only": bool(z.get("heat_only")),
                            "override_until": self.st["override_until"].get(z["name"]),
+                           "preferences": self.preference_view(z),
                            "history": self.st["history"].get(z["name"], []),
                            "events": self.events(z["name"], self.clock() - 86400)}
                           for z in self.opts.get("zones", []) or []],

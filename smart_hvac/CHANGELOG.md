@@ -1,3 +1,14 @@
+## 0.9.0 — 2026-11-07
+
+- New Climate screen at the ingress panel (`/`). It is the add-on itself, using the existing ingress APIs. The previous dial layout stays at `/classic`. The thermostat card page stays at `/thermostat`. The Lovelace card still works and still links into this panel.
+- Schedule preferences are separate from temporary holds. `POST /api/zone/<name>/preference` saves a Home, Sleep, or Away temperature for that room and does not start a hold. `POST /api/zone/<name>/override` with a required `hours` (0.5–12) is the only new way to hold a temperature, and the duration is the one you send. The old `POST /api/zone/<name>/setpoint` path is unchanged and still holds for `override_hours` (2 h) so existing cards keep working.
+- The screen shows Full Auto versus a manual Home/Sleep/Away profile, the resolved profile, presence, the reason for the target, and the next schedule change. A temporary hold shows its end time and a Resume automatic control for one room or every room (`POST /api/resume-all`). Opening the screen only reads state.
+- Fan Auto is labeled as a fan speed, not as Full Auto.
+- History adds humidity when a humidity sensor or climate humidity is already configured, plus a cooling series next to heating and defrost. Runtime minutes are counted from those series. No energy, cost, or efficiency figure is calculated.
+- Lovelace default slug is `a1d3bd4b_smart_hvac`. `47b3c4e5_smart_hvac` is still tried if the current slug has no ingress session.
+- Security: same ingress-only boundary, no new port, dependency, CDN, telemetry, or privilege. Preference numbers are stored in the add-on’s existing `/data/state.json`. Rollback is the previous add-on version; unknown `prefs` in that file are ignored by 0.8.9.
+- Mode lock, defrost, short-cycle, and the spare heater are unchanged.
+
 ## 0.8.9 — 2026-11-05
 
 - Heat-pump defrost is on by default (`defrost_aware: true`). A zone whose `hvac_action` is `defrosting` or `preheating` is not a manual change and not a missed setpoint, so the app does not chase the setpoint that cycle. It is not counted as heat delivered. The zone payload includes `defrosting`. The short-cycle guard still blocks a heat/cool flip inside the minimum cycle, including the 10 minutes after a defrost ends (SA M1).

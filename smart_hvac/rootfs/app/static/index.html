@@ -1,76 +1,446 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8">
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Smart HVAC</title>
+<title>Climate</title>
 <style>
-/* Soft Slate tokens, dark "Tesla" variant (same accent/status colors as house-soft-slate-theme). */
-:root{--bg:#0e1318;--elev:#151c23;--card:#1a222b;--text:#e8eef4;--dim:#8a9bac;--line:#2a3540;
---accent:#2a9d8f;--accent-h:#21867a;--good:#2f9e6b;--bad:#c94c4c;--warn:#c9892b;--r:14px;--rc:10px}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);
-font:18px "Segoe UI",system-ui,sans-serif}
-.shell{max-width:960px;margin:0 auto;padding:20px}
-.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
-.header h1{font-size:28px;font-weight:500;margin:0}.dim{color:var(--dim);font-size:15px}
-.notice{background:var(--elev);border-left:4px solid var(--warn);border-radius:var(--rc);padding:10px 14px;margin-bottom:14px;font-size:15px}
-.modes{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
-.btn{background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:var(--rc);
-padding:14px 20px;font-size:17px;cursor:pointer;min-width:84px}
-.btn.primary{background:var(--accent);border-color:var(--accent)}.btn:hover{border-color:var(--accent)}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
-.card{background:var(--card);border-radius:var(--r);padding:18px;box-shadow:0 2px 10px rgba(0,0,0,.35);text-align:center}
-.card h2{font-size:18px;font-weight:500;margin:0 0 6px;color:var(--dim)}
-.dial{width:220px;height:220px}.big{font-size:54px;font-weight:300}.ctrl{display:flex;justify-content:center;gap:16px;margin-top:6px}
-.ctrl .btn{min-width:64px;font-size:26px;padding:6px 0}
-.tag{display:inline-block;padding:3px 10px;border-radius:20px;font-size:14px;background:var(--elev);color:var(--dim);margin-top:8px}
-.tag.heat{color:var(--warn)}.tag.cool{color:var(--accent)}
-canvas{width:100%;height:90px;margin-top:10px}
-.footer{color:var(--dim);font-size:14px;margin-top:18px;text-align:center}
-</style></head><body><div class="shell">
-<div class="header"><h1>Climate</h1><span class="dim" id="sub"></span><a href="thermostat" style="color:var(--accent);font-size:15px;text-decoration:none">Thermostat cards →</a></div>
-<div class="notice" id="notice" hidden></div>
-<div class="modes" id="modes"></div>
+:root{
+  --bg:#000;--card:#141414;--elev:#1c1c1c;--line:#2a2a2a;--fg:#fff;--mut:#9a9a9a;--dim:#6e6e6e;
+  --heat:#e8a05a;--cool:#5ec8c5;--bad:#ff8f8f;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:transparent;border:1px solid var(--line);border-radius:12px;min-height:48px;padding:0 16px;cursor:pointer}
+button:disabled{opacity:.35;cursor:default}
+button.on{border-color:var(--fg);color:var(--fg)}
+button.heat.on{border-color:var(--heat);color:var(--heat)}
+button.cool.on{border-color:var(--cool);color:var(--cool)}
+:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+.wrap{max-width:1120px;margin:0 auto;padding:16px 16px 48px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px 16px;padding-bottom:14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:2}
+h1{font-size:22px;font-weight:500;letter-spacing:-.03em;margin:0}
+.pills{display:flex;flex-wrap:wrap;gap:6px}
+.pill{font-size:12px;letter-spacing:.04em;text-transform:uppercase;border:1px solid var(--line);border-radius:999px;padding:6px 10px;color:var(--mut)}
+.pill.auto{color:var(--fg);border-color:#3a3a3a}
+.pill.hold{color:var(--heat);border-color:#5a4632}
+.pill.manual{color:var(--cool);border-color:#2f4a49}
+.sub{flex:1 1 100%;color:var(--mut);font-size:14px;min-height:1.2em}
+.links{margin-left:auto;display:flex;gap:12px;font-size:14px}
+.links a{color:var(--mut);text-decoration:none;min-height:48px;display:flex;align-items:center}
+.banner{margin:14px 0;padding:12px 14px;border:1px solid var(--line);border-radius:12px;color:var(--mut);font-size:14px}
+.banner strong{color:var(--fg);font-weight:500}
+.sched{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
+.grid{display:grid;grid-template-columns:1fr;gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px}
+.zh{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.zh h2{margin:0;font-size:16px;font-weight:500}
+.zh span{color:var(--mut);font-size:13px}
+.now{font-size:84px;font-weight:200;letter-spacing:-.04em;line-height:.9;margin:12px 0 4px;font-variant-numeric:tabular-nums}
+.now small{font-size:32px;font-weight:300}
+.target{font-size:16px;margin:0 0 4px}
+.why{color:var(--mut);font-size:14px;min-height:1.3em;margin:0 0 12px}
+.rowlabel{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin:14px 0 6px}
+.stepper{display:flex;align-items:center;gap:10px}
+.stepper button{width:56px;height:56px;border-radius:50%;font-size:26px;padding:0}
+.stepper b{font-size:28px;font-weight:400;min-width:72px;text-align:center;font-variant-numeric:tabular-nums}
+.hint{color:var(--dim);font-size:13px;margin:6px 0 0}
+.durs{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.durs button{min-width:64px}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.actions button{flex:1 1 160px}
+button.go{background:#1a1a1a}
+.count{color:var(--heat);font-variant-numeric:tabular-nums}
+.modes{display:flex;flex-wrap:wrap;gap:8px}
+.modes button{flex:1}
+.graphhead{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+svg.g{width:100%;height:200px;display:block;margin-top:8px}
+.leg{display:flex;flex-wrap:wrap;gap:12px;color:var(--mut);font-size:12px;margin-top:6px}
+.leg i{display:inline-block;width:14px;height:2px;margin-right:6px;vertical-align:middle}
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.metric{border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.metric b{display:block;font-size:22px;font-weight:400;font-variant-numeric:tabular-nums}
+.metric span{color:var(--mut);font-size:12px}
+details{margin-top:8px;color:var(--mut)}
+details summary{min-height:48px;display:flex;align-items:center;cursor:pointer}
+.prefrow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)}
+.synth{border-color:#5a4632;color:var(--heat)}
+@media(min-width:800px){
+  .wrap{padding:28px 28px 64px}
+  h1{font-size:28px}
+  .now{font-size:104px}
+  .grid{grid-template-columns:1fr 1fr}
+  .wide{grid-column:1 / -1}
+  .metrics{grid-template-columns:repeat(4,1fr)}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Climate</h1>
+  <div class="pills" id="pills"></div>
+  <div class="links"><a href="classic">Earlier layout</a><a href="thermostat">Thermostat cards</a></div>
+  <div class="sub" id="sub"></div>
+</header>
+<div id="banner"></div>
+<div class="sched" id="sched"></div>
 <div class="grid" id="zones"></div>
-<div class="footer">Graph: <span style="color:#e8eef4">inside</span> · <span style="color:#8a9bac">outside</span> · <span style="color:#2a9d8f">target</span></div>
-</div><script>
-const MODES=[["auto","Auto"],["home","Home"],["away","Away"],["sleep","Sleep"],["guest","Guest"]];
-let S=null;
-const esc=t=>String(t).replace(/[&<>"']/g,c=>"&#"+c.charCodeAt(0)+";");
-const $=id=>document.getElementById(id);
-async function api(p,b){const r=await fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{});
- const j=await r.json(); if(!r.ok) throw new Error(j.error||r.status); return j;}
-function arc(v){const lo=55,hi=84,a=Math.max(0,Math.min(1,(v-lo)/(hi-lo)))*270-135,rad=(a-90)*Math.PI/180;
- return [110+90*Math.cos(rad),110+90*Math.sin(rad),a>45?1:0];}
-function dial(t,mode){const col=mode==="cool"?"#2a9d8f":mode==="heat"?"#c9892b":"#5a6b7c";
- const [x,y,l]=arc(t??55);
- return `<svg class="dial" viewBox="0 0 220 220"><path d="M46.4 173.6 A90 90 0 1 1 173.6 173.6" fill="none" stroke="#2a3540" stroke-width="14" stroke-linecap="round"/>
- ${t!=null?`<path d="M46.4 173.6 A90 90 0 ${l} 1 ${x.toFixed(1)} ${y.toFixed(1)}" fill="none" stroke="${col}" stroke-width="14" stroke-linecap="round"/>`:""}
- <text x="110" y="122" text-anchor="middle" fill="#e8eef4" font-size="54" font-weight="300">${t!=null?Math.round(t):"--"}°</text></svg>`;}
-function graph(c,h){const ctx=c.getContext("2d"),W=c.width=c.clientWidth*2,H=c.height=180;ctx.clearRect(0,0,W,H);
- if(h.length<2)return;const vals=h.flatMap(r=>[r[1],r[2],r[3]]).filter(v=>v!=null);
- const lo=Math.min(...vals)-1,hi=Math.max(...vals)+1;
- [[2,"#8a9bac"],[3,"#2a9d8f"],[1,"#e8eef4"]].forEach(([i,col])=>{ctx.strokeStyle=col;ctx.lineWidth=3;ctx.beginPath();let s=false;
-  h.forEach((r,k)=>{if(r[i]==null)return;const x=k/(h.length-1)*W,y=H-(r[i]-lo)/(hi-lo)*H;s?ctx.lineTo(x,y):ctx.moveTo(x,y);s=true;});ctx.stroke();});}
-const REASONS={vacation_setback:"Vacation — setting back",vacation_at_setback:"Vacation — holding the setback",
- vacation_radiant_off:"Vacation — radiant floor stays off"};
+</div>
+<script>
+const MOCK = new URLSearchParams(location.search).has("mock");
+const REASONS = {ok:"Schedule target",no_change:"At the schedule target",manual_override:"Temporary hold",
+  defrosting:"Defrosting — the schedule waits",preheating:"Pre-heating — the schedule waits",
+  short_cycle_guard:"Waiting out the compressor minimum cycle",
+  vacation_setback:"Vacation setback",vacation_at_setback:"Vacation setback",vacation_radiant_off:"Vacation — radiant stays off",
+  unit_off:"Off at the unit",window_open:"Window open",missing_indoor_temp:"Indoor temperature missing",
+  "missing:indoor_temp":"Indoor temperature missing","missing:outdoor_temp":"Outdoor temperature missing",
+  "missing:presence":"Presence unknown — holding the last target",mode_lock:"Matched to the other mini split"};
+const HOURS = [[0.5,"30m"],[1,"1h"],[2,"2h"],[4,"4h"]];
+let S = null, hours = 2, msg = "", hist = {}, histErr = {};
+const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
+const $ = (id) => document.getElementById(id);
+
+async function api(path, body) {
+  if (MOCK) return mockApi(path, body);
+  const r = await fetch(path, body ? {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)} : {});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || String(r.status));
+  return j;
+}
+
+function zoneResult(name){ return ((S && S.last && S.last.zones) || {})[name] || {}; }
+function prefs(z){ return (z.preferences || (S.preferences || {})[z.name] || {}); }
+function resolvedKey(z){
+  const p = zoneResult(z.name).profile;
+  const mode = (zoneResult(z.name).live || {}).mode;
+  if (p === "sleep") return "sleep";
+  if (p === "away" || p === "vacation") return mode === "cool" ? "away_cool" : "away_heat";
+  return "home";
+}
+function prefLabel(key){ return {home:"Home",sleep:"Sleep",away_heat:"Away heat",away_cool:"Away cool"}[key] || key; }
+function sourceLabel(src){
+  return {zone:"saved for this room",zone_option:"set in the configuration",saved_schedule:"saved schedule",schedule:"schedule default"}[src] || "schedule";
+}
+function fmtClock(ts){
+  if (ts == null) return "";
+  return new Date(ts * 1000).toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
+}
+function fmtDur(sec){
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+  if (h <= 0) return m + "m";
+  return h + "h " + String(m).padStart(2, "0") + "m";
+}
+function holdLeft(z){
+  if (!z.override_until) return 0;
+  return z.override_until - Date.now() / 1000;
+}
+function ro(){ return !S || !S.enabled || S.dry_run; }
+
+function banner(){
+  const bits = [];
+  if (MOCK) bits.push('<div class="banner synth"><strong>Synthetic example.</strong> Not a live house. Nothing is sent to a thermostat.</div>');
+  if (!S) return bits.join("");
+  if (!S.enabled) bits.push('<div class="banner">The app is off. This screen only shows state. Opening it changes nothing.</div>');
+  else if (S.dry_run) bits.push('<div class="banner">Practice mode. Schedule preferences can be saved. Device changes stay off.</div>');
+  const home = S.last && S.last.presence_home;
+  const anyAway = (S.zones || []).some((z) => zoneResult(z.name).profile === "away");
+  if (home === true && anyAway) bits.push('<div class="banner">Presence is home. At least one room’s schedule result is Away. Opening this screen does not clear that or any hold.</div>');
+  if (msg) bits.push('<div class="banner">' + esc(msg) + "</div>");
+  return bits.join("");
+}
+
+function pills(){
+  if (!S) return "";
+  const profile = S.profile || "auto";
+  const held = (S.zones || []).filter((z) => holdLeft(z) > 0);
+  const out = [];
+  if (profile === "auto") out.push('<span class="pill auto">Full Auto</span>');
+  else out.push('<span class="pill manual">Manual profile · ' + esc(profile) + "</span>");
+  const resolved = [...new Set((S.zones || []).map((z) => zoneResult(z.name).profile).filter(Boolean))];
+  if (resolved.length) out.push('<span class="pill">Resolved ' + esc(resolved.join(" · ")) + "</span>");
+  if (held.length) out.push('<span class="pill hold">' + held.length + " hold" + (held.length > 1 ? "s" : "") + "</span>");
+  const pres = S.last && S.last.presence_home;
+  if (pres === true) out.push('<span class="pill">Presence home</span>');
+  else if (pres === false) out.push('<span class="pill">Presence away</span>');
+  else out.push('<span class="pill">Presence unknown</span>');
+  return out.join("");
+}
+
+function subline(){
+  if (!S || !S.last) return "Loading…";
+  const ts = S.last.ts;
+  const age = ts ? Math.max(0, Math.round(Date.now() / 1000 - ts)) : null;
+  const fresh = age == null ? "No cycle yet" : age < 90 ? "Cycle just ran" : "Last cycle " + fmtDur(age) + " ago";
+  const out = S.last.outdoor != null ? "Outside " + Math.round(S.last.outdoor) + "°" : "Outside unavailable";
+  return fresh + " · " + out + " · Fan Auto is a fan speed, not Full Auto.";
+}
+
+function schedButtons(){
+  const cur = S && S.profile;
+  const btn = (id, label) => '<button data-profile="' + id + '"' + (cur === id ? ' class="on"' : "") + ">" + label + "</button>";
+  let html = btn("auto", "Full Auto") + btn("home", "Home") + btn("sleep", "Sleep") + btn("away", "Away");
+  if ((S.zones || []).some((z) => holdLeft(z) > 0)) html += '<button data-resume-all="1">Resume automatic · both</button>';
+  return html;
+}
+
+function zoneCard(z){
+  const r = zoneResult(z.name), live = r.live || {}, key = resolvedKey(z), pref = prefs(z)[key] || {};
+  const indoor = live.indoor, held = holdLeft(z) > 0;
+  const target = held ? live.setpoint : (r.setpoint != null ? r.setpoint : pref.temperature);
+  const why = REASONS[r.reason] || (r.reason ? String(r.reason) : "Waiting for a cycle");
+  const next = r.next && r.next.setpoint != null ? "Next schedule " + r.next.setpoint + "° " + (r.next.profile || "") + " at " + fmtClock(r.next.ts) : "";
+  const src = held ? "Temporary hold" : (prefLabel(key) + " preference · " + sourceLabel(pref.source));
+  const dfr = r.defrosting || r.defrost;
+  const status = dfr ? (r.defrost === "preheating" ? "Pre-heating" : "Defrosting") : (live.hvac_action || live.mode || "—");
+  const pt = pref.temperature != null ? pref.temperature : target;
+  const draft = held && live.setpoint != null ? live.setpoint : (pt != null ? pt : 70);
+  let html = '<article class="card" data-zone="' + esc(z.name) + '"><div class="zh"><h2>' + esc(z.label) + "</h2><span>" +
+    (z.heat_only ? "Radiant" : "Mini split") + " · " + esc(status) + "</span></div>";
+  html += '<div class="now">' + (indoor != null ? Math.round(indoor) : "—") + "<small>°</small></div>";
+  html += '<p class="target">' + (target != null ? esc(String(target)) + "° target" : "No target") + " · " + esc(src) + "</p>";
+  html += '<p class="why">' + esc(why) + (next ? " · " + esc(next) : "") + "</p>";
+  html += '<div class="rowlabel">Schedule preference · ' + esc(prefLabel(key)) + "</div>";
+  html += '<div class="stepper"><button data-pref="-0.5" data-key="' + key + '" aria-label="Lower preference">−</button><b>' +
+    (pt != null ? pt : "—") + '°</b><button data-pref="0.5" data-key="' + key + '" aria-label="Raise preference">+</button></div>';
+  html += '<p class="hint">Saves the ' + esc(prefLabel(key)) + " temperature for this room. Does not start a hold.</p>";
+  html += '<div class="rowlabel">Temporary hold</div>';
+  if (held) {
+    html += '<p class="count">Held ' + (live.setpoint != null ? live.setpoint + "°" : "") + " · " + fmtDur(holdLeft(z)) + " left · ends " + fmtClock(z.override_until) + "</p>";
+    html += '<div class="actions"><button data-resume="1">Resume automatic</button></div>';
+  }
+  html += '<div class="durs">' + HOURS.map(([h, l]) => '<button data-hours="' + h + '"' + (hours === h ? ' class="on"' : "") + ">" + l + "</button>").join("") + "</div>";
+  html += '<div class="stepper"><button data-hold="-0.5" aria-label="Lower hold">−</button><b data-draft="' + draft + '">' + draft +
+    '°</b><button data-hold="0.5" aria-label="Raise hold">+</button></div>';
+  html += '<div class="actions"><button class="go" data-override="1"' + (ro() ? " disabled" : "") + ">Hold " + draft + "° for " +
+    (HOURS.find((x) => x[0] === hours) || HOURS[2])[1] + "</button></div>";
+  html += '<p class="hint">A hold keeps this temperature until the timer ends or you resume. It is not the schedule.</p>';
+  html += "<details><summary>Other schedule temperatures</summary>";
+  for (const k of ["home", "sleep", "away_heat", "away_cool"]) {
+    const row = prefs(z)[k] || {};
+    if (row.temperature == null) continue;
+    html += '<div class="prefrow"><span>' + esc(prefLabel(k)) + " · " + esc(sourceLabel(row.source)) + "</span><span>" + row.temperature + "°</span></div>";
+  }
+  html += "</details></article>";
+  return html;
+}
+
+function sharedMode(){
+  const splits = (S.zones || []).filter((z) => !z.heat_only);
+  if (!splits.length) return "";
+  const modes = splits.map((z) => (zoneResult(z.name).live || {}).mode);
+  const same = modes.every((m) => m === modes[0]) ? modes[0] : "mixed";
+  const label = {0.5:"30 minutes",1:"1 hour",2:"2 hours",4:"4 hours"}[hours] || "2 hours";
+  return '<article class="card wide"><div class="zh"><h2>Both mini splits</h2><span>' + (same === "mixed" ? "Modes differ" : esc(same || "—")) + "</span></div>" +
+    '<p class="hint">Heat and Cool always apply to both. The length you pick is a temporary mode hold, shown before it is sent. Off is per room only when you use a room’s own control; here Off turns both off.</p>' +
+    '<div class="modes"><button class="heat' + (same === "heat" ? " on" : "") + '" data-mode="heat"' + (ro() ? " disabled" : "") + ">Hold both in Heat · " + label + "</button>" +
+    '<button class="cool' + (same === "cool" ? " on" : "") + '" data-mode="cool"' + (ro() ? " disabled" : "") + ">Hold both in Cool · " + label + "</button>" +
+    '<button' + (same === "off" ? ' class="on"' : "") + ' data-mode="off"' + (ro() ? " disabled" : "") + ">Off · both</button></div></article>";
+}
+
+function seriesMinutes(pts, end){
+  if (!pts || !pts.length) return null;
+  let min = 0;
+  for (let i = 0; i < pts.length; i++) {
+    if (!pts[i][1]) continue;
+    const t2 = (pts[i + 1] || [end])[0];
+    min += Math.max(0, t2 - pts[i][0]) / 60;
+  }
+  return Math.round(min);
+}
+function gaps(pts){
+  if (!pts || pts.length < 2) return false;
+  for (let i = 1; i < pts.length; i++) if (pts[i][0] - pts[i - 1][0] > 45 * 60) return true;
+  return false;
+}
+function graphSvg(d){
+  if (!d) return "";
+  const w = 640, h = 200, pad = {l:36, r:8, t:16, b:22};
+  const W = w - pad.l - pad.r, H = h - pad.t - pad.b;
+  const vals = [...(d.indoor || []), ...(d.setpoint || []), ...(d.outdoor || [])].map((p) => p[1]).filter((v) => v != null);
+  if (!vals.length) return '<p class="hint">No temperature history in this range.</p>';
+  let lo = Math.floor(Math.min(...vals) - 2), hi = Math.ceil(Math.max(...vals) + 2);
+  const X = (t) => pad.l + ((t - d.start) / Math.max(1, d.end - d.start)) * W;
+  const Y = (v) => pad.t + (1 - (v - lo) / Math.max(1, hi - lo)) * H;
+  const line = (pts) => {
+    let s = "", prev = null;
+    for (const [t, v] of pts || []) {
+      if (v == null) { prev = null; continue; }
+      s += (prev == null ? "M" : "L") + X(t).toFixed(1) + "," + Y(v).toFixed(1);
+      prev = v;
+    }
+    return s;
+  };
+  let bands = "";
+  (d.heating || []).forEach(([t, on], i) => { if (!on) return; const t2 = (d.heating[i + 1] || [d.end])[0];
+    bands += '<rect x="' + X(t).toFixed(1) + '" y="' + pad.t + '" width="' + Math.max(1, X(t2) - X(t)).toFixed(1) + '" height="' + H + '" fill="rgba(232,160,90,.18)"/>'; });
+  (d.cooling || []).forEach(([t, on], i) => { if (!on) return; const t2 = (d.cooling[i + 1] || [d.end])[0];
+    bands += '<rect x="' + X(t).toFixed(1) + '" y="' + pad.t + '" width="' + Math.max(1, X(t2) - X(t)).toFixed(1) + '" height="' + H + '" fill="rgba(94,200,197,.16)"/>'; });
+  (d.defrost || []).forEach(([t, on], i) => { if (!on) return; const t2 = (d.defrost[i + 1] || [d.end])[0];
+    bands += '<rect x="' + X(t).toFixed(1) + '" y="' + pad.t + '" width="' + Math.max(2, X(t2) - X(t)).toFixed(1) + '" height="' + H + '" fill="rgba(94,200,197,.28)"/><text x="' + (X(t) + 4).toFixed(1) + '" y="' + (pad.t + 14) + '" fill="#5ec8c5" font-size="11">Defrosting</text>'; });
+  let grid = "";
+  for (const v of [lo, Math.round((lo + hi) / 2), hi]) grid += '<line x1="' + pad.l + '" x2="' + (w - pad.r) + '" y1="' + Y(v) + '" y2="' + Y(v) + '" stroke="#2a2a2a"/><text x="2" y="' + (Y(v) + 4) + '" fill="#6e6e6e" font-size="11">' + v + "°</text>";
+  return '<svg class="g" viewBox="0 0 ' + w + " " + h + '" role="img">' + grid + bands +
+    '<path d="' + line(d.outdoor) + '" fill="none" stroke="#6e6e6e" stroke-dasharray="4 3" stroke-width="1.2"/>' +
+    '<path d="' + line(d.setpoint) + '" fill="none" stroke="#5ec8c5" stroke-width="1.4"/>' +
+    '<path d="' + line(d.indoor) + '" fill="none" stroke="#fff" stroke-width="1.6"/></svg>';
+}
+
+function graphCard(){
+  const zones = S.zones || [];
+  const names = zones.map((z) => '<button data-graph="' + esc(z.name) + '"' + ((hist.zone || zones[0].name) === z.name ? ' class="on"' : "") + ">" + esc(z.label) + "</button>").join("");
+  const rng = hist.range || "24h";
+  const d = hist.data, name = hist.zone || (zones[0] && zones[0].name);
+  let body = histErr[name] ? '<p class="hint">History unavailable. Nothing is filled in.</p>' : graphSvg(d);
+  const gap = d && gaps(d.indoor);
+  const metrics = [];
+  const add = (b, s) => { if (b == null) return; metrics.push("<div class='metric'><b>" + b + "</b><span>" + s + "</span></div>"); };
+  if (d) {
+    add(seriesMinutes(d.heating, d.end), "min heating in view");
+    add(seriesMinutes(d.cooling, d.end), "min cooling in view");
+    add(seriesMinutes(d.defrost, d.end), "min defrost in view");
+    const hum = (d.humidity || []).filter((p) => p[1] != null).pop();
+    if (hum) add(Math.round(hum[1]) + "%", "humidity, last point");
+  }
+  const z = zones.find((x) => x.name === name);
+  const liveH = z && (zoneResult(z.name).live || {}).humidity;
+  if (liveH != null) add(Math.round(liveH) + "%", "humidity now");
+  return '<article class="card wide"><div class="graphhead"><h2 style="margin:0;font-size:16px;font-weight:500">History</h2><div class="durs"><button data-range="24h"' +
+    (rng === "24h" ? ' class="on"' : "") + '>24h</button><button data-range="7d"' + (rng === "7d" ? ' class="on"' : "") + ">7d</button></div></div>" +
+    '<div class="durs">' + names + "</div>" + body +
+    (gap ? '<p class="hint">Gap in the recorded history. Missing time is not drawn as a real temperature.</p>' : "") +
+    '<div class="leg"><span><i style="background:#fff"></i>Indoor</span><span><i style="background:#5ec8c5"></i>Target</span><span><i style="background:#6e6e6e"></i>Outdoor</span><span><i style="background:rgba(232,160,90,.8);height:8px"></i>Heating</span><span><i style="background:rgba(94,200,197,.8);height:8px"></i>Cooling / defrost</span></div>' +
+    '<div class="metrics">' + metrics.join("") + "</div>" +
+    '<p class="hint">Times above are measured from the history that was returned. No energy, cost, or efficiency number is estimated.</p></article>';
+}
+
 function render(){
- $("sub").textContent=S.last&&S.last.outdoor!=null?`Outside ${Math.round(S.last.outdoor)}°`:"";
- const n=$("notice");n.hidden=S.enabled&&!S.dry_run;
- n.textContent=!S.enabled?"Smart HVAC is off. It is only watching; nothing changes.":"Practice mode: shows what it would do, changes nothing.";
- $("modes").innerHTML=MODES.map(([k,l])=>`<button class="btn ${S.profile===k?"primary":""}" onclick="setMode('${k}')">${l}</button>`).join("");
- $("zones").innerHTML=S.zones.map(z=>{const r=(S.last.zones||{})[z.name]||{},h=z.history,last=h[h.length-1]||[];
-  const ov=z.override_until&&z.override_until*1000>Date.now();
-  const word=r.defrosting||r.defrost?"Defrosting":({heat:"Heating",cool:"Cooling",off:"Off"}[r.mode]||"Holding");
-  return `<div class="card"><h2>${esc(z.label)}</h2>${dial(r.setpoint??last[3],r.mode)}
-  <div class="dim">Inside ${last[1]!=null?Math.round(last[1])+"°":"--"}</div>
-  <div class="ctrl"><button class="btn" onclick="bump('${z.name}',-1)">−</button><button class="btn" onclick="bump('${z.name}',1)">+</button></div>
-  <span class="tag ${esc(r.mode||"")}">${word}${ov?" · manual":""}</span>
-  ${REASONS[r.reason]?`<div class="dim">${esc(REASONS[r.reason])}</div>`:""}
-  ${ov?`<div><button class="btn" style="margin-top:8px" onclick="resume('${z.name}')">Back to auto</button></div>`:""}
-  <canvas id="g_${z.name}"></canvas></div>`}).join("");
- S.zones.forEach(z=>graph($("g_"+z.name),z.history));}
-async function refresh(){try{S=await api("api/state");render();}catch(e){}}
-async function setMode(p){S=await api("api/profile",{profile:p});render();}
-async function bump(z,d){const r=(S.last.zones||{})[z]||{};const t=(r.setpoint||71)+d;
- try{S=await api(`api/zone/${z}/setpoint`,{temperature:t});render();}catch(e){const n=$("notice");n.hidden=false;n.textContent="Can't change it now: "+e.message;}}
-async function resume(z){S=await api(`api/zone/${z}/resume`,{});render();}
-refresh();setInterval(refresh,30000);
-</script></body></html>
+  $("pills").innerHTML = pills();
+  $("sub").textContent = subline();
+  $("banner").innerHTML = banner();
+  $("sched").innerHTML = S ? schedButtons() : "";
+  $("zones").innerHTML = S ? ((S.zones || []).map(zoneCard).join("") + sharedMode() + graphCard()) : "";
+}
+
+async function loadHist(name, range){
+  hist.zone = name; hist.range = range || hist.range || "24h";
+  try {
+    hist.data = await api("api/zone/" + name + "/history?range=" + hist.range);
+    histErr[name] = false;
+  } catch (e) { hist.data = null; histErr[name] = true; }
+  render();
+}
+
+async function boot(){
+  try { S = await api("api/state"); msg = ""; }
+  catch (e) { msg = "Can't reach Smart HVAC"; render(); return; }
+  render();
+  if (S.zones && S.zones[0]) loadHist(S.zones[0].name, "24h");
+}
+document.body.addEventListener("click", async (ev) => {
+  const b = ev.target.closest("button");
+  if (!b || !S) return;
+  try {
+    if (b.dataset.profile) { S = await api("api/profile", {profile:b.dataset.profile}); msg = ""; }
+    else if (b.dataset.resumeAll) { S = await api("api/resume-all", {}); msg = ""; }
+    else if (b.dataset.hours) { hours = Number(b.dataset.hours); render(); return; }
+    else if (b.dataset.mode) {
+      msg = "";
+      for (const z of S.zones.filter((x) => !x.heat_only)) S = await api("api/zone/" + z.name + "/mode", {hvac_mode:b.dataset.mode, hours});
+    } else if (b.dataset.range || b.dataset.graph) {
+      const name = b.dataset.graph || hist.zone;
+      await loadHist(name, b.dataset.range || hist.range); return;
+    } else {
+      const card = b.closest("[data-zone]");
+      if (!card) { render(); return; }
+      const name = card.dataset.zone;
+      if (b.dataset.pref) {
+        const key = b.dataset.key;
+        const cur = (prefs(S.zones.find((z) => z.name === name))[key] || {}).temperature;
+        const t = Math.round(((cur || 70) + Number(b.dataset.pref)) * 2) / 2;
+        S = await api("api/zone/" + name + "/preference", {profile:key, temperature:t});
+        msg = "Saved the schedule preference. No hold was started.";
+      } else if (b.dataset.hold) {
+        const el = card.querySelector("[data-draft]");
+        const t = Math.round((Number(el.dataset.draft) + Number(b.dataset.hold)) * 2) / 2;
+        el.dataset.draft = t; el.textContent = t + "°";
+        const go = card.querySelector("[data-override]");
+        if (go) go.textContent = "Hold " + t + "° for " + (HOURS.find((x) => x[0] === hours) || HOURS[2])[1];
+        return;
+      } else if (b.dataset.override) {
+        const t = Number(card.querySelector("[data-draft]").dataset.draft);
+        S = await api("api/zone/" + name + "/override", {temperature:t, hours});
+        msg = "";
+      } else if (b.dataset.resume) { S = await api("api/zone/" + name + "/resume", {}); msg = ""; }
+    }
+  } catch (e) { msg = e.message; }
+  render();
+});
+
+function mockApi(path, body){
+  const now = Math.floor(Date.now() / 1000);
+  if (!S) S = mockState(now);
+  if (path.includes("/history")) {
+    const name = path.split("/")[2];
+    const span = path.endsWith("7d") ? 7 * 86400 : 86400;
+    const start = now - span, n = 48, indoor = [], setpoint = [], outdoor = [], heating = [], cooling = [], defrost = [], humidity = [];
+    for (let i = 0; i <= n; i++) {
+      const t = start + i * span / n;
+      const wave = Math.sin(i / 5) * 1.2;
+      indoor.push([t, +(68 + wave).toFixed(1)]);
+      setpoint.push([t, 70]);
+      outdoor.push([t, +(36 + Math.sin(i / 8) * 4).toFixed(1)]);
+      heating.push([t, i % 7 < 3 ? 1 : 0]);
+      cooling.push([t, 0]);
+      defrost.push([t, i === 20 || i === 21 ? 1 : 0]);
+      humidity.push([t, 42]);
+    }
+    if (n > 10) indoor.splice(12, 8);
+    return {zone:name, range: path.endsWith("7d") ? "7d" : "24h", start, end:now, indoor, setpoint, outdoor, heating, cooling, defrost, humidity};
+  }
+  if (body && path.endsWith("/preference")) {
+    const name = path.split("/")[2];
+    const z = S.zones.find((x) => x.name === name);
+    z.preferences[body.profile] = {temperature: body.temperature, source: "zone"};
+    return S;
+  }
+  if (body && path.endsWith("/override")) {
+    const name = path.split("/")[2];
+    const z = S.zones.find((x) => x.name === name);
+    z.override_until = now + body.hours * 3600;
+    return S;
+  }
+  if (path.endsWith("/resume-all") || path.endsWith("/resume")) {
+    const names = path.endsWith("/resume-all") ? S.zones.map((z) => z.name) : [path.split("/")[2]];
+    for (const n of names) { const z = S.zones.find((x) => x.name === n); if (z) z.override_until = null; }
+    return S;
+  }
+  if (body && body.profile && path.endsWith("/profile")) S.profile = body.profile;
+  return S;
+}
+function mockState(now){
+  const holdA = now + 2 * 3600, holdB = now + 2 * 3600 + 30;
+  const pref = (n) => ({home:{temperature:n, source:"zone"}, sleep:{temperature:n - 3, source:"schedule"},
+    away_heat:{temperature:65, source:"schedule"}, away_cool:{temperature:78, source:"schedule"}});
+  const live = (sp, indoor) => ({mode:"heat", setpoint:sp, indoor, humidity:41, hvac_action:"heating", fan_mode:"auto"});
+  return {enabled:true, dry_run:false, profile:"auto", override_hours:2, vacation:false,
+    last:{ts:now - 180, presence_home:true, outdoor:34, zones:{
+      room_a:{profile:"away", reason:"manual_override", setpoint:70, action:"hold", next:null, live:live(70, 68.4), defrosting:false},
+      room_b:{profile:"away", reason:"manual_override", setpoint:70, action:"hold", next:null, live:live(70, 69.1), defrosting:false},
+      bath_floor:{profile:"home", reason:"no_change", setpoint:72, action:"hold", next:{ts:now + 6 * 3600, setpoint:66, profile:"sleep"}, live:{mode:"heat", setpoint:72, indoor:71.2, hvac_action:"idle"}}
+    }},
+    preferences:{room_a:pref(71), room_b:pref(71), bath_floor:pref(72)},
+    zones:[
+      {name:"room_a", label:"Room A", heat_only:false, override_until:holdA, preferences:pref(71)},
+      {name:"room_b", label:"Room B", heat_only:false, override_until:holdB, preferences:pref(71)},
+      {name:"bath_floor", label:"Bath floor", heat_only:true, override_until:null, preferences:pref(72)}
+    ]};
+}
+boot();
+setInterval(() => { if (S) render(); }, 30000);
+</script>
+</body>
+</html>

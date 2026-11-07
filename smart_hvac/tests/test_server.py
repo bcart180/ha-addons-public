@@ -247,7 +247,7 @@ async def test_history_endpoint(mkc):
     r = await c.get("/api/zone/lr/history?range=24h")
     assert r.status == 200
     j = await r.json()
-    assert ha.hist_calls[0][0] == ("climate.lr", "sensor.lr_t", "weather.w")
+    assert ha.hist_calls[0][0] == ("climate.lr", "sensor.lr_t", "sensor.lr_h", "weather.w")
     assert ha.hist_calls[0][1].endswith("+00:00")
     assert len(j["indoor"]) == 1 and j["indoor"][0][1] == 69.5  # unavailable dropped
     assert [h[1] for h in j["heating"]] == [1, 0, 0]
