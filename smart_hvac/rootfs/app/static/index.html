@@ -7,7 +7,9 @@
 <style>
 :root{
   --bg:#000;--card:#141414;--elev:#1c1c1c;--line:#2a2a2a;--fg:#fff;--mut:#9a9a9a;--dim:#6e6e6e;
-  --heat:#e8a05a;--cool:#5ec8c5;--bad:#ff8f8f;
+  /* 0.9.1 accents. Black and gray stay the base. Words stay the meaning; color only repeats it. */
+  --heat:#e8a05a;--cool:#5ec8c5;--hold:#e2c07a;--bad:#ff8f8f;
+  --room-0:#8aa4b8;--room-1:#c4a882;--room-2:#9aa0a6;
   color-scheme:dark;
 }
 *{box-sizing:border-box}
@@ -24,8 +26,8 @@ h1{font-size:22px;font-weight:500;letter-spacing:-.03em;margin:0}
 .pills{display:flex;flex-wrap:wrap;gap:6px}
 .pill{font-size:12px;letter-spacing:.04em;text-transform:uppercase;border:1px solid var(--line);border-radius:999px;padding:6px 10px;color:var(--mut)}
 .pill.auto{color:var(--fg);border-color:#3a3a3a}
-.pill.hold{color:var(--heat);border-color:#5a4632}
-.pill.manual{color:var(--cool);border-color:#2f4a49}
+.pill.hold{color:var(--hold);border-color:#6a5a32}
+.pill.manual{color:var(--fg);border-color:#3a3a3a}
 .sub{flex:1 1 100%;color:var(--mut);font-size:14px;min-height:1.2em}
 .links{margin-left:auto;display:flex;gap:12px;font-size:14px}
 .links a{color:var(--mut);text-decoration:none;min-height:48px;display:flex;align-items:center}
@@ -34,9 +36,15 @@ h1{font-size:22px;font-weight:500;letter-spacing:-.03em;margin:0}
 .sched{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
 .grid{display:grid;grid-template-columns:1fr;gap:12px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px}
+.card.rm0{box-shadow:inset 3px 0 0 var(--room-0)}
+.card.rm1{box-shadow:inset 3px 0 0 var(--room-1)}
+.card.rm2{box-shadow:inset 3px 0 0 var(--room-2)}
 .zh{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
 .zh h2{margin:0;font-size:16px;font-weight:500}
 .zh span{color:var(--mut);font-size:13px}
+.st.heat{color:var(--heat)}
+.st.cool,.st.defrost{color:var(--cool)}
+.rowlabel.holdlab{color:var(--hold)}
 .now{font-size:84px;font-weight:200;letter-spacing:-.04em;line-height:.9;margin:12px 0 4px;font-variant-numeric:tabular-nums}
 .now small{font-size:32px;font-weight:300}
 .target{font-size:16px;margin:0 0 4px}
@@ -51,7 +59,7 @@ h1{font-size:22px;font-weight:500;letter-spacing:-.03em;margin:0}
 .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .actions button{flex:1 1 160px}
 button.go{background:#1a1a1a}
-.count{color:var(--heat);font-variant-numeric:tabular-nums}
+.count{color:var(--hold);font-variant-numeric:tabular-nums}
 .modes{display:flex;flex-wrap:wrap;gap:8px}
 .modes button{flex:1}
 .graphhead{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
@@ -61,11 +69,13 @@ svg.g{width:100%;height:200px;display:block;margin-top:8px}
 .metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
 .metric{border:1px solid var(--line);border-radius:12px;padding:10px 12px}
 .metric b{display:block;font-size:22px;font-weight:400;font-variant-numeric:tabular-nums}
+.metric.heat b{color:var(--heat)}
+.metric.cool b{color:var(--cool)}
 .metric span{color:var(--mut);font-size:12px}
 details{margin-top:8px;color:var(--mut)}
 details summary{min-height:48px;display:flex;align-items:center;cursor:pointer}
 .prefrow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)}
-.synth{border-color:#5a4632;color:var(--heat)}
+.synth{border-color:#6a5a32;color:var(--hold)}
 @media(min-width:800px){
   .wrap{padding:28px 28px 64px}
   h1{font-size:28px}
@@ -196,9 +206,13 @@ function zoneCard(z){
   const src = held ? "Temporary hold" : (prefLabel(key) + " preference · " + sourceLabel(pref.source));
   const dfr = r.defrosting || r.defrost;
   const status = dfr ? (r.defrost === "preheating" ? "Pre-heating" : "Defrosting") : (live.hvac_action || live.mode || "—");
+  const act = String(live.hvac_action || "");
+  const tone = dfr ? "defrost" : act === "heating" ? "heat" : act === "cooling" ? "cool" : "";
+  let slot = 0;
+  for (let i = 0; i < z.name.length; i++) slot = (slot + z.name.charCodeAt(i)) % 3;
   const pt = pref.temperature != null ? pref.temperature : target;
   const draft = held && live.setpoint != null ? live.setpoint : (pt != null ? pt : 70);
-  let html = '<article class="card" data-zone="' + esc(z.name) + '"><div class="zh"><h2>' + esc(z.label) + "</h2><span>" +
+  let html = '<article class="card rm' + slot + (held ? " held" : "") + '" data-zone="' + esc(z.name) + '"><div class="zh"><h2>' + esc(z.label) + '</h2><span class="st ' + tone + '">' +
     (z.heat_only ? "Radiant" : "Mini split") + " · " + esc(status) + "</span></div>";
   html += '<div class="now">' + (indoor != null ? Math.round(indoor) : "—") + "<small>°</small></div>";
   html += '<p class="target">' + (target != null ? esc(String(target)) + "° target" : "No target") + " · " + esc(src) + "</p>";
@@ -207,7 +221,7 @@ function zoneCard(z){
   html += '<div class="stepper"><button data-pref="-0.5" data-key="' + key + '" aria-label="Lower preference">−</button><b>' +
     (pt != null ? pt : "—") + '°</b><button data-pref="0.5" data-key="' + key + '" aria-label="Raise preference">+</button></div>';
   html += '<p class="hint">Saves the ' + esc(prefLabel(key)) + " temperature for this room. Does not start a hold.</p>";
-  html += '<div class="rowlabel">Temporary hold</div>';
+  html += '<div class="rowlabel holdlab">Temporary hold</div>';
   if (held) {
     html += '<p class="count">Held ' + (live.setpoint != null ? live.setpoint + "°" : "") + " · " + fmtDur(holdLeft(z)) + " left · ends " + fmtClock(z.override_until) + "</p>";
     html += '<div class="actions"><button data-resume="1">Resume automatic</button></div>';
@@ -297,11 +311,11 @@ function graphCard(){
   let body = histErr[name] ? '<p class="hint">History unavailable. Nothing is filled in.</p>' : graphSvg(d);
   const gap = d && gaps(d.indoor);
   const metrics = [];
-  const add = (b, s) => { if (b == null) return; metrics.push("<div class='metric'><b>" + b + "</b><span>" + s + "</span></div>"); };
+  const add = (b, s, tone) => { if (b == null) return; metrics.push("<div class='metric" + (tone ? " " + tone : "") + "'><b>" + b + "</b><span>" + s + "</span></div>"); };
   if (d) {
-    add(seriesMinutes(d.heating, d.end), "min heating in view");
-    add(seriesMinutes(d.cooling, d.end), "min cooling in view");
-    add(seriesMinutes(d.defrost, d.end), "min defrost in view");
+    add(seriesMinutes(d.heating, d.end), "min heating in view", "heat");
+    add(seriesMinutes(d.cooling, d.end), "min cooling in view", "cool");
+    add(seriesMinutes(d.defrost, d.end), "min defrost in view", "cool");
     const hum = (d.humidity || []).filter((p) => p[1] != null).pop();
     if (hum) add(Math.round(hum[1]) + "%", "humidity, last point");
   }
