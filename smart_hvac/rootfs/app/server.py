@@ -134,10 +134,21 @@ def make_app(engine, interval=300, heater=None, heater_tick=HEATER_TICK_S):
     async def vacation():
         return await asyncio.get_running_loop().run_in_executor(None, engine.vacation_on)
 
-    def done(zone, **wrote):
+    def parse_hours(body, required=False):
+        """Explicit hold length. Omitted means the add-on's override_hours (2 h) for old clients."""
+        if "hours" not in body or body.get("hours") is None:
+            if required:
+                return None, web.json_response({"error": "hours required"}, status=400)
+            return None, None
+        h = body.get("hours")
+        if isinstance(h, bool) or not isinstance(h, (int, float)) or not 0.5 <= h <= 12:
+            return None, web.json_response({"error": "bad hours"}, status=400)
+        return float(h), None
+
+    def done(zone, hours=None, **wrote):
         # Every card change is a manual hold the app respects until it expires or "Resume auto".
-        # The reply reflects the write right away (0.3.2), not the pre-write read from the last cycle.
-        engine.start_override(zone["name"])
+        # hours None keeps the 2 h default. The reply reflects the write right away (0.3.2).
+        engine.start_override(zone["name"], hours)
         if wrote:
             engine.note_card_write(zone["name"], **wrote)
         return web.json_response(engine.snapshot())
@@ -163,7 +174,10 @@ def make_app(engine, interval=300, heater=None, heater_tick=HEATER_TICK_S):
                 return web.json_response({"error": "setpoint not supported: %s" % why}, status=409)
             if data is not None:
                 await call("set_temperature", data)
-        return done(zone, setpoint=t)
+        hours, err = parse_hours(body)
+        if err:
+            return err
+        return done(zone, setpoint=t, hours=hours)
 
     async def try_mode(zone, mode):
         """set_hvac_mode on one zone; False (logged) when the write fails."""
@@ -174,7 +188,7 @@ def make_app(engine, interval=300, heater=None, heater_tick=HEATER_TICK_S):
             log.warning("mode write failed for %s (%s): %s", zone["name"], mode, type(e).__name__)
             return False
 
-    async def switch_group(zone, mode, others):
+    async def switch_group(zone, mode, others, hours=None):
         """MA #43 F2/F3: change zone to mode with the other running splits following, never passing heat+cool.
         others: [(zone, live mode)] that conflict with mode. Order: others off -> zone -> others to mode.
         A failed off / primary write rolls the others back to their previous mode (consistent with the primary's
@@ -188,13 +202,13 @@ def make_app(engine, interval=300, heater=None, heater_tick=HEATER_TICK_S):
             if await try_mode(zone, mode):
                 for other, _ost in turned_off:
                     if await try_mode(other, mode):
-                        done(other, mode=mode)
+                        done(other, mode=mode, hours=hours)
                     else:
-                        done(other, mode="off")  # left off: safe; its next "on" joins the group
+                        done(other, mode="off", hours=hours)  # left off: safe; its next "on" joins the group
                 return None
         for other, ost in turned_off:  # rollback: the primary never changed, so the old modes are consistent
             if not await try_mode(other, ost):
-                done(other, mode="off")
+                done(other, mode="off", hours=hours)
         return "mode write failed; nothing changed"
 
     async def api_mode(r):
@@ -222,10 +236,13 @@ def make_app(engine, interval=300, heater=None, heater_tick=HEATER_TICK_S):
                         continue
                     if core.mode_family(ost) != core.mode_family(mode):  # opposite, or auto / heat_cool
                         others.append((other, ost))
-            err = await switch_group(zone, mode, others)
+            hours, err_h = parse_hours(body)
+            if err_h:
+                return err_h
+            err = await switch_group(zone, mode, others, hours)
             if err:
                 return web.json_response(dict(engine.snapshot(), error=err), status=502)
-            return done(zone, mode=mode)
+            return done(zone, mode=mode, hours=hours)
 
     def split_zones(zone):
         """Every other enabled split zone (heat_only false) on the shared outdoor unit."""
@@ -291,6 +308,61 @@ def make_app(engine, interval=300, heater=None, heater_tick=HEATER_TICK_S):
             await call("set_fan_mode", {"entity_id": zone["climate"], "fan_mode": fan})
         return done(zone, fan_mode=fan)
 
+    async def api_preference(r):
+        """Save a schedule comfort target. Never starts a hold and never writes the climate entity itself.
+        A following cycle may apply it only where no hold is active. Safe to call while holds exist."""
+        zone = engine.zone(r.match_info["zone"])
+        if not zone:
+            return web.json_response({"error": "no zone"}, status=404)
+        body = await read_json(r)
+        if body is None:
+            return web.json_response({"error": "bad request"}, status=400)
+        before = dict(engine.st.get("override_until") or {})
+        try:
+            engine.set_zone_preference(zone["name"], str(body.get("profile") or ""), body.get("temperature"))
+        except ValueError:
+            return web.json_response({"error": "bad preference"}, status=400)
+        if engine.st.get("override_until") != before:
+            engine.st["override_until"] = before  # preference must not create or clear a hold
+            engine.save()
+        await run_once()
+        return web.json_response(engine.snapshot())
+
+    async def api_override(r):
+        """Temporary setpoint. hours is required so the duration is never an implied 2 h."""
+        g = await zone_write(r)
+        if isinstance(g, web.Response):
+            return g
+        zone, body = g
+        hours, err = parse_hours(body, required=True)
+        if err:
+            return err
+        try:
+            t = float(body.get("temperature"))
+        except (TypeError, ValueError):
+            return web.json_response({"error": "bad temperature"}, status=400)
+        hi = engine.radiant_setpoint_max if zone.get("heat_only") else 84
+        if not 55 <= t <= hi:
+            return web.json_response({"error": "out of range"}, status=400)
+        async with lock:
+            states = await asyncio.get_running_loop().run_in_executor(
+                None, lambda: {x.get("entity_id"): x for x in engine.ha.get_states() or []})
+            cl, _ = engine._get(states, zone.get("climate"))
+            data, t, why = engine.setpoint_data(zone, states, cl, t)
+            if data is None and why != "unchanged":
+                return web.json_response({"error": "setpoint not supported: %s" % why}, status=409)
+            if data is not None:
+                await call("set_temperature", data)
+        return done(zone, setpoint=t, hours=hours)
+
+    async def api_resume_all(r):
+        """Drop every zone hold and let the schedule run. Does not change the global profile."""
+        if await read_json(r) is None:
+            return web.json_response({"error": "bad request"}, status=400)
+        engine.resume_all()
+        await run_once()
+        return web.json_response(engine.snapshot())
+
     async def api_hold(r):
         """Start (or extend) a manual hold without changing the unit. Optional hours 0.5-12."""
         zone = engine.zone(r.match_info["zone"])
@@ -333,11 +405,18 @@ def make_app(engine, interval=300, heater=None, heater_tick=HEATER_TICK_S):
     async def thermostat(_r):
         return web.FileResponse(os.path.join(STATIC, "thermostat.html"))
 
+    async def classic(_r):
+        return web.FileResponse(os.path.join(STATIC, "classic.html"))
+
     app.router.add_get("/", index)
+    app.router.add_get("/classic", classic)
     app.router.add_get("/api/state", api_state)
     app.router.add_get("/api/health", api_health)
     app.router.add_post("/api/profile", api_profile)
     app.router.add_post("/api/preset", api_preset)
+    app.router.add_post("/api/zone/{zone}/preference", api_preference)
+    app.router.add_post("/api/zone/{zone}/override", api_override)
+    app.router.add_post("/api/resume-all", api_resume_all)
     app.router.add_post("/api/zone/{zone}/setpoint", api_setpoint)
     app.router.add_post("/api/zone/{zone}/mode", api_mode)
     app.router.add_post("/api/zone/{zone}/power", api_power)

@@ -88,6 +88,23 @@ Turn on `input_boolean.vacation_mode`. Every cycle: mini splits go to `vacation_
 Units a person turned off stay off. Turn the helper off and the normal schedule returns on the next cycle.
 The old `vacation_mode_handler` automation is left as-is until vacation mode is verified live.
 
+## Climate screen (0.9.0)
+The ingress panel (`/`) is the Climate screen: large temperatures, the schedule, and a history graph. It reads `/api/state` when it opens and does not change a hold or a thermostat by being opened.
+
+Three different controls:
+
+- **Full Auto** is the global schedule (presence and time of day). Home, Sleep, and Away in that row are a manual profile for the whole house. They are not a room hold. The screen also shows the resolved profile and presence separately. If those disagree, both are shown and neither is cleared.
+- **Schedule preference** (`POST /api/zone/<name>/preference`, `{"profile":"home"|"sleep"|"away_heat"|"away_cool","temperature":70}`) saves that room’s target for the schedule. It does not start a hold. A room that is already held keeps the hold; the new preference is used when the hold ends.
+- **Temporary hold** (`POST /api/zone/<name>/override`, `temperature` plus required `hours`) writes the setpoint and holds it for that many hours. Resume one room with `POST /api/zone/<name>/resume`. Resume every room with `POST /api/resume-all`. The older `POST /api/zone/<name>/setpoint` still starts the default 2 hour hold so existing cards do not change.
+
+Heat and Cool on the screen are sent to both mini splits, with the duration you picked, so they stay in the same mode. Fan Auto, when a unit has it, is only a fan speed.
+
+The graph uses recorder history already available to the add-on (indoor, target, outdoor, humidity when present, heating, cooling, defrost). Minutes in view are sums of those series. Gaps are marked and are not filled with a made-up temperature. There is no energy, cost, or efficiency estimate.
+
+`?mock=1` is a labeled synthetic example for screenshots. It does not talk to Home Assistant.
+
+Rollback: install the previous add-on version. A `prefs` object left in `/data/state.json` is ignored by 0.8.9. Holds and the Lovelace card keep working.
+
 ## Lovelace card (0.3.2)
 `custom:smart-hvac-card` shows the thermostat cards natively on any dashboard (Echo Show 1280x800 included),
 using HA state and history directly; no iframe, no ingress.
