@@ -11,11 +11,13 @@ MAX_ITEMS = 75
 MAX_PER_TEAM = 75
 OLDER_SECONDS = 72 * 3600
 FUTURE_SKEW = dt.timedelta(minutes=5)
-CADENCE_LABEL = (
-    "Proposed collector, not scheduled: every 30 minutes from 7:00 AM to 11:00 PM ET, "
-    "and hourly from 11:00 PM to 7:00 AM ET."
+CHECK_LABEL = "Last collector check: unavailable to this app."
+AUTO_LABEL = "Automatic check status: unknown."
+SNAPSHOT_LABEL = "This is a published snapshot, not a live stream."
+POLL_LABEL = (
+    "This page re-reads the saved snapshot every 60 seconds. "
+    "That re-read is not a collector check and does not see an option changed while the app is running."
 )
-POLL_LABEL = "This page re-reads the saved snapshot every 60 seconds. That re-read is not a new collection and does not see an option changed while the app is running."
 ACTIVATION_LABEL = (
     "A new snapshot is applied only when Sports News starts. Saving the option does not "
     "update this page until Sports News is restarted. The restart is only this app. "
@@ -65,11 +67,30 @@ class RollbackError(ValidationError):
     pass
 
 
-def planned_seconds(now):
-    local = now.astimezone(ET)
-    if 7 <= local.hour < 23:
-        return 30 * 60
-    return 60 * 60
+def content_age_text(start, now):
+    """Say how old the saved content is. This is not a collector health result."""
+    if start is None:
+        return "Content age: unknown."
+    seconds = int((now - start).total_seconds())
+    if seconds < 0:
+        return "Content age: the collection time is later than this page."
+    if seconds < 60:
+        return "Content age: under 1 minute."
+    minutes = seconds // 60
+    if minutes < 60:
+        unit = "minute" if minutes == 1 else "minutes"
+        return f"Content age: {minutes} {unit}."
+    hours = minutes // 60
+    if hours < 48:
+        hour_unit = "hour" if hours == 1 else "hours"
+        rem = minutes % 60
+        if rem:
+            minute_unit = "minute" if rem == 1 else "minutes"
+            return f"Content age: {hours} {hour_unit} {rem} {minute_unit}."
+        return f"Content age: {hours} {hour_unit}."
+    days = hours // 24
+    unit = "day" if days == 1 else "days"
+    return f"Content age: {days} {unit}."
 
 
 def format_et(instant):
@@ -533,7 +554,6 @@ def canonical_bytes(doc):
 
 def view(doc, now, origin, inbox_error=None, source_error=None, attempt_at=None, freshness=None, startup_note=None):
     collected = parse_time(doc["collected_at"], "collected_at") if doc.get("collected_at") else None
-    limit = 2 * planned_seconds(now)
     team_rows = []
     for name in TEAM_ORDER:
         meta = doc["teams"][name]
@@ -545,20 +565,17 @@ def view(doc, now, origin, inbox_error=None, source_error=None, attempt_at=None,
             "detail": meta.get("detail") or "",
             "last_success_at": meta.get("last_success_at"),
             "last_success_at_et": format_et(success) if success else None,
-            "stale": bool(success and (now - success).total_seconds() > limit),
+            "content_age": content_age_text(success, now),
             "count": sum(1 for item in doc["items"] if item["team"] == name),
         })
-    stale = any(row["stale"] for row in team_rows)
     team_error = any(row["status"] == "error" for row in team_rows)
     if freshness is None:
         if doc["status"] == "error" or team_error or inbox_error or source_error:
             freshness = "error"
         elif doc["status"] == "empty" or all(row["status"] == "empty" for row in team_rows):
             freshness = "empty"
-        elif stale:
-            freshness = "stale"
         else:
-            freshness = "fresh"
+            freshness = "content"
     success = None
     dated = [row for row in team_rows if row.get("last_success_at")]
     if dated:
@@ -601,9 +618,11 @@ def view(doc, now, origin, inbox_error=None, source_error=None, attempt_at=None,
         "ok": freshness != "error" or bool(items),
         "live_feed": False,
         "scheduled": False,
+        "collector_check": "unavailable",
+        "automatic_check": "unknown",
         "feed_kind": origin,
         "freshness": freshness,
-        "stale": stale,
+        "content_age": content_age_text(collected, now),
         "status": doc["status"],
         "collected_at": doc.get("collected_at"),
         "collected_at_et": format_et(collected) if collected else None,
@@ -616,7 +635,6 @@ def view(doc, now, origin, inbox_error=None, source_error=None, attempt_at=None,
         "page_checked_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "page_checked_at_et": format_et(now),
         "poll_seconds": 60,
-        "cadence_label": CADENCE_LABEL,
         "poll_label": POLL_LABEL,
         "inbox_error": inbox_error,
         "startup_note": startup_note,
@@ -634,7 +652,8 @@ def _messages(payload):
     collected = payload.get("collected_at_et") or "an unknown time"
     if payload["feed_kind"] == "bundled_starter" or payload["status"] == "starter_snapshot_not_live":
         lines.append(
-            f"Starter snapshot collected {collected}. Not a live feed. No refresh routine is scheduled."
+            f"Starter snapshot. Content collected {collected}. Not a live feed. "
+            "It stays until a saved snapshot is accepted with a different status."
         )
     if payload["inbox_error"] and payload["feed_kind"] == "bundled_starter":
         lines.append(
@@ -649,30 +668,32 @@ def _messages(payload):
     if payload["source_error"]:
         lines.append("Source error: " + payload["source_error"])
     if any(row["status"] == "error" for row in payload["teams"]):
-        lines.append("Failed teams still show their previous posts. Those success times were not reset.")
+        lines.append("Failed teams still show their previous posts. Those content times were not reset.")
     if payload["freshness"] == "empty":
-        lines.append("This collection succeeded and returned no posts.")
-    if payload["stale"]:
-        minutes = (2 * planned_seconds(parse_time(payload["page_checked_at"], "page_checked_at"))) // 60
+        lines.append("This saved snapshot has no posts.")
+    if payload.get("content_age"):
+        lines.append(payload["content_age"])
+    if payload.get("collected_at_et"):
+        lines.append("Content collected " + payload["collected_at_et"] + ".")
+    lines.append(CHECK_LABEL)
+    lines.append(AUTO_LABEL)
+    lines.append(SNAPSHOT_LABEL)
+    if payload.get("page_checked_at_et"):
         lines.append(
-            f"Stale. Last successful collection is older than two proposed cycles ({minutes} minutes). "
-            "Showing that snapshot."
-        )
-    elif payload["freshness"] == "fresh":
-        lines.append("Last successful collection is inside two proposed cycles.")
-    if payload["collected_at_et"] and payload["page_checked_at_et"]:
-        lines.append(
-            f"Updated {payload['collected_at_et']}. Page checked {payload['page_checked_at_et']}. "
-            "This page check is not a new collection."
+            "Page re-read " + payload["page_checked_at_et"] + ". This re-read is not a collector check."
         )
     if payload.get("startup_note"):
         lines.append(payload["startup_note"])
-    lines.append(payload["cadence_label"])
     lines.append(payload["poll_label"])
     lines.append(ACTIVATION_LABEL)
     lines.append(ATTRIBUTION)
-    for warning in payload["warnings"]:
-        lines.append("Note: " + warning)
+    if payload["warnings"]:
+        lines.append(
+            "Snapshot warnings (captured with content). These words were saved with the snapshot. "
+            "They are not this app's current collector status."
+        )
+        for warning in payload["warnings"]:
+            lines.append(warning)
     return lines
 
 
@@ -697,7 +718,9 @@ def empty_view(now, message):
         "scheduled": False,
         "feed_kind": "error",
         "freshness": "error",
-        "stale": False,
+        "collector_check": "unavailable",
+        "automatic_check": "unknown",
+        "content_age": "Content age: unknown.",
         "status": "error",
         "collected_at": None,
         "collected_at_et": None,
@@ -710,7 +733,6 @@ def empty_view(now, message):
         "page_checked_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "page_checked_at_et": format_et(now),
         "poll_seconds": 60,
-        "cadence_label": CADENCE_LABEL,
         "poll_label": POLL_LABEL,
         "inbox_error": message,
         "source_error": message,
@@ -723,8 +745,10 @@ def empty_view(now, message):
     }
     payload["messages"] = [
         "Source error: " + message,
-        f"Page checked {payload['page_checked_at_et']}. This page check is not a new collection.",
-        CADENCE_LABEL,
+        CHECK_LABEL,
+        AUTO_LABEL,
+        SNAPSHOT_LABEL,
+        f"Page re-read {payload['page_checked_at_et']}. This re-read is not a collector check.",
         POLL_LABEL,
         ATTRIBUTION,
     ]

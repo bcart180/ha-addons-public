@@ -10,8 +10,8 @@ No host port is opened. There is no write URL. Ingress is the only page, and it 
 
 The snapshot rules (allowlist, stale states, last-good retention) run on `snapshot_json` at startup. They are not connected to a host directory.
 
-## Proposed collector
+## Collector checks
 
-Not scheduled by this add-on. A parent may collect with Grok built-in public X reads: every 30 minutes from 7:00 AM to 11:00 PM ET, and hourly from 11:00 PM to 7:00 AM ET. A 10-minute read during a game is a parent choice for a game they already named. This add-on does not detect games.
+This app does not collect and does not know whether a collector checked. A reported routine is not evidence this app can see. The page says the last collector check is unavailable and automatic check status is unknown. It does not turn a clock time or a restart into a successful check. Unchanged content does not need a new timestamp or a restart.
 
 Allowlist: `@Seahawks`, `@NavyFB`, `@ZagMBB`, `@TheoLawson_SR`, `@BWagner_CapGaz`. `@bcondotta` stays off until a publisher page crosslinks the handle.

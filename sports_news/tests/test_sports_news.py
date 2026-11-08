@@ -46,14 +46,18 @@ class ContractTests(unittest.TestCase):
         self.assertFalse(view["live_feed"])
         self.assertFalse(view["scheduled"])
         self.assertEqual(view["poll_seconds"], 60)
-        self.assertEqual(view["freshness"], "fresh")
-        self.assertFalse(view["stale"])
+        self.assertEqual(view["freshness"], "content")
+        self.assertEqual(view["collector_check"], "unavailable")
+        self.assertEqual(view["automatic_check"], "unknown")
         blob = "\n".join(view["messages"])
-        self.assertIn("Starter snapshot collected Nov 8, 2026, 4:50 AM ET", blob)
+        self.assertIn("Starter snapshot. Content collected Nov 8, 2026, 4:50 AM ET", blob)
         self.assertIn("Not a live feed", blob)
-        self.assertIn("not a new collection", blob)
-        self.assertIn("every 30 minutes from 7:00 AM to 11:00 PM ET", blob)
-        self.assertIn("hourly from 11:00 PM to 7:00 AM ET", blob)
+        self.assertIn("Last collector check: unavailable to this app.", blob)
+        self.assertIn("Automatic check status: unknown.", blob)
+        self.assertIn("not a live stream", blob)
+        self.assertNotIn("every 30 minutes", blob)
+        self.assertNotIn("Last checked", blob)
+        self.assertNotIn("inside two proposed cycles", blob)
         self.assertNotIn("23642374", json.dumps(view))
         self.assertNotIn("evidence_files", json.dumps(view))
         self.assertNotIn("author_id", json.dumps(view))
@@ -143,29 +147,65 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(gonzaga["count"], 3)
         self.assertEqual(sum(row["count"] for row in view["teams"]), 10)
 
-    def test_stale_uses_two_cycles_and_older_news_is_separate(self):
+    def test_old_content_is_not_a_new_collector_check(self):
         doc = parsed(starter())
-        overnight = v.view(doc, NOW + dt.timedelta(minutes=90), origin="published")
-        self.assertFalse(overnight["stale"])
-        later = v.view(doc, NOW + dt.timedelta(minutes=122), origin="published")
-        self.assertTrue(later["stale"])
-        self.assertIn("120 minutes", "\n".join(later["messages"]))
-        noon = dt.datetime(2026, 11, 8, 16, 0, tzinfo=dt.timezone.utc)
-        day_doc = starter()
-        day_doc["collected_at"] = "2026-11-08T16:00:00Z"
-        for item in day_doc["items"]:
-            item["collected_at"] = day_doc["collected_at"]
-            item["published_at"] = "2026-11-08T15:00:00Z"
-        fresh = v.view(parsed(day_doc, noon + dt.timedelta(minutes=50)), noon + dt.timedelta(minutes=50), origin="published")
-        self.assertFalse(fresh["stale"])
-        stale = v.view(parsed(day_doc, noon + dt.timedelta(minutes=61)), noon + dt.timedelta(minutes=61), origin="published")
-        self.assertTrue(stale["stale"])
-        self.assertIn("60 minutes", "\n".join(stale["messages"]))
+        doc["last_attempt_at"] = "2026-11-08T16:00:00Z"
+        early = v.view(doc, NOW, origin="published")
+        later = v.view(doc, NOW + dt.timedelta(hours=8), origin="published")
+        self.assertEqual(later["collected_at"], early["collected_at"])
+        self.assertEqual(later["collected_at_et"], "Nov 8, 2026, 4:50 AM ET")
+        self.assertNotEqual(later["page_checked_at"], early["page_checked_at"])
+        self.assertEqual(later["collector_check"], "unavailable")
+        self.assertEqual(later["automatic_check"], "unknown")
+        self.assertFalse(later["live_feed"])
+        self.assertFalse(later["scheduled"])
+        self.assertEqual(later["freshness"], "content")
+        blob = "\n".join(later["messages"])
+        self.assertIn("Content age: 8 hours", blob)
+        self.assertIn("Last collector check: unavailable to this app.", blob)
+        self.assertNotIn("Last checked", blob)
+        self.assertNotIn("inside two proposed cycles", blob)
+        self.assertNotIn("every 30 minutes", blob)
         aged = v.view(doc, dt.datetime(2026, 11, 9, 22, 30, tzinfo=dt.timezone.utc), origin="published")
         older = [item for item in aged["items"] if item["older"]]
         recent = [item for item in aged["items"] if not item["older"]]
         self.assertTrue(older)
         self.assertTrue(recent)
+
+    def test_historical_warning_is_not_current_collector_state(self):
+        raw = starter()
+        self.assertIn("No automatic refresh is configured.", raw["warnings"])
+        view = v.view(parsed(raw), NOW + dt.timedelta(hours=6), origin="bundled_starter")
+        self.assertEqual(view["warnings"], raw["warnings"])
+        blob = "\n".join(view["messages"])
+        self.assertIn("No automatic refresh is configured.", blob)
+        self.assertLess(blob.index("Snapshot warnings (captured with content)"), blob.index("No automatic refresh is configured."))
+        self.assertIn("not this app's current collector status", blob)
+        self.assertNotIn("Note: No automatic refresh is configured.", blob)
+        self.assertEqual(view["freshness"], "content")
+        self.assertNotEqual(view["freshness"], "fresh")
+        self.assertEqual(view["collector_check"], "unavailable")
+        self.assertEqual(view["automatic_check"], "unknown")
+        self.assertFalse(view["live_feed"])
+        self.assertFalse(view["scheduled"])
+        self.assertNotIn("stale", view)
+        self.assertNotIn("cadence_label", view)
+        self.assertIn("Source error", "\n".join(v.view(parsed(raw), NOW, origin="published", source_error="public read failed", freshness="error")["messages"]))
+
+    def test_schedule_metadata_cannot_mark_the_snapshot_successful(self):
+        doc = starter()
+        doc["last_attempt_at"] = "2026-11-08T20:00:00Z"
+        with self.assertRaises(v.ValidationError):
+            doc["schedule"] = "8:00,13:00,19:00"
+            parsed(doc, dt.datetime(2026, 11, 8, 20, 5, tzinfo=dt.timezone.utc))
+        del doc["schedule"]
+        view = v.view(parsed(doc, dt.datetime(2026, 11, 8, 20, 5, tzinfo=dt.timezone.utc)),
+                      dt.datetime(2026, 11, 8, 20, 5, tzinfo=dt.timezone.utc), origin="published")
+        self.assertEqual(view["collected_at_et"], "Nov 8, 2026, 4:50 AM ET")
+        self.assertNotEqual(view["collected_at_et"], view["last_attempt_at_et"])
+        self.assertEqual(view["collector_check"], "unavailable")
+        self.assertNotIn("8:00", "\n".join(view["messages"]))
+        self.assertNotIn("Last checked", "\n".join(view["messages"]))
 
 
 class StoreTests(unittest.TestCase):
@@ -210,7 +250,7 @@ class StoreTests(unittest.TestCase):
         view = self.service.page(NOW)
         self.assertEqual(view["freshness"], "empty")
         self.assertEqual(view["items"], [])
-        self.assertIn("returned no posts", "\n".join(view["messages"]))
+        self.assertIn("This saved snapshot has no posts.", "\n".join(view["messages"]))
 
     def test_source_error_without_posts_keeps_last_good(self):
         with open(self.inbox, "wb") as handle:
@@ -305,7 +345,9 @@ class StoreTests(unittest.TestCase):
         view = self.service.page(dt.datetime(2026, 11, 8, 16, 32, tzinfo=dt.timezone.utc))
         self.assertEqual(view["freshness"], "error")
         self.assertNotIn("inside two proposed cycles", "\n".join(view["messages"]))
-        self.assertIn("success times were not reset", "\n".join(view["messages"]))
+        self.assertIn("content times were not reset", "\n".join(view["messages"]))
+        gonzaga_row = [row for row in view["teams"] if row["team"] == "Gonzaga Bulldogs"][0]
+        self.assertEqual(gonzaga_row["last_success_at_et"], "Nov 8, 2026, 4:50 AM ET")
         kept = [item["id"] for item in view["items"] if item["team"] == "Gonzaga Bulldogs"]
         self.assertEqual(kept, gonzaga_ids)
         gonzaga = [row for row in view["teams"] if row["team"] == "Gonzaga Bulldogs"][0]
@@ -331,6 +373,27 @@ class StoreTests(unittest.TestCase):
 
     def _option_service(self):
         return server.Service(PREVIEW, self.data, [], ())
+
+    def test_starter_label_clears_only_after_non_starter_data_is_accepted(self):
+        service = self._option_service()
+        text = open(PREVIEW, encoding="utf-8").read()
+        service.apply_startup_option({"snapshot_json": text}, NOW)
+        shown = service.page(NOW)
+        self.assertEqual(shown["status"], "starter_snapshot_not_live")
+        self.assertIn("Starter snapshot.", "\n".join(shown["messages"]))
+        nxt = starter()
+        nxt["status"] = "ok"
+        nxt["collected_at"] = "2026-11-08T16:30:00Z"
+        nxt.pop("query_end_time", None)
+        for item in nxt["items"]:
+            item["collected_at"] = nxt["collected_at"]
+        when = dt.datetime(2026, 11, 8, 16, 40, tzinfo=dt.timezone.utc)
+        service.apply_startup_option({"snapshot_json": json.dumps(nxt)}, when)
+        cleared = service.page(when)
+        self.assertEqual(cleared["status"], "ok")
+        self.assertNotIn("Starter snapshot.", "\n".join(cleared["messages"]))
+        self.assertEqual(cleared["collector_check"], "unavailable")
+        self.assertIn("Content collected Nov 8, 2026, 11:30 AM ET.", "\n".join(cleared["messages"]))
 
     def test_empty_option_shows_starter_until_a_valid_publish(self):
         service = self._option_service()
@@ -564,7 +627,7 @@ class PageTests(unittest.TestCase):
         self.assertNotIn("innerHTML", js)
         self.assertNotIn("iframe", js + html)
         cfg = open(os.path.join(ADDON, "config.yaml"), encoding="utf-8").read()
-        self.assertIn('version: "0.1.3"', cfg)
+        self.assertIn('version: "0.1.4"', cfg)
         self.assertIn('snapshot_json: "str(0,262144)"', cfg)
         self.assertIn('snapshot_json: ""', cfg)
         self.assertIn("hassio_api: false", cfg)
@@ -574,7 +637,10 @@ class PageTests(unittest.TestCase):
         self.assertNotIn("share:", cfg)
         self.assertNotRegex(cfg, r"(?m)^map:")
         self.assertIn("ingress: true", cfg)
-        self.assertIn("Last success", js)
+        self.assertIn("Content collected", js)
+        self.assertIn("captured", js)
+        self.assertNotIn("Last success", js)
+        self.assertNotIn("Last checked", js)
         self.assertIn("panel_admin: true", cfg)
 
     def test_trading_desk_charts_and_canvas_are_unchanged(self):

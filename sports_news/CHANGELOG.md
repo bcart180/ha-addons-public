@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.4 — 2026-11-08
+
+- The page says Content collected for the snapshot time. It does not call that time a collector check.
+- Last collector check stays unavailable, and automatic check status stays unknown. A schedule or a page re-read cannot make old content look newly checked.
+- The starter label stays while the saved snapshot status is `starter_snapshot_not_live`. A different accepted status clears it.
+- Team error text and each team's content time are unchanged.
+- Words in `warnings` stay as stored. The page labels them "Snapshot warnings (captured with content)" and does not treat them as the current collector setup. `stale` and `cadence_label` are not in the page payload. `freshness` is `content`, `empty`, or `error`.
+
 ## 0.1.3 — 2026-11-08
 
 - A merged snapshot is checked against the post total, the per-team total, the byte cap, and the rest of the snapshot rules before it is saved. If that check fails, the previous `/data/last_good.json` bytes stay in place and the page says why. It does not fall back to the starter.

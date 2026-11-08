@@ -24,7 +24,7 @@ These rules are covered by `sports_news/tests/test_sports_news.py`. The installe
 - After a save, a missing inbox keeps `/data/last_good.json`, says the inbox file is missing, and does not show the starter. A new process with the same data directory does the same.
 - A document whose `collected_at` is older than the saved snapshot is rejected. The saved posts and time stay.
 - `status: error` does not replace a saved snapshot, with or without posts. It does not advance success times.
-- `status: partial` keeps the failed team's previous posts and that team's success time. Updated teams use the new time. The page freshness is error, not "inside two proposed cycles".
+- `status: partial` keeps the failed team's previous posts and that team's content time. The page does not treat a schedule, a page re-read, or `last_attempt_at` as a new collector check.
 - Opening the inbox does not follow symlinks. If the allowed directory itself is a symlink, the open fails. `realpath` is not used to redefine the allowed root.
 - The save writes the full byte string, syncs the file, renames it, and syncs the directory. A page check that produces the same bytes does not rewrite the file.
 - Schema checks do not prove a post is true, that the display name matches the account, or that the URL still exists.
