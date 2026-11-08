@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1 — 2026-11-08
+
+- Presentation only. Page background is pure black `#000000`. Cards, type, and the range control keep the Trading Desk reading size: 16px radius, light figures, thin borders, 44px controls. Category colors are purple, orange, yellow, red, pink, green, and cyan, each with a written label. The edge chart uses orange for requests and purple for page views, and the legend still names both. Collector, options, ingress allowlist, and read-only behavior are unchanged. The stylesheet file name is still `soft-slate.css`.
+
 ## 0.3.0 — 2026-11-06
 
 - Per-site cards for each configured zone, including winchestergetaway.com and hideawaytavernlcv.com. A missing zone or token stays an empty state. No estimated numbers.

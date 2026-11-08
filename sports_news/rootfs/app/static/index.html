@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#000000">
+<title>Sports News</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<a class="skip" href="#teams">Skip to posts</a>
+<main class="shell">
+  <header class="header">
+    <div>
+      <h1>Sports News</h1>
+      <p id="updated" class="sub">Loading the snapshot…</p>
+    </div>
+  </header>
+  <div id="banner" class="banner" role="status"></div>
+  <div class="seg" role="tablist" aria-label="Teams">
+    <button type="button" data-team="all" class="on" aria-pressed="true">All</button>
+    <button type="button" data-team="Seattle Seahawks" aria-pressed="false">Seahawks</button>
+    <button type="button" data-team="Navy Midshipmen" aria-pressed="false">Navy</button>
+    <button type="button" data-team="Gonzaga Bulldogs" aria-pressed="false">Gonzaga</button>
+  </div>
+  <div id="teams"></div>
+  <footer class="footer">
+    <p>Official accounts and crosslinked reporters only. A reporter line is attributed, not treated as a separate fact check. Rumors are not published as fact.</p>
+    <p>Read-only personal page. No embeds and no analytics.</p>
+  </footer>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

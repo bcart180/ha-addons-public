@@ -12,14 +12,15 @@
   function bytes(b) { if (b == null) return "—"; var u = ["B", "KB", "MB", "GB", "TB"], i = 0; while (b >= 1024 && i < 4) { b /= 1024; i++; } return b.toFixed(i ? 1 : 0) + " " + u[i]; }
   var NA = [];
   function src(m) {
-    if (!m || !m.source) return "";
-    if (m.source === "web_analytics") return "Sampled";
-    if (m.source === "edge") return "Edge";
-    return "";
+    if (!m || !m.source) return null;
+    if (m.source === "web_analytics") return {k: "Sampled", c: "sampled"};
+    if (m.source === "edge") return {k: "Edge", c: "edge"};
+    return null;
   }
   function metric(label, m, fmt, where) {
     if (!m) return "";
-    var badge = src(m) ? '<div class="src">' + src(m) + "</div>" : "";
+    var s = src(m);
+    var badge = s ? '<div class="src ' + s.c + '">' + s.k + "</div>" : "";
     if (!m.available) {
       NA.push([where + " · " + label, m.reason]);
       return '<div class="m na" title="' + esc(m.reason) + '">' + badge + '<div class="k">' + esc(label) + '</div><div class="v">Not available</div></div>';
@@ -34,13 +35,13 @@
     var xs = (snap.x || []).filter(function (a) { return !a.error; });
     var ss = snap.sites || [];
     var tiles = [
-      ["Followers", sum(xs, function (a) { return val(a.followers); }), xs.length + " X accounts"],
-      ["Post impressions", sum(xs, function (a) { return val(a.post_impressions_7d); }), "public, last 7 days"],
-      ["Edge page views", sum(ss, function (s) { return val(s["page_views_" + range]); }), "Edge HTML, not sampled visits, " + range],
-      ["Summed daily uniques", sum(ss, function (s) { return val(s["uniques_" + range]); }), "Not deduplicated across " + range]
+      ["Followers", sum(xs, function (a) { return val(a.followers); }), xs.length + " X accounts", "followers"],
+      ["Post impressions", sum(xs, function (a) { return val(a.post_impressions_7d); }), "public, last 7 days", "impressions"],
+      ["Edge page views", sum(ss, function (s) { return val(s["page_views_" + range]); }), "Edge HTML, not sampled visits, " + range, "edge"],
+      ["Summed daily uniques", sum(ss, function (s) { return val(s["uniques_" + range]); }), "Not deduplicated across " + range, "uniques"]
     ];
     $("hero").innerHTML = tiles.map(function (t) {
-      return '<div class="tile"><div class="k">' + t[0] + '</div><div class="v">' + (t[1] == null ? "—" : num(t[1])) + '</div><div class="s">' + t[2] + "</div></div>";
+      return '<div class="tile cat-' + t[3] + '"><div class="k">' + t[0] + '</div><div class="v">' + (t[1] == null ? "—" : num(t[1])) + '</div><div class="s">' + t[2] + "</div></div>";
     }).join("");
   }
 
@@ -72,9 +73,9 @@
       return d.map(function (r, i) { var x = P + (d.length === 1 ? 0 : i * (W - 2 * P) / (d.length - 1)); var y = H - P - (H - 2 * P) * r[key] / mx; return (i ? "L" : "M") + x.toFixed(1) + " " + y.toFixed(1); }).join(" ");
     }
     var area = line("requests") + " L" + (W - P) + " " + (H - P) + " L" + P + " " + (H - P) + " Z";
-    return '<svg class="chart" viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none"><path d="' + area + '" fill="#d5f0ec"/><path d="' + line("requests") +
-      '" fill="none" stroke="#2a9d8f" stroke-width="2.5"/><path d="' + line("page_views") + '" fill="none" stroke="#1e2a36" stroke-width="2" stroke-dasharray="5 4"/></svg>' +
-      '<div class="legend"><span><i style="background:#2a9d8f"></i>Edge requests</span><span><i style="background:#1e2a36"></i>Edge page views</span><span>' + esc(d[0].date) + " → " + esc(d[d.length - 1].date) + "</span></div>";
+    return '<svg class="chart" viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none"><path d="' + area + '" fill="rgba(255,158,74,.16)"/><path d="' + line("requests") +
+      '" fill="none" stroke="#ff9e4a" stroke-width="2.5"/><path d="' + line("page_views") + '" fill="none" stroke="#d7b4ff" stroke-width="2" stroke-dasharray="5 4"/></svg>' +
+      '<div class="legend"><span><i style="background:#ff9e4a"></i>Edge requests</span><span><i style="background:#d7b4ff"></i>Edge page views</span><span>' + esc(d[0].date) + " → " + esc(d[d.length - 1].date) + "</span></div>";
   }
   function shareLine(row) {
     if (!row || !row.available) return "";
@@ -134,10 +135,10 @@
       var sampledNote = (s.rum_status && s.rum_status !== "ok" && s.rum_status_detail) ? s.rum_status_detail : "Sampled visits are Web Analytics beacon events, not edge requests.";
       var probes = (s.bot_probe_requests_7d && s.bot_probe_requests_7d.available) ? " " + num(s.bot_probe_requests_7d.value) + " WordPress/PHP probe hits are hidden from Top pages." : "";
       return head + chart(s.daily || []) +
-        '<div class="group-label">Edge · HTTP at Cloudflare</div><div class="metrics">' +
+        '<div class="group-label edge">Edge · HTTP at Cloudflare</div><div class="metrics">' +
         metric("Requests", s["requests_" + r], null, w) + metric("Page views", s["page_views_" + r], null, w) + metric("Summed daily uniques", uniq, null, w) +
         metric("Bandwidth", s["bandwidth_bytes_" + r], bytes, w) + metric("Threats blocked", s["threats_" + r], null, w) + metric("Probe hits (7 days)", s.bot_probe_requests_7d, null, w) + "</div>" +
-        '<div class="group-label">Sampled · Web Analytics</div><div class="metrics">' +
+        '<div class="group-label sampled">Sampled · Web Analytics</div><div class="metrics">' +
         metric("Visits (" + r + ")", rumKey(s, "rum_visits"), null, w) + metric("Page loads (" + r + ")", rumKey(s, "rum_pageloads"), null, w) + "</div>" +
         '<div class="compare">' + shareLine(win.edge_requests) + shareLine(win.edge_page_views) + shareLine(win.rum_visits) + shareLine(win.rum_pageloads) + prevLine(s) + "</div>" +
         '<div class="lists">' + list("Top pages (edge requests, rolling 7 days)", s.top_paths_7d, w) + list(countryLabel, countries, w) +
