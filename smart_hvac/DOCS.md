@@ -91,6 +91,8 @@ The old `vacation_mode_handler` automation is left as-is until vacation mode is 
 ## Climate screen (0.9.0)
 The ingress panel (`/`) is the Climate screen: large temperatures, the schedule, and a history graph. It reads `/api/state` when it opens and does not change a hold or a thermostat by being opened.
 
+Color (0.9.1), layout unchanged. The screen stays black and gray. Amber `#e8a05a` means heating. Teal `#5ec8c5` means cooling or defrost. Gold `#e2c07a` means a temporary hold. A manual profile is white text, not teal. Each room also has a stable left stripe (slate, tan, or gray) chosen from its name. The printed words remain the meaning; the color only repeats them.
+
 Three different controls:
 
 - **Full Auto** is the global schedule (presence and time of day). Home, Sleep, and Away in that row are a manual profile for the whole house. They are not a room hold. The screen also shows the resolved profile and presence separately. If those disagree, both are shown and neither is cleared.
@@ -103,7 +105,7 @@ The graph uses recorder history already available to the add-on (indoor, target,
 
 `?mock=1` is a labeled synthetic example for screenshots. It does not talk to Home Assistant.
 
-Rollback: install the previous add-on version. A `prefs` object left in `/data/state.json` is ignored by 0.8.9. Holds and the Lovelace card keep working.
+Rollback: install the previous add-on version. 0.9.1 is colors only, so 0.9.0 keeps the same controls. A `prefs` object left in `/data/state.json` is ignored by 0.8.9. Holds and the Lovelace card keep working.
 
 ## Lovelace card (0.3.2)
 `custom:smart-hvac-card` shows the thermostat cards natively on any dashboard (Echo Show 1280x800 included),

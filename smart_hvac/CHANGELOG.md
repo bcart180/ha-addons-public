@@ -1,3 +1,10 @@
+## 0.9.1 — 2026-11-07
+
+- Climate screen colors only. Layout, controls, and behavior are unchanged. The base stays black and gray.
+- Heating is amber (`#e8a05a`) on the activity label and the heating minutes. Cooling and defrost are teal (`#5ec8c5`). A temporary hold is gold (`#e2c07a`) on the hold label, countdown, and hold pill. The words stay; color repeats them.
+- Each room keeps a stable left stripe from its name (slate, tan, or gray). The room name is still the identifier.
+- A manual Home, Sleep, or Away profile is labeled in white, not teal, so teal means cooling.
+
 ## 0.9.0 — 2026-11-07
 
 - New Climate screen at the ingress panel (`/`). It is the add-on itself, using the existing ingress APIs. The previous dial layout stays at `/classic`. The thermostat card page stays at `/thermostat`. The Lovelace card still works and still links into this panel.

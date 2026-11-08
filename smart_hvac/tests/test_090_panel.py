@@ -167,6 +167,9 @@ async def test_history_unavailable_is_502(mk):
 
 def test_version_and_slug_notes():
     raw = open(os.path.join(os.path.dirname(__file__), "..", "config.yaml")).read()
-    assert 'version: "0.9.0"' in raw
+    assert 'version: "0.9.1"' in raw
+    html = open(INDEX).read()
+    assert "--heat:#e8a05a" in html and "--cool:#5ec8c5" in html and "--hold:#e2c07a" in html
+    assert "rowlabel holdlab" in html and "card rm" in html
     card = open(os.path.join(os.path.dirname(__file__), "..", "lovelace", "smart-hvac-card.js")).read()
     assert "a1d3bd4b_smart_hvac" in card and "47b3c4e5_smart_hvac" in card
