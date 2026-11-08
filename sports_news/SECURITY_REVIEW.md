@@ -2,7 +2,7 @@
 
 Status: pre-install packet for this branch. Nothing here is installed, restarted, scheduled, or merged. Social Pulse behavior is unchanged. Trading Desk is unchanged.
 
-This packet does not say the secret scan is clean. The previous gitleaks job failed while downloading the scanner (HTTP 504) and did not scan. A later commit retries that download. Clean is only true after that job passes.
+This packet does not say the secret scan is clean until the gitleaks job on this head passes. The earlier job failed while downloading the scanner from the releases CDN (HTTP 504) and did not scan. The workflow now downloads official gitleaks 8.30.1 through the GitHub release API and checks the same checksum.
 
 ## Publishing block
 
