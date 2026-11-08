@@ -153,12 +153,15 @@ jobs:
         with:
           fetch-depth: 0
       - name: Install gitleaks
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           version=8.30.1
           archive="gitleaks_${version}_linux_x64.tar.gz"
-          curl -fsSL -o "/tmp/${archive}" \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${version}/${archive}"
+          # The public releases CDN is returning HTTP 504. gh downloads the same
+          # official asset through the GitHub API. The checksum below is unchanged.
+          gh release download "v${version}" --repo gitleaks/gitleaks --pattern "$archive" --dir /tmp
           echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  /tmp/${archive}" | sha256sum -c -
           tar -xzf "/tmp/${archive}" -C /usr/local/bin gitleaks
           gitleaks version

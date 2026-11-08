@@ -1,0 +1,7 @@
+configuration:
+  snapshot_json:
+    name: Sports snapshot
+    description: Public sports snapshot as JSON text. Leave empty until the first publish. Supervisor applies it only when Sports News starts, so save it and restart only this app. A bad or older snapshot does not replace the last valid collection.
+  log_level:
+    name: Log level
+    description: How much detail to write to the log.

@@ -1,0 +1,196 @@
+{
+  "schema_version": 1,
+  "collected_at": "2026-11-08T09:50:38.309530+00:00",
+  "display_timezone": "America/New_York",
+  "status": "starter_snapshot_not_live",
+  "query_end_time": "2026-11-08T09:49:00Z",
+  "items": [
+    {
+      "id": "2119212325949616257",
+      "team": "Seattle Seahawks",
+      "sport": "football",
+      "canonical_post_url": "https://x.com/Seahawks/status/2119212325949616257",
+      "author_handle": "Seahawks",
+      "author_name": "Seattle Seahawks",
+      "author_id": "23642374",
+      "published_at": "2026-11-07T23:36:06.000Z",
+      "collected_at": "2026-11-08T09:50:38.309530+00:00",
+      "summary": "Seahawks announce signing defensive tackle Deven Eastern and elevating two practice-squad players.",
+      "source_provenance": "official",
+      "source_text": "We've signed DT Deven Eastern and elevated two players from the practice squad ahead of Sunday’s game. \n\nRead more » https://t.co/C4ohtvyevl https://t.co/YfIAjlYQwl",
+      "status": "fresh",
+      "evidence_files": [
+        "raw/seahawks.json"
+      ]
+    },
+    {
+      "id": "2118846784655200290",
+      "team": "Seattle Seahawks",
+      "sport": "football",
+      "canonical_post_url": "https://x.com/Seahawks/status/2118846784655200290",
+      "author_handle": "Seahawks",
+      "author_name": "Seattle Seahawks",
+      "author_id": "23642374",
+      "published_at": "2026-11-06T23:23:34.000Z",
+      "collected_at": "2026-11-08T09:50:38.309530+00:00",
+      "summary": "Seahawks publish their Friday injury report; open the source for player designations.",
+      "source_provenance": "official",
+      "source_text": "The Friday injury report. \n\nRead more » https://t.co/raRNH9QB45 https://t.co/SpIpsKxRnb",
+      "status": "fresh",
+      "evidence_files": [
+        "raw/seahawks.json"
+      ]
+    },
+    {
+      "id": "2118817822872637559",
+      "team": "Seattle Seahawks",
+      "sport": "football",
+      "canonical_post_url": "https://x.com/Seahawks/status/2118817822872637559",
+      "author_handle": "Seahawks",
+      "author_name": "Seattle Seahawks",
+      "author_id": "23642374",
+      "published_at": "2026-11-06T21:28:29.000Z",
+      "collected_at": "2026-11-08T09:50:38.309530+00:00",
+      "summary": "Team publishes Mike Macdonald’s November 6 press conference.",
+      "source_provenance": "official",
+      "source_text": "Mike Macdonald Press Conference - November 6, 2026 https://t.co/SucGFYp7bq",
+      "status": "fresh",
+      "evidence_files": [
+        "raw/seahawks.json"
+      ]
+    },
+    {
+      "id": "2118858199298359649",
+      "team": "Seattle Seahawks",
+      "sport": "football",
+      "canonical_post_url": "https://x.com/Seahawks/status/2118858199298359649",
+      "author_handle": "Seahawks",
+      "author_name": "Seattle Seahawks",
+      "author_id": "23642374",
+      "published_at": "2026-11-07T00:08:55.000Z",
+      "collected_at": "2026-11-08T09:50:38.309530+00:00",
+      "summary": "Episode 4 of the team’s The Sound series is available on YouTube.",
+      "source_provenance": "official",
+      "source_text": "Episode 4 of The Sound is out now on Seahawks YouTube. \n\nFull episode » https://t.co/RVQccAKVBD https://t.co/BgOZgM0xnn",
+      "status": "fresh",
+      "evidence_files": [
+        "raw/seahawks.json"
+      ]
+    },
+    {
+      "id": "2119220022350635055",
+      "team": "Navy Midshipmen",
+      "sport": "football",
+      "canonical_post_url": "https://x.com/NavyFB/status/2119220022350635055",
+      "author_handle": "NavyFB",
+      "author_name": "Navy Football",
+      "author_id": "2429051735",
+      "published_at": "2026-11-08T00:06:41.000Z",
+      "collected_at": "2026-11-08T09:50:38.309530+00:00",
+      "summary": "Navy announces a win. The post text does not state the final score.",
+      "source_provenance": "official",
+      "source_text": "GOATS WIN! \n\n#GoNavy | #RollGoats https://t.co/qE21EEzMzd",
+      "status": "fresh",
+      "evidence_files": [
+        "raw/navy.json"
+      ]
+    },
+    {
+      "id": "2119216356952605069",
+      "team": "Navy Midshipmen",
+      "sport": "football",
+      "canonical_post_url": "https://x.com/NavyFB/status/2119216356952605069",
+      "author_handle": "NavyFB",
+      "author_name": "Navy Football",
+      "author_id": "2429051735",
+      "published_at": "2026-11-07T23:52:07.000Z",
+      "collected_at": "2026-11-08T09:50:38.309530+00:00",
+      "summary": "Navy shares a highlight described as Guti’s fifth rushing touchdown and the lead; this is a game highlight, not a current live score.",
+      "source_provenance": "official",
+      "source_text": "Guti for his 5th rushing tuddy and the lead😤\n\n#RollGoats | @American_Conf | @CBSSportsNet https://t.co/PW8UkwQOjf",
+      "status": "fresh",
+      "evidence_files": [
+        "raw/navy.json"
+      ]
+    },
+    {
+      "id": "2119201503135273462",
+      "team": "Navy Midshipmen",
+      "sport": "football",
+      "canonical_post_url": "https://x.com/NavyFB/status/2119201503135273462",
+      "author_handle": "NavyFB",
+      "author_name": "Navy Football",
+      "author_id": "2429051735",
+      "published_at": "2026-11-07T22:53:05.000Z",
+      "collected_at": "2026-11-08T09:50:38.309530+00:00",
+      "summary": "Navy shares a 49-yard Gutierrez-to-Collins scoring highlight.",
+      "source_provenance": "official",
+      "source_text": "Gutierrez ➡️ Collins ➡️ 49-yard score!\n\n#RollGoats | @American_Conf | @CBSSportsNet https://t.co/xs8mHET4UU",
+      "status": "fresh",
+      "evidence_files": [
+        "raw/navy.json"
+      ]
+    },
+    {
+      "id": "2119222230689435736",
+      "team": "Gonzaga Bulldogs",
+      "sport": "basketball",
+      "canonical_post_url": "https://x.com/TheoLawson_SR/status/2119222230689435736",
+      "author_handle": "TheoLawson_SR",
+      "author_name": "Theo Lawson",
+      "author_id": "291955806",
+      "published_at": "2026-11-08T00:15:27.000Z",
+      "collected_at": "2026-11-08T09:50:38.309530+00:00",
+      "summary": "Theo Lawson reports Gonzaga beat NMSU 109–68, with Harwell and Fogle scoring 22 apiece and Huff scoring 20.",
+      "source_provenance": "reporter",
+      "source_text": "Final: No. 15 Gonzaga 109, NMSU 68\n\nSome second half, eh? Zags outscore Aggies 62-26 after the break, finish with three 20-point scorers: Harwell (career-high 22), Fogle (ties career-high w/ 22) and Huff (20). Gonzaga finishes 13 of 24 (54%) from the 3-point line. https://t.co/sGfe2u4eel",
+      "status": "fresh",
+      "evidence_files": [
+        "raw/mixed.json"
+      ]
+    },
+    {
+      "id": "2119253083884839087",
+      "team": "Gonzaga Bulldogs",
+      "sport": "basketball",
+      "canonical_post_url": "https://x.com/TheoLawson_SR/status/2119253083884839087",
+      "author_handle": "TheoLawson_SR",
+      "author_name": "Theo Lawson",
+      "author_id": "291955806",
+      "published_at": "2026-11-08T02:18:03.000Z",
+      "collected_at": "2026-11-08T09:50:38.309530+00:00",
+      "summary": "Theo Lawson links Gonzaga–NMSU postgame interviews with Mark Few and players Isiah Harwell, Braden Huff and Davis Fogle.",
+      "source_provenance": "reporter",
+      "source_text": "Gonzaga-NMSU postgame interviews.\n\nMark Few: https://t.co/xmfnna35Ib\n\nIsiah Harwell, Braden Huff, Davis Fogle: https://t.co/ohXBS7vbF0",
+      "status": "fresh",
+      "evidence_files": [
+        "raw/mixed.json"
+      ]
+    },
+    {
+      "id": "2119256646472106232",
+      "team": "Gonzaga Bulldogs",
+      "sport": "basketball",
+      "canonical_post_url": "https://x.com/TheoLawson_SR/status/2119256646472106232",
+      "author_handle": "TheoLawson_SR",
+      "author_name": "Theo Lawson",
+      "author_id": "291955806",
+      "published_at": "2026-11-08T02:32:13.000Z",
+      "collected_at": "2026-11-08T09:50:38.309530+00:00",
+      "summary": "Theo Lawson shares Mark Few’s comments on former assistant Roger Powell and Valparaiso’s win over Purdue.",
+      "source_provenance": "reporter",
+      "source_text": "Yes, Mark Few and former asst. Roger Powell spoke earlier this week after Gonzaga played the Purdue team hosting Valparaiso last night. Good stuff from Few on Valpo’s win &amp; what it could do for their program.\n\n“You need something like that to show everybody you are making gains.” https://t.co/ewXTlWZjU4",
+      "status": "fresh",
+      "evidence_files": [
+        "raw/mixed.json"
+      ]
+    }
+  ],
+  "warnings": [
+    "No automatic refresh is configured.",
+    "Search results are capped at 25 per call; this is a curated starter set, not exhaustive coverage.",
+    "Media was not inspected; summaries rely on returned post text only.",
+    "Navy final score is not present in selected post text and is intentionally omitted.",
+    "No returned selected timestamps are later than collection time."
+  ]
+}
