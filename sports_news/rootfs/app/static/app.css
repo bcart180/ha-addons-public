@@ -46,6 +46,7 @@ h1 { margin: 0; font-size: 17px; font-weight: 500; letter-spacing: -.02em; }
 .banner p.age { color: var(--text); border-color: var(--line); }
 .banner p.error { color: var(--red); border-color: rgba(255, 122, 122, .45); }
 .banner p.note { color: var(--cyan); }
+.banner p.captured { color: var(--dim); border-style: dashed; }
 .seg {
   display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 16px; padding: 4px;
   background: var(--elev); border: 1px solid var(--line); border-radius: 999px;

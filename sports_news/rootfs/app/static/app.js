@@ -33,11 +33,12 @@
     return node;
   }
 
-  function messageClass(text) {
+  function messageClass(text, warnings) {
+    if (warnings && warnings.indexOf(text) >= 0) return "captured";
+    if (text.indexOf("Snapshot warnings (captured with content)") === 0) return "note";
     if (text.indexOf("Starter snapshot") === 0) return "starter";
     if (text.indexOf("Content age:") === 0) return "age";
-    if (text.indexOf("Source error") === 0 || text.indexOf("Inbox rejected") === 0) return "error";
-    if (text.indexOf("Note:") === 0) return "note";
+    if (text.indexOf("Source error") === 0 || text.indexOf("Inbox rejected") === 0 || text.indexOf("Snapshot option rejected") === 0) return "error";
     return "";
   }
 
@@ -47,8 +48,9 @@
       ? "Content collected " + snapshot.collected_at_et
       : "No content collection time";
     banner.textContent = "";
+    var captured = snapshot.warnings || [];
     (snapshot.messages || []).forEach(function (line) {
-      addText(banner, "p", messageClass(line), line);
+      addText(banner, "p", messageClass(line, captured), line);
     });
     teams.textContent = "";
     (snapshot.teams || []).forEach(function (row) {

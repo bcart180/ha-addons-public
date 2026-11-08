@@ -172,6 +172,26 @@ class ContractTests(unittest.TestCase):
         self.assertTrue(older)
         self.assertTrue(recent)
 
+    def test_historical_warning_is_not_current_collector_state(self):
+        raw = starter()
+        self.assertIn("No automatic refresh is configured.", raw["warnings"])
+        view = v.view(parsed(raw), NOW + dt.timedelta(hours=6), origin="bundled_starter")
+        self.assertEqual(view["warnings"], raw["warnings"])
+        blob = "\n".join(view["messages"])
+        self.assertIn("No automatic refresh is configured.", blob)
+        self.assertLess(blob.index("Snapshot warnings (captured with content)"), blob.index("No automatic refresh is configured."))
+        self.assertIn("not this app's current collector status", blob)
+        self.assertNotIn("Note: No automatic refresh is configured.", blob)
+        self.assertEqual(view["freshness"], "content")
+        self.assertNotEqual(view["freshness"], "fresh")
+        self.assertEqual(view["collector_check"], "unavailable")
+        self.assertEqual(view["automatic_check"], "unknown")
+        self.assertFalse(view["live_feed"])
+        self.assertFalse(view["scheduled"])
+        self.assertNotIn("stale", view)
+        self.assertNotIn("cadence_label", view)
+        self.assertIn("Source error", "\n".join(v.view(parsed(raw), NOW, origin="published", source_error="public read failed", freshness="error")["messages"]))
+
     def test_schedule_metadata_cannot_mark_the_snapshot_successful(self):
         doc = starter()
         doc["last_attempt_at"] = "2026-11-08T20:00:00Z"
@@ -618,6 +638,7 @@ class PageTests(unittest.TestCase):
         self.assertNotRegex(cfg, r"(?m)^map:")
         self.assertIn("ingress: true", cfg)
         self.assertIn("Content collected", js)
+        self.assertIn("captured", js)
         self.assertNotIn("Last success", js)
         self.assertNotIn("Last checked", js)
         self.assertIn("panel_admin: true", cfg)

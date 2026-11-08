@@ -687,8 +687,13 @@ def _messages(payload):
     lines.append(payload["poll_label"])
     lines.append(ACTIVATION_LABEL)
     lines.append(ATTRIBUTION)
-    for warning in payload["warnings"]:
-        lines.append("Note: " + warning)
+    if payload["warnings"]:
+        lines.append(
+            "Snapshot warnings (captured with content). These words were saved with the snapshot. "
+            "They are not this app's current collector status."
+        )
+        for warning in payload["warnings"]:
+            lines.append(warning)
     return lines
 
 

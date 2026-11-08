@@ -15,8 +15,9 @@ States:
 | Starter snapshot | The saved snapshot status is `starter_snapshot_not_live`, or nothing valid has been saved. It stays until an accepted snapshot has another status. Not a live feed. |
 | Content age | How old `collected_at` is compared with the page clock. A fact about the saved content, not a collector pass or fail. |
 | No posts | The saved snapshot has no posts. |
-| Source error | The snapshot says a read failed, or the new option was rejected. Saved posts stay. Content times are not reset. |
+| Source error | The snapshot says a read failed, or the new option was rejected. Saved posts stay. Content times are not reset. This line stays separate from snapshot warnings. |
 | Older news | A card whose post time is more than 72 hours before the page clock. |
+| Snapshot warnings | Words saved in `warnings`. Shown after the label "Snapshot warnings (captured with content)". The stored strings are not rewritten. They are not this app's current collector status. |
 
 One team can be in error while the other teams still show their posts.
 
@@ -79,6 +80,14 @@ Optional `last_attempt_at`. Team `last_success_at` is the success time for that 
 Each post needs `id` (numeric status id string), `team`, `sport`, `canonical_post_url`, `author_handle`, `author_name`, `author_id` (string, not a JSON number), `published_at`, `collected_at`, `summary`, `source_provenance`, `source_text`, and `status` (`fresh` or `older`). The URL must be `https://x.com/{handle}/status/{id}` or the same path on `twitter.com`, with no query, fragment, user, or port. `source_text` is plain text, 4000 characters max. `<` and `>` are rejected. The whole file must be UTF-8 JSON at most 262144 bytes and at most 75 posts.
 
 `evidence_files`, when present, may only be `raw/<simple name>`. They are checked and then dropped. The page does not serve them.
+
+## Page payload compatibility
+
+`/api/snapshot` no longer includes `stale` or `cadence_label`. Those fields were collector-health claims. Their absence is not a successful check.
+
+`freshness` is `content`, `empty`, or `error`. It is not `fresh` or `stale`. `content` means saved posts are being shown. It does not mean a collector checked recently.
+
+`collector_check` is `unavailable`. `automatic_check` is `unknown`. `live_feed` and `scheduled` stay false. `warnings` is the stored list, unchanged. The `messages` list repeats those strings after one explanatory line. A source error stays its own `Source error` line.
 
 This repository does not call a publish tool and does not create a routine.
 
