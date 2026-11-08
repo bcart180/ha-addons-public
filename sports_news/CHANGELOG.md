@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3 — 2026-11-08
+
+- A merged snapshot is checked against the post total, the per-team total, the byte cap, and the rest of the snapshot rules before it is saved. If that check fails, the previous `/data/last_good.json` bytes stay in place and the page says why. It does not fall back to the starter.
+
 ## 0.1.2 — 2026-11-08
 
 - Publish path is the `snapshot_json` configuration option, a public JSON string of at most 262144 characters. Supervisor writes `/data/options.json` only when Sports News starts. There is still no host mount, no write endpoint, and no Supervisor API privilege.

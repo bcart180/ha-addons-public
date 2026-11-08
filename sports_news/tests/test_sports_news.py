@@ -404,6 +404,95 @@ class StoreTests(unittest.TestCase):
         gonzaga = [row for row in merged["teams"] if row["team"] == "Gonzaga Bulldogs"][0]
         self.assertEqual(gonzaga["last_success_at_et"], "Nov 8, 2026, 4:50 AM ET")
 
+    def _bulk(self, handle, team, sport, role, author_id, count, collected, start):
+        items = []
+        for offset in range(count):
+            post_id = str(start + offset)
+            items.append({
+                "id": post_id,
+                "team": team,
+                "sport": sport,
+                "canonical_post_url": "https://x.com/" + handle + "/status/" + post_id,
+                "author_handle": handle,
+                "author_name": handle,
+                "author_id": author_id,
+                "published_at": "2026-11-08T12:00:00Z",
+                "collected_at": collected,
+                "summary": "Item %d" % offset,
+                "source_provenance": role,
+                "source_text": "Text %d" % offset,
+                "status": "fresh",
+            })
+        return {
+            "schema_version": 1,
+            "collected_at": collected,
+            "display_timezone": "America/New_York",
+            "status": "ok",
+            "warnings": [],
+            "items": items,
+        }
+
+    def test_merged_union_over_the_cap_is_rejected_before_write(self):
+        service = self._option_service()
+        first = self._bulk("Seahawks", "Seattle Seahawks", "football", "official", "23642374", 75, "2026-11-08T13:00:00Z", 2119100000000000000)
+        second = self._bulk("NavyFB", "Navy Midshipmen", "football", "official", "2429051735", 75, "2026-11-08T16:00:00Z", 2119200000000000000)
+        second["status"] = "partial"
+        second["teams"] = {"Seattle Seahawks": {"status": "error", "detail": "public read failed"}}
+        parsed(first, dt.datetime(2026, 11, 8, 13, 5, tzinfo=dt.timezone.utc))
+        parsed(second, dt.datetime(2026, 11, 8, 16, 5, tzinfo=dt.timezone.utc))
+        service.apply_startup_option({"snapshot_json": json.dumps(first)}, dt.datetime(2026, 11, 8, 13, 5, tzinfo=dt.timezone.utc))
+        saved = os.path.join(self.data, "last_good.json")
+        before = open(saved, "rb").read()
+        self.assertEqual(service.page(dt.datetime(2026, 11, 8, 13, 5, tzinfo=dt.timezone.utc))["items"].__len__(), 75)
+        later = dt.datetime(2026, 11, 8, 16, 5, tzinfo=dt.timezone.utc)
+        service.apply_startup_option({"snapshot_json": json.dumps(second)}, later)
+        self.assertEqual(open(saved, "rb").read(), before)
+        shown = service.page(later)
+        self.assertEqual(shown["feed_kind"], "last_good")
+        self.assertEqual(len(shown["items"]), 75)
+        self.assertEqual(shown["collected_at"], "2026-11-08T13:00:00Z")
+        self.assertIn("at most 75 posts", "\n".join(shown["messages"]))
+        self.assertNotEqual(shown["feed_kind"], "bundled_starter")
+        restarted = server.Service(PREVIEW, self.data, [], ())
+        restarted.apply_startup_option({"snapshot_json": json.dumps(second)}, later)
+        self.assertEqual(open(saved, "rb").read(), before)
+        again = restarted.page(later)
+        self.assertEqual(again["feed_kind"], "last_good")
+        self.assertEqual(len(again["items"]), 75)
+        self.assertEqual(again["collected_at"], "2026-11-08T13:00:00Z")
+
+    def test_merged_bytes_and_per_team_caps_reject_before_write(self):
+        wide = "x" * 4000
+        first = self._bulk("Seahawks", "Seattle Seahawks", "football", "official", "23642374", 40, "2026-11-08T13:00:00Z", 2119300000000000000)
+        second = self._bulk("NavyFB", "Navy Midshipmen", "football", "official", "2429051735", 40, "2026-11-08T16:00:00Z", 2119400000000000000)
+        for item in first["items"] + second["items"]:
+            item["source_text"] = wide
+        second["status"] = "partial"
+        second["teams"] = {"Seattle Seahawks": {"status": "error", "detail": "public read failed"}}
+        now_first = dt.datetime(2026, 11, 8, 13, 5, tzinfo=dt.timezone.utc)
+        now_second = dt.datetime(2026, 11, 8, 16, 5, tzinfo=dt.timezone.utc)
+        self.assertLessEqual(len(json.dumps(first).encode()), v.MAX_BYTES)
+        self.assertLessEqual(len(json.dumps(second).encode()), v.MAX_BYTES)
+        parsed(first, now_first)
+        parsed(second, now_second)
+        merged = v.apply_publication(parsed(first, now_first), parsed(second, now_second))
+        self.assertGreater(len(v.canonical_bytes(merged)), v.MAX_BYTES)
+        self.assertLessEqual(max(
+            sum(1 for item in merged["items"] if item["team"] == name) for name in v.TEAM_ORDER
+        ), v.MAX_PER_TEAM)
+        service = self._option_service()
+        service.apply_startup_option({"snapshot_json": json.dumps(first)}, now_first)
+        saved = os.path.join(self.data, "last_good.json")
+        before = open(saved, "rb").read()
+        service.apply_startup_option({"snapshot_json": json.dumps(second)}, now_second)
+        self.assertEqual(open(saved, "rb").read(), before)
+        shown = service.page(now_second)
+        self.assertEqual(shown["feed_kind"], "last_good")
+        self.assertIn("larger than 262144 bytes", "\n".join(shown["messages"]))
+        crowded = self._bulk("Seahawks", "Seattle Seahawks", "football", "official", "23642374", 76, "2026-11-08T13:00:00Z", 2119500000000000000)
+        with self.assertRaisesRegex(v.ValidationError, "more than 75 posts"):
+            parsed(crowded, now_first)
+
     def test_bad_option_does_not_fail_the_health_check(self):
         service = self._option_service()
         service.apply_startup_option({"snapshot_json": "{"}, NOW)
@@ -475,7 +564,7 @@ class PageTests(unittest.TestCase):
         self.assertNotIn("innerHTML", js)
         self.assertNotIn("iframe", js + html)
         cfg = open(os.path.join(ADDON, "config.yaml"), encoding="utf-8").read()
-        self.assertIn('version: "0.1.2"', cfg)
+        self.assertIn('version: "0.1.3"', cfg)
         self.assertIn('snapshot_json: "str(0,262144)"', cfg)
         self.assertIn('snapshot_json: ""', cfg)
         self.assertIn("hassio_api: false", cfg)

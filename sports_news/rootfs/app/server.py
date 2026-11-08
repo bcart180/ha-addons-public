@@ -134,11 +134,14 @@ class Service:
             self._reject_option(doc.get("source_error") or "snapshot status is error")
             return
         try:
-            merged = validate.apply_publication(last, doc)
+            _merged, raw = validate.commit_candidate(last, doc, now)
         except validate.RollbackError as exc:
             self._reject_option(str(exc))
             return
-        self._write_last(validate.canonical_bytes(merged))
+        except validate.ValidationError as exc:
+            self._reject_option(str(exc))
+            return
+        self._write_last(raw)
 
     def _reject_option(self, reason):
         if os.path.isfile(self._last_path()):
@@ -208,12 +211,14 @@ class Service:
                 )
             return validate.view(doc, now, origin="error", freshness="error")
         try:
-            merged = validate.apply_publication(last, doc)
+            merged, raw = validate.commit_candidate(last, doc, now)
         except validate.RollbackError as exc:
             if last is None:
                 return self._fallback(now, str(exc))
             return validate.view(last, now, origin="last_good", inbox_error=str(exc), freshness="error")
-        self._write_last(validate.canonical_bytes(merged))
+        except validate.ValidationError as exc:
+            return self._fallback(now, str(exc))
+        self._write_last(raw)
         return validate.view(merged, now, origin="published")
 
     def _fallback(self, now, reason):

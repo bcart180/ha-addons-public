@@ -8,6 +8,7 @@ ET = ZoneInfo("America/New_York")
 SCHEMA_VERSION = 1
 MAX_BYTES = 262144
 MAX_ITEMS = 75
+MAX_PER_TEAM = 75
 OLDER_SECONDS = 72 * 3600
 FUTURE_SKEW = dt.timedelta(minutes=5)
 CADENCE_LABEL = (
@@ -210,12 +211,19 @@ def _plain(value, field, limit, newlines):
 
 
 def _items(value, collected):
-    if not isinstance(value, list) or len(value) > MAX_ITEMS:
+    if not isinstance(value, list):
         raise ValidationError("items must be a list of at most 75 posts")
     seen = set()
     cleaned = []
+    counts = {name: 0 for name in TEAM_ORDER}
     for item in value:
         cleaned.append(_item(item, collected, seen))
+        team = cleaned[-1]["team"]
+        counts[team] += 1
+        if counts[team] > MAX_PER_TEAM:
+            raise ValidationError("a team has more than 75 posts")
+    if len(cleaned) > MAX_ITEMS:
+        raise ValidationError("items must be a list of at most 75 posts")
     return cleaned
 
 
@@ -461,6 +469,19 @@ def apply_publication(previous, incoming):
         "items": items,
     }
     return merged
+
+
+def commit_candidate(previous, incoming, now):
+    """Build the merged document and accept it only if the saved bytes still validate.
+
+    Nothing is written here. Callers must keep the previous file when this raises.
+    """
+    merged = apply_publication(previous, incoming)
+    raw = canonical_bytes(merged)
+    if len(raw) > MAX_BYTES:
+        raise ValidationError("merged snapshot is larger than 262144 bytes")
+    checked = load_bytes(raw, now)
+    return checked, raw
 
 
 def canonical_bytes(doc):

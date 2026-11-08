@@ -62,6 +62,7 @@ These rules still apply:
 - A team `last_success_at` is kept on the saved document. The page shows it per team.
 - The inbox open does not follow symlinks. An allowed directory that is itself a symlink is rejected.
 - Identical saved bytes are not rewritten on the 60-second page check.
+- The merged document is checked again before it is saved: at most 75 posts, at most 75 posts for one team, and at most 262144 bytes, plus the same author, URL, and time rules. If that check fails, the previous saved file is left byte for byte and the page reports the rejection instead of the starter.
 
 ## Document rules
 

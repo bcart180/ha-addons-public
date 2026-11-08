@@ -14,7 +14,7 @@ Supervisor writes `/data/options.json` only when the app starts (https://contrib
 
 The parent tool is the existing `ha_manage_app`: one `options` update that sets only `snapshot_json`, a readback, then `action: restart` for this slug only. This repository does not call that tool and does not install the app. A routine should wait until that install, write, readback, and restart have been shown on the running app.
 
-A rejected option does not replace `/data/last_good.json` and does not stop the process. `/api/health` stays ok, so bad news data does not make the watchdog restart the app again. Empty `snapshot_json` leaves any saved snapshot in place and, when none exists, shows the starter.
+A merged candidate is serialized and validated again, including the 75-post total, 75 posts per team, and 262144-byte cap, before anything is written. Two valid inputs can still merge into an invalid document. That result is rejected, the previous file bytes stay, and a later start still serves that file. A rejected option does not replace `/data/last_good.json` and does not stop the process. `/api/health` stays ok, so bad news data does not make the watchdog restart the app again. Empty `snapshot_json` leaves any saved snapshot in place and, when none exists, shows the starter.
 
 ## What the code still enforces
 
