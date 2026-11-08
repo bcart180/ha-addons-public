@@ -98,7 +98,61 @@ class Service:
         self.inbox_paths = list(inbox_paths)
         self.allowed_roots = tuple(allowed_roots)
         self.config_error = config_error
+        self.startup_note = None
+        self.startup_attempt = None
         self.lock = threading.Lock()
+
+    def apply_startup_option(self, options, now):
+        """Validate snapshot_json once, at process start.
+
+        Supervisor writes /data/options.json before the app starts. It does not
+        update that file again until the next start. A bad value must not exit
+        the process: the watchdog checks /api/health, which stays healthy.
+        """
+        self.startup_note = None
+        self.startup_attempt = None
+        raw_text = ""
+        if isinstance(options, dict):
+            raw_text = options.get("snapshot_json", "")
+        if raw_text in (None, ""):
+            return
+        if not isinstance(raw_text, str):
+            self.startup_note = (
+                "Snapshot option rejected (snapshot_json must be text). "
+                "Showing the last valid snapshot when one was saved. "
+                "Its collection time was not reset."
+            )
+            return
+        try:
+            doc = validate.load_bytes(raw_text.encode("utf-8"), now)
+        except validate.ValidationError as exc:
+            self._reject_option(str(exc))
+            return
+        last = self._read_last(now)
+        if doc["status"] == "error":
+            self.startup_attempt = doc.get("last_attempt_at")
+            self._reject_option(doc.get("source_error") or "snapshot status is error")
+            return
+        try:
+            merged = validate.apply_publication(last, doc)
+        except validate.RollbackError as exc:
+            self._reject_option(str(exc))
+            return
+        self._write_last(validate.canonical_bytes(merged))
+
+    def _reject_option(self, reason):
+        if os.path.isfile(self._last_path()):
+            self.startup_note = (
+                "Snapshot option rejected (" + reason + "). "
+                "Showing the last valid snapshot. Its collection time was not reset. "
+                "The app keeps running, so this bad option does not cause another restart."
+            )
+            return
+        self.startup_note = (
+            "Snapshot option rejected (" + reason + "). "
+            "No saved snapshot yet, so the starter snapshot is shown. It is not the rejected option. "
+            "The app keeps running, so this bad option does not cause another restart."
+        )
 
     def page(self, now=None):
         now = now or datetime.now(timezone.utc)
@@ -125,11 +179,21 @@ class Service:
                     last, now, origin="last_good",
                     inbox_error="Inbox file is missing.",
                     freshness="error",
+                    startup_note=self.startup_note,
                 )
             if last is not None:
-                return validate.view(last, now, origin="last_good")
+                freshness = "error" if self.startup_note else None
+                return validate.view(
+                    last, now, origin="last_good", freshness=freshness,
+                    startup_note=self.startup_note,
+                    attempt_at=self.startup_attempt,
+                )
             doc = self._read(self.preview_path, now)
-            return validate.view(doc, now, origin="bundled_starter")
+            return validate.view(
+                doc, now, origin="bundled_starter",
+                startup_note=self.startup_note,
+                freshness="error" if self.startup_note else None,
+            )
         try:
             raw = self._read_raw(found)
             doc = validate.load_bytes(raw, now)
@@ -341,6 +405,14 @@ def main():
         (),
         config_error,
     )
+    try:
+        service.apply_startup_option(options, datetime.now(timezone.utc))
+    except Exception:
+        log.warning("startup option was not applied")
+        service.startup_note = (
+            "Snapshot option could not be read. Showing the last valid snapshot when one was saved. "
+            "The app keeps running."
+        )
     allow = {item.strip() for item in os.environ.get("SN_ALLOW", "172.30.32.2").split(",") if item.strip()}
     port = int(os.environ.get("SN_PORT", "8099"))
     httpd = ThreadingHTTPServer(("0.0.0.0", port), make_handler(service, allow, STATIC_DIR))

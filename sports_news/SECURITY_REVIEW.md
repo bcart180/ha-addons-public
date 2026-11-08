@@ -4,17 +4,21 @@ Status: pre-install packet for this branch. Nothing here is installed, restarted
 
 This packet does not say the secret scan is clean until the gitleaks job on this head passes. The earlier job failed while downloading the scanner from the releases CDN (HTTP 504) and did not scan. The workflow now downloads official gitleaks 8.30.1 through the GitHub release API and checks the same checksum.
 
-## Publishing block
+## Publish bridge
 
-`ha_write_file` can write `custom_templates/sports_news/inbox.json` under the Home Assistant config directory. A later overwrite needs `overwrite: true`. The add-on can read that file only by mounting the whole config directory (`homeassistant_config` → `/homeassistant`). That tree includes secrets and auth files. Read-only stops mutation. It does not stop disclosure if the container is compromised.
+Version 0.1.2 still has no `map:` entries, no host port, `homeassistant_api: false`, and `hassio_api: false`. It does not mount the Home Assistant config directory or the shared folder. Those mounts would expose private files, and read-only access would not keep them confidential.
 
-`/share` is also a broad tree. That writer path was not granted, and this change does not ask for it again. `/config` is not a mount in this manifest. The add-on's own config directory would be a narrow mount, but the file tool's allowed directories are `www/`, `themes/`, `custom_templates/`, `dashboards/`, plus sibling volumes only when that tool is separately permitted. The add-on config directory is not one of those. No other sanctioned writer was found that can place the snapshot where this process can read it without one of the broad mounts.
+The publish value is the public option `snapshot_json`. Schema `str(0,262144)` matches the Supervisor parser in `supervisor/apps/options.py`: a string length, not a silent trim. The Supervisor API body limit in `supervisor/api/__init__.py` is 16 MiB. The starter file is 8791 bytes. A snapshot around 15KB fits. This process also rejects more than 262144 UTF-8 bytes.
 
-Decision: version 0.1.1 has no `map:` entries. It does not mount the Home Assistant config directory or the shared folder. `homeassistant_api` is false. There is no host `ports:` entry and no write route. The installed page serves the labeled starter snapshot from inside the image. The tested inbox rules are not attached to a host path. An `inbox_file` option is refused if one is injected. Unattended publishing stays blocked until a narrow sanctioned path exists.
+Supervisor writes `/data/options.json` only when the app starts (https://contributors.home-assistant.io/apps/guides/options/). This process validates that string once with the same snapshot rules, then serves the result. The 60-second page poll does not read the option again. There is no runtime propagation.
+
+The parent tool is the existing `ha_manage_app`: one `options` update that sets only `snapshot_json`, a readback, then `action: restart` for this slug only. This repository does not call that tool and does not install the app. A routine should wait until that install, write, readback, and restart have been shown on the running app.
+
+A rejected option does not replace `/data/last_good.json` and does not stop the process. `/api/health` stays ok, so bad news data does not make the watchdog restart the app again. Empty `snapshot_json` leaves any saved snapshot in place and, when none exists, shows the starter.
 
 ## What the code still enforces
 
-These rules are covered by `sports_news/tests/test_sports_news.py`. They apply when a test, or a future bridge, supplies an inbox directory. Production does not supply one.
+These rules are covered by `sports_news/tests/test_sports_news.py`. The installed app applies them to `snapshot_json` at startup. A file inbox remains a test seam and is not mounted.
 
 - ZagMBB must be author id `602989093`. BWagner_CapGaz must be `872205181`. A mismatch, including `999001`, is rejected. `bcondotta` is rejected.
 - After a save, a missing inbox keeps `/data/last_good.json`, says the inbox file is missing, and does not show the starter. A new process with the same data directory does the same.

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2 — 2026-11-08
+
+- Publish path is the `snapshot_json` configuration option, a public JSON string of at most 262144 characters. Supervisor writes `/data/options.json` only when Sports News starts. There is still no host mount, no write endpoint, and no Supervisor API privilege.
+- Empty `snapshot_json` shows the starter snapshot until the first valid publish. A bad, older, or failed option does not replace `/data/last_good.json` and does not exit, so the watchdog does not restart again because of bad data.
+- The page states that a saved option is not visible until this app is restarted, and that Supervisor's default stop wait is 10 seconds. That wait was not timed on a live restart.
+
 ## 0.1.1 — 2026-11-08
 
 - No Home Assistant config mount and no share mount. Read-only would still expose private files, and no sanctioned writer can publish into a narrower path this add-on can read. The installed panel is snapshot-only.

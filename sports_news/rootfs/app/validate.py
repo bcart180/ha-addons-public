@@ -14,7 +14,14 @@ CADENCE_LABEL = (
     "Proposed collector, not scheduled: every 30 minutes from 7:00 AM to 11:00 PM ET, "
     "and hourly from 11:00 PM to 7:00 AM ET."
 )
-POLL_LABEL = "This page re-reads the snapshot every 60 seconds. That re-read is not a new collection."
+POLL_LABEL = "This page re-reads the saved snapshot every 60 seconds. That re-read is not a new collection and does not see an option changed while the app is running."
+ACTIVATION_LABEL = (
+    "A new snapshot is applied only when Sports News starts. Saving the option does not "
+    "update this page until Sports News is restarted. The restart is only this app. "
+    "The panel is unavailable during that restart. Supervisor's default stop wait is "
+    "10 seconds, then this process starts and validates the option. That wait was not "
+    "timed on a live Home Assistant restart."
+)
 ATTRIBUTION = (
     "Official accounts and crosslinked reporters only. A reporter line is attributed, "
     "not treated as a separate fact check. Rumors are not published as fact."
@@ -503,7 +510,7 @@ def canonical_bytes(doc):
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
-def view(doc, now, origin, inbox_error=None, source_error=None, attempt_at=None, freshness=None):
+def view(doc, now, origin, inbox_error=None, source_error=None, attempt_at=None, freshness=None, startup_note=None):
     collected = parse_time(doc["collected_at"], "collected_at") if doc.get("collected_at") else None
     limit = 2 * planned_seconds(now)
     team_rows = []
@@ -591,6 +598,7 @@ def view(doc, now, origin, inbox_error=None, source_error=None, attempt_at=None,
         "cadence_label": CADENCE_LABEL,
         "poll_label": POLL_LABEL,
         "inbox_error": inbox_error,
+        "startup_note": startup_note,
         "source_error": source_error,
         "warnings": list(doc.get("warnings") or []),
         "teams": team_rows,
@@ -636,8 +644,11 @@ def _messages(payload):
             f"Updated {payload['collected_at_et']}. Page checked {payload['page_checked_at_et']}. "
             "This page check is not a new collection."
         )
+    if payload.get("startup_note"):
+        lines.append(payload["startup_note"])
     lines.append(payload["cadence_label"])
     lines.append(payload["poll_label"])
+    lines.append(ACTIVATION_LABEL)
     lines.append(ATTRIBUTION)
     for warning in payload["warnings"]:
         lines.append("Note: " + warning)

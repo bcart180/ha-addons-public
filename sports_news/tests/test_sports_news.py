@@ -329,6 +329,94 @@ class StoreTests(unittest.TestCase):
             server.inbox_list({"inbox_file": "/tmp/sports.json"})
         self.assertEqual(server.inbox_list({}), [])
 
+    def _option_service(self):
+        return server.Service(PREVIEW, self.data, [], ())
+
+    def test_empty_option_shows_starter_until_a_valid_publish(self):
+        service = self._option_service()
+        service.apply_startup_option({"snapshot_json": "", "log_level": "info"}, NOW)
+        view = service.page(NOW)
+        self.assertEqual(view["feed_kind"], "bundled_starter")
+        self.assertIsNone(view["startup_note"])
+        self.assertIn("Not a live feed", "\n".join(view["messages"]))
+        self.assertIn("only when Sports News starts", "\n".join(view["messages"]))
+        self.assertFalse(os.path.exists(os.path.join(self.data, "last_good.json")))
+
+    def test_option_is_read_at_startup_not_on_the_page_poll(self):
+        service = self._option_service()
+        text = open(PREVIEW, encoding="utf-8").read()
+        service.apply_startup_option({"snapshot_json": text}, NOW)
+        first = service.page(NOW)
+        self.assertEqual(first["collected_at_et"], "Nov 8, 2026, 4:50 AM ET")
+        newer = starter()
+        newer["collected_at"] = "2026-11-08T16:30:00Z"
+        newer.pop("query_end_time", None)
+        for item in newer["items"]:
+            item["collected_at"] = newer["collected_at"]
+        # A later options value is invisible until the process applies it at start.
+        unused = {"snapshot_json": json.dumps(newer)}
+        polled = service.page(dt.datetime(2026, 11, 8, 16, 40, tzinfo=dt.timezone.utc))
+        self.assertEqual(polled["collected_at"], first["collected_at"])
+        self.assertNotEqual(unused["snapshot_json"], text)
+        service.apply_startup_option(unused, dt.datetime(2026, 11, 8, 16, 40, tzinfo=dt.timezone.utc))
+        activated = service.page(dt.datetime(2026, 11, 8, 16, 40, tzinfo=dt.timezone.utc))
+        self.assertEqual(activated["collected_at_et"], "Nov 8, 2026, 11:30 AM ET")
+
+    def test_bad_older_and_partial_options_keep_the_saved_collection(self):
+        service = self._option_service()
+        text = open(PREVIEW, encoding="utf-8").read()
+        service.apply_startup_option({"snapshot_json": text}, NOW)
+        saved = service.page(NOW)
+        service.apply_startup_option({"snapshot_json": "{"}, NOW + dt.timedelta(minutes=1))
+        rejected = service.page(NOW + dt.timedelta(minutes=1))
+        self.assertEqual(rejected["collected_at"], saved["collected_at"])
+        self.assertEqual(rejected["freshness"], "error")
+        self.assertIn("Snapshot option rejected", "\n".join(rejected["messages"]))
+        self.assertIn("does not cause another restart", "\n".join(rejected["messages"]))
+        self.assertIn("Not a live feed", "\n".join(rejected["messages"]))
+        older = starter()
+        older["collected_at"] = "2026-11-08T08:00:00Z"
+        older.pop("query_end_time", None)
+        for item in older["items"]:
+            item["collected_at"] = older["collected_at"]
+            item["published_at"] = "2026-11-08T07:00:00Z"
+        service.apply_startup_option({"snapshot_json": json.dumps(older)}, NOW)
+        rolled = service.page(NOW)
+        self.assertEqual(rolled["collected_at"], saved["collected_at"])
+        self.assertIn("older snapshot rejected", "\n".join(rolled["messages"]))
+        partial = starter()
+        partial["collected_at"] = "2026-11-08T16:30:00Z"
+        partial["status"] = "partial"
+        partial["teams"] = {"Gonzaga Bulldogs": {"status": "error", "detail": "public read failed"}}
+        partial["items"] = [item for item in partial["items"] if item["team"] != "Gonzaga Bulldogs"]
+        partial.pop("query_end_time", None)
+        for item in partial["items"]:
+            item["collected_at"] = partial["collected_at"]
+        before = [item["id"] for item in saved["items"] if item["team"] == "Gonzaga Bulldogs"]
+        service.apply_startup_option(
+            {"snapshot_json": json.dumps(partial)},
+            dt.datetime(2026, 11, 8, 16, 32, tzinfo=dt.timezone.utc),
+        )
+        merged = service.page(dt.datetime(2026, 11, 8, 16, 32, tzinfo=dt.timezone.utc))
+        kept = [item["id"] for item in merged["items"] if item["team"] == "Gonzaga Bulldogs"]
+        self.assertEqual(kept, before)
+        self.assertEqual(merged["freshness"], "error")
+        gonzaga = [row for row in merged["teams"] if row["team"] == "Gonzaga Bulldogs"][0]
+        self.assertEqual(gonzaga["last_success_at_et"], "Nov 8, 2026, 4:50 AM ET")
+
+    def test_bad_option_does_not_fail_the_health_check(self):
+        service = self._option_service()
+        service.apply_startup_option({"snapshot_json": "{"}, NOW)
+        httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(service, {"127.0.0.1"}, server.STATIC_DIR))
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        self.addCleanup(httpd.shutdown)
+        base = "http://127.0.0.1:%d" % httpd.server_address[1]
+        health = json.loads(urllib.request.urlopen(base + "/api/health").read())
+        self.assertEqual(health, {"ok": True})
+        body = json.loads(urllib.request.urlopen(base + "/api/snapshot").read())
+        self.assertEqual(body["feed_kind"], "bundled_starter")
+        self.assertIn("Snapshot option rejected", "\n".join(body["messages"]))
+
 
 class HttpTests(unittest.TestCase):
     def serve(self, allow):
@@ -387,7 +475,10 @@ class PageTests(unittest.TestCase):
         self.assertNotIn("innerHTML", js)
         self.assertNotIn("iframe", js + html)
         cfg = open(os.path.join(ADDON, "config.yaml"), encoding="utf-8").read()
-        self.assertIn('version: "0.1.1"', cfg)
+        self.assertIn('version: "0.1.2"', cfg)
+        self.assertIn('snapshot_json: "str(0,262144)"', cfg)
+        self.assertIn('snapshot_json: ""', cfg)
+        self.assertIn("hassio_api: false", cfg)
         self.assertNotRegex(cfg, r"(?m)^ports:")
         self.assertIn("homeassistant_api: false", cfg)
         self.assertNotIn("homeassistant_config:", cfg)

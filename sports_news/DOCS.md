@@ -33,11 +33,26 @@ One team can be in error while the other teams still show their posts.
 
 `bcondotta` is rejected. Any other handle is rejected. A different numeric id is rejected for every allowlisted handle. Official posts must use `source_provenance: official`. Reporter posts must use `reporter`. `rumor` and any other provenance are rejected. A reporter summary is shown as that reporter's post, not as a house fact check. The ids for ZagMBB and BWagner_CapGaz come from the Nov 8 public-profile payload, not from the starter post list.
 
-## Publish status
+## Publish contract
 
-Not connected. `ha_write_file` can write `custom_templates/sports_news/inbox.json`, and a future overwrite needs `overwrite: true`. Reading it requires the whole Home Assistant config mount. This add-on does not use that mount, does not mount `/share`, and does not read `/config`. The add-on's own config folder is narrower, but the file tool's allowed directories do not include it. No publish call is made.
+`snapshot_json` is one string option. The schema is `str(0,262144)`, which the Supervisor option parser accepts as a character length (`supervisor/apps/options.py`, `vol.Length`). It rejects a longer value. It does not truncate. The Supervisor HTTP API accepts a body up to 16 MiB (`MAX_CLIENT_SIZE` in `supervisor/api/__init__.py`). The starter snapshot is 8791 bytes. A snapshot around 15KB is inside both limits. This app also rejects more than 262144 UTF-8 bytes.
 
-If a later bridge feeds the tested inbox rules, those rules are:
+The default is an empty string. Until the first valid value is saved and Sports News is restarted, the page shows the starter snapshot and says it is not a live feed.
+
+Official options behavior: Supervisor writes `/data/options.json` when the app starts, not while it is running. Source: https://contributors.home-assistant.io/apps/guides/options/ . This app reads that file once at startup and runs the same snapshot validator used for every other snapshot. A page poll does not read the option again.
+
+A parent, after this app is installed, uses the existing app tool. This repository does not call it.
+
+1. Find the installed slug with `ha_get_app`. Other apps from this store were seen with the prefix `a1d3bd4b_`. Do not assume the prefix. Use the slug that tool returns.
+2. Update only this option: `ha_manage_app` with that slug and `options` set to `{"snapshot_json": "<json text>"}`. The tool merges top-level keys, so `log_level` can stay unset in that call. The value must be a string, not a nested object.
+3. Read the app back and confirm `snapshot_json` is the text that was sent.
+4. Restart only that slug: `ha_manage_app` with `action` `restart`. Do not restart Home Assistant or any other app.
+
+During the restart the panel is unavailable. This app does not set `timeout`, so Supervisor's default stop wait is 10 seconds (the documented default, range 10 to 300). The new process then reads the option and validates it before it listens. That gap was not measured on a live restart.
+
+If the string is invalid JSON, too large, older than the saved snapshot, or an error document, the process keeps `/data/last_good.json` and stays up. `/api/health` still returns ok, so the watchdog does not treat bad news data as a crash. The page names the rejection and keeps the last valid collection time.
+
+These rules still apply:
 
 - A missing inbox after a successful save keeps `/data/last_good.json` and reports that the inbox file is missing. It does not return to the starter.
 - `collected_at` older than the saved snapshot is rejected.
