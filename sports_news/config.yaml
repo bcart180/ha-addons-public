@@ -1,5 +1,5 @@
 name: Sports News
-version: "0.1.0"
+version: "0.1.1"
 slug: sports_news
 description: Personal Seahawks, Navy, and Gonzaga snapshot. Read-only ingress panel. Does not call X.
 url: https://github.com/bcart180/ha-addons-public/tree/main/sports_news
@@ -15,17 +15,14 @@ ingress_port: 8099
 panel_icon: mdi:newspaper
 panel_title: Sports News
 panel_admin: true
-# Read-only mounts so a parent can publish a snapshot with the HA file tool.
-# Nothing is written outside /data. No Home Assistant API token.
+# No host mounts. The Home Assistant config directory and the shared folder
+# would let this container read private files. Read-only does not make that confidential.
+# No sanctioned writer can publish into a narrower path this add-on can see,
+# so the panel stays snapshot-only. No Home Assistant API token.
 homeassistant_api: false
-map:
-  - homeassistant_config:ro
-  - share:ro
 backup: hot
 watchdog: http://[HOST]:[PORT:8099]/api/health
 options:
-  inbox_file: ""
   log_level: info
 schema:
-  inbox_file: str?
   log_level: list(debug|info|warning|error)

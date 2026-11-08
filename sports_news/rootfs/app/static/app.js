@@ -60,6 +60,7 @@
       var title = document.createElement("div");
       addText(title, "h2", "", row.team + " · " + row.sport);
       if (row.status === "error") addText(title, "p", "state error", "Source error");
+      if (row.stale) addText(title, "p", "older", "Stale");
       head.appendChild(title);
       var count = document.createElement("div");
       addText(count, "p", "figure", String(row.count));
@@ -67,6 +68,7 @@
       head.appendChild(count);
       section.appendChild(head);
       if (row.detail) addText(section, "p", "detail", row.detail);
+      if (row.last_success_at_et) addText(section, "p", "time", "Last success " + row.last_success_at_et);
       var posts = (snapshot.items || []).filter(function (item) { return item.team === row.team; });
       if (!posts.length && row.status !== "error") addText(section, "p", "detail", "No posts in this snapshot.");
       posts.forEach(function (item) {

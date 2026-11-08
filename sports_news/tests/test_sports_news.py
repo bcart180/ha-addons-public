@@ -108,27 +108,30 @@ class ContractTests(unittest.TestCase):
         with self.assertRaisesRegex(v.ValidationError, "duplicate"):
             parsed(dup)
 
-    def test_unpinned_zag_handle_requires_a_numeric_id(self):
-        doc = starter()
-        item = json.loads(json.dumps(doc["items"][0]))
-        item.update({
-            "id": "2119000000000000001",
-            "team": "Gonzaga Bulldogs",
-            "sport": "basketball",
-            "canonical_post_url": "https://twitter.com/ZagMBB/status/2119000000000000001",
-            "author_handle": "ZagMBB",
-            "author_name": "Gonzaga Men's Basketball",
-            "author_id": "999001",
-            "source_provenance": "official",
-            "summary": "Official account post used only to check the allowlist contract.",
-            "source_text": "Contract check.",
-        })
-        doc["items"] = [item]
-        cleaned = parsed(doc)
-        self.assertEqual(cleaned["items"][0]["url"], "https://twitter.com/ZagMBB/status/2119000000000000001")
-        item["author_id"] = "not-a-number"
-        with self.assertRaises(v.ValidationError):
-            parsed(doc)
+    def test_pinned_profile_ids_reject_a_mismatch(self):
+        pins = (("ZagMBB", "Gonzaga Bulldogs", "basketball", "official", "602989093"),
+                ("BWagner_CapGaz", "Navy Midshipmen", "football", "reporter", "872205181"))
+        for handle, team, sport, role, author_id in pins:
+            doc = starter()
+            item = json.loads(json.dumps(doc["items"][0]))
+            item.update({
+                "id": "2119000000000000001",
+                "team": team,
+                "sport": sport,
+                "canonical_post_url": "https://x.com/" + handle + "/status/2119000000000000001",
+                "author_handle": handle,
+                "author_name": handle,
+                "author_id": author_id,
+                "source_provenance": role,
+                "summary": "Allowlist id check.",
+                "source_text": "Allowlist id check.",
+            })
+            doc["items"] = [item]
+            cleaned = parsed(doc)
+            self.assertEqual(cleaned["items"][0]["author_id"], author_id)
+            item["author_id"] = "999001"
+            with self.assertRaisesRegex(v.ValidationError, "author_id"):
+                parsed(doc)
 
     def test_one_team_error_keeps_the_other_posts(self):
         doc = starter()
@@ -238,16 +241,98 @@ class StoreTests(unittest.TestCase):
         self.assertIn("outside the allowed publish directories", "\n".join(view["messages"]))
         self.assertNotIn("schema_version", json.dumps(view["items"]))
 
-    def test_option_path_must_be_one_of_the_allowed_files(self):
-        with self.assertRaises(v.ValidationError):
+    def test_symlinked_allowed_root_is_not_accepted(self):
+        real = os.path.join(self.tmp.name, "real_root")
+        os.makedirs(real)
+        with open(os.path.join(real, "inbox.json"), "wb") as handle:
+            handle.write(open(PREVIEW, "rb").read())
+        linked = os.path.join(self.tmp.name, "linked_root")
+        os.symlink(real, linked)
+        service = server.Service(PREVIEW, self.data, [os.path.join(linked, "inbox.json")], [linked])
+        view = service.page(NOW)
+        self.assertEqual(view["feed_kind"], "bundled_starter")
+        self.assertIn("outside the allowed publish directories", "\n".join(view["messages"]))
+        self.assertFalse(os.path.exists(os.path.join(self.data, "last_good.json")))
+
+    def test_missing_inbox_keeps_last_good_after_restart(self):
+        with open(self.inbox, "wb") as handle:
+            handle.write(open(PREVIEW, "rb").read())
+        first = self.service.page(NOW)
+        os.remove(self.inbox)
+        second = self.service.page(NOW + dt.timedelta(minutes=3))
+        self.assertEqual(second["feed_kind"], "last_good")
+        self.assertEqual(second["collected_at"], first["collected_at"])
+        self.assertEqual(len(second["items"]), 10)
+        self.assertIn("Inbox file is missing", "\n".join(second["messages"]))
+        self.assertNotIn("Cards are the starter snapshot", "\n".join(second["messages"]))
+        restarted = server.Service(PREVIEW, self.data, [self.inbox], [self.root])
+        third = restarted.page(NOW + dt.timedelta(minutes=4))
+        self.assertEqual(third["feed_kind"], "last_good")
+        self.assertEqual(len(third["items"]), 10)
+
+    def test_older_snapshot_does_not_replace_last_good(self):
+        with open(self.inbox, "wb") as handle:
+            handle.write(open(PREVIEW, "rb").read())
+        self.service.page(NOW)
+        older = starter()
+        older["collected_at"] = "2026-11-08T08:00:00Z"
+        older.pop("query_end_time", None)
+        for item in older["items"]:
+            item["collected_at"] = older["collected_at"]
+            item["published_at"] = "2026-11-08T07:00:00Z"
+        with open(self.inbox, "wb") as handle:
+            handle.write(raw_of(older))
+        view = self.service.page(NOW)
+        self.assertEqual(view["feed_kind"], "last_good")
+        self.assertEqual(view["collected_at_et"], "Nov 8, 2026, 4:50 AM ET")
+        self.assertIn("older snapshot rejected", "\n".join(view["messages"]))
+        self.assertEqual(len(view["items"]), 10)
+
+    def test_partial_team_failure_keeps_that_teams_posts_and_success_time(self):
+        with open(self.inbox, "wb") as handle:
+            handle.write(open(PREVIEW, "rb").read())
+        first = self.service.page(NOW)
+        gonzaga_ids = [item["id"] for item in first["items"] if item["team"] == "Gonzaga Bulldogs"]
+        nxt = starter()
+        nxt["collected_at"] = "2026-11-08T16:30:00Z"
+        nxt["status"] = "partial"
+        nxt["teams"] = {"Gonzaga Bulldogs": {"status": "error", "detail": "public read failed"}}
+        nxt["items"] = [item for item in nxt["items"] if item["team"] != "Gonzaga Bulldogs"]
+        for item in nxt["items"]:
+            item["collected_at"] = nxt["collected_at"]
+        with open(self.inbox, "wb") as handle:
+            handle.write(raw_of(nxt))
+        view = self.service.page(dt.datetime(2026, 11, 8, 16, 32, tzinfo=dt.timezone.utc))
+        self.assertEqual(view["freshness"], "error")
+        self.assertNotIn("inside two proposed cycles", "\n".join(view["messages"]))
+        self.assertIn("success times were not reset", "\n".join(view["messages"]))
+        kept = [item["id"] for item in view["items"] if item["team"] == "Gonzaga Bulldogs"]
+        self.assertEqual(kept, gonzaga_ids)
+        gonzaga = [row for row in view["teams"] if row["team"] == "Gonzaga Bulldogs"][0]
+        seahawks = [row for row in view["teams"] if row["team"] == "Seattle Seahawks"][0]
+        self.assertEqual(gonzaga["status"], "error")
+        self.assertEqual(gonzaga["last_success_at_et"], "Nov 8, 2026, 4:50 AM ET")
+        self.assertEqual(seahawks["last_success_at_et"], "Nov 8, 2026, 11:30 AM ET")
+        self.assertEqual(seahawks["count"], 4)
+
+    def test_unchanged_snapshot_is_not_rewritten(self):
+        with open(self.inbox, "wb") as handle:
+            handle.write(open(PREVIEW, "rb").read())
+        self.service.page(NOW)
+        path = os.path.join(self.data, "last_good.json")
+        first_mtime = os.stat(path).st_mtime_ns
+        self.service.page(NOW + dt.timedelta(seconds=30))
+        self.assertEqual(os.stat(path).st_mtime_ns, first_mtime)
+
+    def test_publish_option_is_refused(self):
+        with self.assertRaisesRegex(v.ValidationError, "not enabled"):
             server.inbox_list({"inbox_file": "/tmp/sports.json"})
-        self.assertEqual(len(server.inbox_list({})), 3)
-        self.assertEqual(len(server.inbox_list({"inbox_file": server.DEFAULT_INBOXES[2]})), 1)
+        self.assertEqual(server.inbox_list({}), [])
 
 
 class HttpTests(unittest.TestCase):
     def serve(self, allow):
-        service = server.Service(PREVIEW, tempfile.mkdtemp(), [], server.ALLOWED_ROOTS)
+        service = server.Service(PREVIEW, tempfile.mkdtemp(), [], ())
         httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(service, set(allow), server.STATIC_DIR))
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
         self.addCleanup(httpd.shutdown)
@@ -302,12 +387,15 @@ class PageTests(unittest.TestCase):
         self.assertNotIn("innerHTML", js)
         self.assertNotIn("iframe", js + html)
         cfg = open(os.path.join(ADDON, "config.yaml"), encoding="utf-8").read()
-        self.assertIn('version: "0.1.0"', cfg)
+        self.assertIn('version: "0.1.1"', cfg)
         self.assertNotRegex(cfg, r"(?m)^ports:")
         self.assertIn("homeassistant_api: false", cfg)
-        self.assertIn("share:ro", cfg)
-        self.assertNotIn("share:rw", cfg)
+        self.assertNotIn("homeassistant_config:", cfg)
+        self.assertNotIn("share:", cfg)
+        self.assertNotRegex(cfg, r"(?m)^map:")
         self.assertIn("ingress: true", cfg)
+        self.assertIn("Last success", js)
+        self.assertIn("panel_admin: true", cfg)
 
     def test_trading_desk_charts_and_canvas_are_unchanged(self):
         desk = os.path.join(REPO, "trading_desk")

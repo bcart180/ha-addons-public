@@ -10,7 +10,7 @@ Home Assistant add-on repository.
 | [Smart HVAC](smart_hvac/) | Smart thermostat for multi-zone mini-split systems: all heads share one outdoor unit, so they always stay in the same heat/cool mode. Presence/weather/sun-aware, plus radiant floor (Ingress panel "Climate"). Installs **off + dry run**. |
 | [Tesla Smart Charge](tesla_smart_charge/) | Lowest-amp off-peak Tesla charging that hits your target by departure. BLE first with cloud fallback; charge-now, pause and trip-mode helpers. Installs in **dry run**. |
 | [Social Pulse](social_pulse/) | Read-only X engagement plus per-site Cloudflare edge traffic and sampled Web Analytics (Ingress panel). Tokens are password options only. |
-| [Sports News](sports_news/) | Personal Seahawks, Navy, and Gonzaga snapshot (Ingress panel). Does not call X. Parent publishes a JSON file. |
+| [Sports News](sports_news/) | Personal Seahawks, Navy, and Gonzaga snapshot (Ingress panel). Does not call X. Snapshot-only until a narrow publish path exists. |
 | [Usage](usage_dashboard/) | Read-only weekly Grok Bot usage snapshot (Ingress panel "Usage"). Canonical source: https://github.com/bcart180/ha-usage-dashboard |
 
 ## Install

@@ -1,5 +1,6 @@
 """Sports News ingress server. Read-only page. It does not call X."""
 
+import errno
 import json
 import logging
 import os
@@ -13,16 +14,11 @@ log = logging.getLogger("sports_news")
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 PREVIEW_PATH = os.path.join(APP_DIR, "preview", "starter_2026-11-08T095038Z.json")
 STATIC_DIR = os.path.join(APP_DIR, "static")
-DEFAULT_INBOXES = (
-    "/homeassistant/custom_templates/sports_news/inbox.json",
-    "/config/custom_templates/sports_news/inbox.json",
-    "/share/sports_news/inbox.json",
-)
-ALLOWED_ROOTS = (
-    "/homeassistant/custom_templates/sports_news",
-    "/config/custom_templates/sports_news",
-    "/share/sports_news",
-)
+# Production does not mount Home Assistant config or /share. Those trees hold
+# private files, and read-only access would still disclose them. There is no
+# sanctioned writer that can place a snapshot in a narrower path this process
+# can see, so the installed add-on is snapshot-only. Tests pass an explicit
+# inbox directory when they exercise the publish rules.
 STATIC_FILES = {"/": "index.html", "/index.html": "index.html", "/app.css": "app.css", "/app.js": "app.js"}
 CONTENT_TYPES = {
     "index.html": "text/html; charset=utf-8",
@@ -32,23 +28,67 @@ CONTENT_TYPES = {
 
 
 def inbox_list(options):
+    """Publishing from a host path is not enabled.
+
+    ha_write_file can write custom_templates inside the Home Assistant config,
+    and reading that file back requires the whole config mount. /share is a
+    separate broad mount and is not enabled for this writer. Neither is used.
+    """
     custom = ""
     if isinstance(options, dict) and isinstance(options.get("inbox_file"), str):
         custom = options["inbox_file"].strip()
-    if not custom:
-        return list(DEFAULT_INBOXES)
-    if custom not in DEFAULT_INBOXES:
-        raise validate.ValidationError("inbox_file is not an allowed publish path")
-    return [custom]
+    if custom:
+        raise validate.ValidationError(
+            "inbox publishing is not enabled; mounting Home Assistant config or share would expose private files"
+        )
+    return []
 
 
-def _inside(path, roots):
-    real = os.path.realpath(path)
-    for root in roots:
-        base = os.path.realpath(root)
-        if real == base or real.startswith(base + os.sep):
-            return real
-    return None
+def _lexical_inside(path, root):
+    path = os.path.normpath(os.path.abspath(path))
+    root = os.path.normpath(os.path.abspath(root))
+    return path == root or path.startswith(root + os.sep)
+
+
+def read_nofollow(path, roots):
+    """Read a file without following a symlink at any path component.
+
+    realpath is not used. If the allowed directory itself is a symlink, opening
+    it fails instead of treating the link target as the new allowed root.
+    """
+    path = os.path.normpath(os.path.abspath(path))
+    if not any(_lexical_inside(path, root) for root in roots):
+        raise validate.ValidationError("inbox path is outside the allowed publish directories")
+    flags_dir = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
+    flags_file = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(os.sep, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        parts = [part for part in path.split(os.sep) if part]
+        for index, part in enumerate(parts):
+            is_last = index == len(parts) - 1
+            try:
+                nxt = os.open(part, flags_file if is_last else flags_dir, dir_fd=fd)
+            except OSError as exc:
+                if exc.errno == errno.ENOENT:
+                    return None
+                if exc.errno in (errno.ELOOP, errno.ENOTDIR, errno.EPERM):
+                    raise validate.ValidationError(
+                        "inbox path is outside the allowed publish directories"
+                    ) from None
+                raise
+            os.close(fd)
+            fd = nxt
+        chunks = []
+        total = 0
+        while total <= validate.MAX_BYTES:
+            block = os.read(fd, 65536)
+            if not block:
+                break
+            chunks.append(block)
+            total += len(block)
+        return b"".join(chunks)
+    finally:
+        os.close(fd)
 
 
 class Service:
@@ -79,6 +119,15 @@ class Service:
         if problem:
             return self._fallback(now, problem)
         if found is None:
+            last = self._read_last(now)
+            if self.inbox_paths and last is not None:
+                return validate.view(
+                    last, now, origin="last_good",
+                    inbox_error="Inbox file is missing.",
+                    freshness="error",
+                )
+            if last is not None:
+                return validate.view(last, now, origin="last_good")
             doc = self._read(self.preview_path, now)
             return validate.view(doc, now, origin="bundled_starter")
         try:
@@ -86,16 +135,22 @@ class Service:
             doc = validate.load_bytes(raw, now)
         except validate.ValidationError as exc:
             return self._fallback(now, str(exc))
-        if doc["status"] == "error" and not doc["items"]:
-            last = self._read_last(now)
+        last = self._read_last(now)
+        if doc["status"] == "error":
             if last is not None:
                 return validate.view(
                     last, now, origin="last_good", source_error=doc.get("source_error"),
                     attempt_at=doc.get("last_attempt_at"), freshness="error",
                 )
             return validate.view(doc, now, origin="error", freshness="error")
-        self._write_last(raw)
-        return validate.view(doc, now, origin="published")
+        try:
+            merged = validate.apply_publication(last, doc)
+        except validate.RollbackError as exc:
+            if last is None:
+                return self._fallback(now, str(exc))
+            return validate.view(last, now, origin="last_good", inbox_error=str(exc), freshness="error")
+        self._write_last(validate.canonical_bytes(merged))
+        return validate.view(merged, now, origin="published")
 
     def _fallback(self, now, reason):
         last = self._read_last(now)
@@ -109,16 +164,22 @@ class Service:
 
     def _inbox(self):
         for path in self.inbox_paths:
-            real = _inside(path, self.allowed_roots)
-            if real is None:
-                return None, "inbox path is outside the allowed publish directories"
-            if os.path.isfile(real):
-                return real, None
+            try:
+                raw = read_nofollow(path, self.allowed_roots)
+            except validate.ValidationError as exc:
+                return None, str(exc)
+            if raw is not None:
+                return path, None
         return None, None
 
     def _read_raw(self, path):
-        with open(path, "rb") as handle:
-            return handle.read(validate.MAX_BYTES + 1)
+        if path == self.preview_path or path == self._last_path():
+            with open(path, "rb") as handle:
+                return handle.read(validate.MAX_BYTES + 1)
+        raw = read_nofollow(path, self.allowed_roots)
+        if raw is None:
+            raise validate.ValidationError("Inbox file is missing.")
+        return raw
 
     def _read(self, path, now):
         return validate.load_bytes(self._read_raw(path), now)
@@ -138,14 +199,33 @@ class Service:
 
     def _write_last(self, payload):
         os.makedirs(self.data_dir, exist_ok=True)
+        dest = self._last_path()
+        if os.path.isfile(dest):
+            try:
+                with open(dest, "rb") as existing:
+                    current = existing.read()
+            except OSError:
+                current = None
+            if current == payload:
+                return
         tmp = os.path.join(self.data_dir, ".last_good.tmp")
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         try:
-            os.write(fd, payload)
+            view = memoryview(payload)
+            while view:
+                written = os.write(fd, view)
+                if written <= 0:
+                    raise OSError("short write")
+                view = view[written:]
             os.fsync(fd)
         finally:
             os.close(fd)
-        os.replace(tmp, self._last_path())
+        os.replace(tmp, dest)
+        dir_fd = os.open(self.data_dir, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
 
 
 def make_handler(service, allow, static_dir):
@@ -250,16 +330,15 @@ def main():
     logging.basicConfig(level=getattr(logging, str(level).upper(), logging.INFO),
                         format="%(asctime)s %(levelname)s %(message)s")
     try:
-        paths = inbox_list(options)
+        inbox_list(options)
         config_error = None
     except validate.ValidationError as exc:
-        paths = []
         config_error = str(exc)
     service = Service(
         PREVIEW_PATH,
         os.environ.get("SN_DATA", "/data"),
-        paths,
-        ALLOWED_ROOTS,
+        [],
+        (),
         config_error,
     )
     allow = {item.strip() for item in os.environ.get("SN_ALLOW", "172.30.32.2").split(",") if item.strip()}

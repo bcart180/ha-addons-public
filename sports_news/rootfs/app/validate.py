@@ -25,14 +25,14 @@ TEAM_SPORT = {
     "Navy Midshipmen": "football",
     "Gonzaga Bulldogs": "basketball",
 }
-# Numeric ids pinned from the Nov 8, 2026 starter snapshot.
-# ZagMBB and BWagner_CapGaz are allowlisted by handle; that snapshot did not include their ids.
+# Numeric ids pinned from the Nov 8, 2026 public-profile responses.
+# ZagMBB and BWagner_CapGaz ids are from that collector's raw profile payload.
 AUTHORS = {
     "seahawks": {"handle": "Seahawks", "team": "Seattle Seahawks", "role": "official", "author_id": "23642374"},
     "navyfb": {"handle": "NavyFB", "team": "Navy Midshipmen", "role": "official", "author_id": "2429051735"},
-    "zagmbb": {"handle": "ZagMBB", "team": "Gonzaga Bulldogs", "role": "official", "author_id": None},
+    "zagmbb": {"handle": "ZagMBB", "team": "Gonzaga Bulldogs", "role": "official", "author_id": "602989093"},
     "theolawson_sr": {"handle": "TheoLawson_SR", "team": "Gonzaga Bulldogs", "role": "reporter", "author_id": "291955806"},
-    "bwagner_capgaz": {"handle": "BWagner_CapGaz", "team": "Navy Midshipmen", "role": "reporter", "author_id": None},
+    "bwagner_capgaz": {"handle": "BWagner_CapGaz", "team": "Navy Midshipmen", "role": "reporter", "author_id": "872205181"},
 }
 REJECTED_HANDLES = {
     "bcondotta": "Bob Condotta is not allowlisted until a publisher page crosslinks the handle.",
@@ -50,6 +50,10 @@ HOSTS = {"x.com", "twitter.com"}
 
 
 class ValidationError(ValueError):
+    pass
+
+
+class RollbackError(ValidationError):
     pass
 
 
@@ -160,16 +164,15 @@ def parse_document(data, now):
         raise ValidationError("an empty snapshot cannot contain posts")
     if status in {"ok", "starter_snapshot_not_live"} and not items:
         raise ValidationError("this snapshot state requires at least one post")
-    teams = _teams(data.get("teams"), items, status)
-    if status != "error" and success is None:
-        success = collected
+    teams = _teams(data.get("teams"), items, status, data["collected_at"].strip())
+    dated = [(meta["last_success_at"], parse_time(meta["last_success_at"], "last_success_at"))
+             for meta in teams.values() if meta.get("last_success_at")]
+    success_text = min(dated, key=lambda pair: pair[1])[0] if dated and status != "error" else None
     return {
         "schema_version": SCHEMA_VERSION,
         "collected_at": data["collected_at"].strip(),
         "last_attempt_at": data["last_attempt_at"].strip() if "last_attempt_at" in data else data["collected_at"].strip(),
-        "last_success_at": None if success is None else (
-            data["last_success_at"].strip() if "last_success_at" in data else data["collected_at"].strip()
-        ),
+        "last_success_at": success_text,
         "display_timezone": "America/New_York",
         "status": status,
         "query_end_time": data.get("query_end_time"),
@@ -238,13 +241,13 @@ def _item(item, collected, seen):
     author_id = item["author_id"]
     if not isinstance(author_id, str) or not author_id.isdigit() or not 1 <= len(author_id) <= 20:
         raise ValidationError("author_id must be a numeric string")
-    if author["author_id"] is not None and author_id != author["author_id"]:
+    if author_id != author["author_id"]:
         raise ValidationError("author_id does not match the allowlisted account")
     published = parse_time(item["published_at"], "published_at")
     item_collected = parse_time(item["collected_at"], "collected_at")
-    if item_collected != collected:
-        raise ValidationError("post collected_at must match the snapshot")
-    if published > collected:
+    if item_collected > collected:
+        raise ValidationError("post collected_at is after the snapshot")
+    if published > item_collected:
         raise ValidationError("published_at is after collected_at")
     url = _post_url(item["canonical_post_url"], author["handle"], post_id)
     if "evidence_files" in item:
@@ -255,7 +258,11 @@ def _item(item, collected, seen):
         "sport": TEAM_SPORT[author["team"]],
         "author_handle": author["handle"],
         "author_name": _plain(item["author_name"], "author_name", 80, newlines=False),
+        "author_id": author_id,
         "author_role": author["role"],
+        "source_provenance": author["role"],
+        "status": item["status"],
+        "canonical_post_url": url,
         "url": url,
         "published_at": item["published_at"].strip(),
         "collected_at": item["collected_at"].strip(),
@@ -298,18 +305,33 @@ def _evidence(value):
             raise ValidationError("evidence_files is not a safe relative list")
 
 
-def _teams(raw, items, status):
+def _team_success(entry, status_name, collected_text):
+    if "last_success_at" in entry and entry["last_success_at"] not in (None, ""):
+        parsed = parse_time(entry["last_success_at"], "last_success_at")
+        if parsed > parse_time(collected_text, "collected_at") + dt.timedelta(seconds=2):
+            raise ValidationError("team last_success_at is after collected_at")
+        return entry["last_success_at"].strip()
+    if status_name == "error":
+        return None
+    if status_name == "retain":
+        return None
+    return collected_text
+
+
+def _teams(raw, items, status, collected_text):
     counts = {name: 0 for name in TEAM_ORDER}
     for item in items:
         counts[item["team"]] += 1
+    if status == "empty":
+        return {
+            name: {"status": "empty", "detail": "No posts in this snapshot.", "last_success_at": collected_text}
+            for name in TEAM_ORDER
+        }
     if raw is None:
         if status == "partial":
             raise ValidationError("a partial snapshot must name the team error")
         return {
-            name: {
-                "status": "ok" if counts[name] else "empty",
-                "detail": "" if counts[name] else "No posts in this snapshot.",
-            }
+            name: _implicit_team(name, counts[name], collected_text)
             for name in TEAM_ORDER
         }
     if not isinstance(raw, dict):
@@ -321,42 +343,208 @@ def _teams(raw, items, status):
     out = {}
     for name in TEAM_ORDER:
         if name not in raw:
-            out[name] = {
-                "status": "ok" if counts[name] else "empty",
-                "detail": "" if counts[name] else "No posts in this snapshot.",
-            }
+            out[name] = _implicit_team(name, counts[name], collected_text)
             continue
         entry = raw[name]
-        if not isinstance(entry, dict) or set(entry) - {"status", "detail"} or "status" not in entry:
+        if not isinstance(entry, dict) or set(entry) - {"status", "detail", "last_success_at"} or "status" not in entry:
             raise ValidationError("team status is not allowed")
         if entry["status"] not in {"ok", "empty", "error"}:
             raise ValidationError("team status is not allowed")
         detail = entry.get("detail", "")
         if entry["status"] == "error":
-            detail = _plain(detail, "team detail", 200, newlines=False)
+            detail = _plain(detail, "team detail", 400, newlines=False)
         elif detail in ("", None):
             detail = "" if entry["status"] == "ok" else "No posts in this snapshot."
         else:
-            detail = _plain(detail, "team detail", 200, newlines=False)
-        out[name] = {"status": entry["status"], "detail": detail}
+            detail = _plain(detail, "team detail", 400, newlines=False)
+        out[name] = {
+            "status": entry["status"],
+            "detail": detail,
+            "last_success_at": _team_success(entry, entry["status"], collected_text),
+        }
     return out
 
 
+def _implicit_team(name, count, collected_text):
+    # Missing from the publisher file is not a successful empty. Merge keeps prior posts.
+    if count:
+        return {"status": "ok", "detail": "", "last_success_at": collected_text}
+    return {"status": "retain", "detail": "", "last_success_at": None}
+
+
+def apply_publication(previous, incoming):
+    """Merge a validated publication onto the previous saved document.
+
+    A team marked error keeps that team's previous posts and success time.
+    A team omitted from the file is not treated as a successful empty.
+    An older collected_at is rejected.
+    """
+    incoming_at = parse_time(incoming["collected_at"], "collected_at")
+    if previous is not None:
+        previous_at = parse_time(previous["collected_at"], "collected_at")
+        if incoming_at < previous_at:
+            raise RollbackError("older snapshot rejected")
+    if incoming["status"] == "error":
+        raise ValidationError("an error snapshot is not a success")
+    items = []
+    teams = {}
+    any_error = False
+    for name in TEAM_ORDER:
+        inc = incoming["teams"][name]
+        prev_meta = (previous or {}).get("teams", {}).get(name) or {}
+        prev_items = [item for item in (previous or {}).get("items", []) if item["team"] == name]
+        if inc["status"] == "error" or (inc["status"] == "retain" and prev_items):
+            any_error = inc["status"] == "error" or any_error
+            kept_success = prev_meta.get("last_success_at")
+            if not kept_success and prev_items:
+                kept_success = max(
+                    prev_items,
+                    key=lambda item: parse_time(item["collected_at"], "collected_at"),
+                )["collected_at"]
+            if inc["status"] == "error":
+                detail = inc["detail"]
+                if prev_items and kept_success:
+                    detail = detail + " Previous posts kept. Success time was not reset."
+                elif not prev_items:
+                    detail = detail + " No previous posts for this team."
+                teams[name] = {"status": "error", "detail": detail[:400], "last_success_at": kept_success}
+                items.extend(prev_items)
+            else:
+                teams[name] = {
+                    "status": prev_meta.get("status") or "ok",
+                    "detail": prev_meta.get("detail") or "",
+                    "last_success_at": kept_success,
+                }
+                items.extend(prev_items)
+            continue
+        if inc["status"] == "empty" or inc["status"] == "retain":
+            teams[name] = {
+                "status": "empty",
+                "detail": "No posts in this snapshot.",
+                "last_success_at": incoming["collected_at"],
+            }
+            continue
+        teams[name] = {
+            "status": "ok",
+            "detail": "",
+            "last_success_at": incoming["collected_at"],
+        }
+        items.extend(item for item in incoming["items"] if item["team"] == name)
+    if any_error:
+        status = "partial"
+    elif not items:
+        status = "empty"
+    elif incoming["status"] == "starter_snapshot_not_live":
+        status = "starter_snapshot_not_live"
+    else:
+        status = "ok"
+    dated = [(meta["last_success_at"], parse_time(meta["last_success_at"], "last_success_at"))
+             for meta in teams.values() if meta.get("last_success_at")]
+    merged = {
+        "schema_version": SCHEMA_VERSION,
+        "collected_at": incoming["collected_at"],
+        "last_attempt_at": incoming.get("last_attempt_at") or incoming["collected_at"],
+        "last_success_at": min(dated, key=lambda pair: pair[1])[0] if dated else None,
+        "display_timezone": "America/New_York",
+        "status": status,
+        "query_end_time": incoming.get("query_end_time"),
+        "source_error": None,
+        "warnings": list(incoming.get("warnings") or []),
+        "teams": teams,
+        "items": items,
+    }
+    return merged
+
+
+def canonical_bytes(doc):
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "collected_at": doc["collected_at"],
+        "display_timezone": "America/New_York",
+        "status": doc["status"],
+        "warnings": list(doc.get("warnings") or []),
+        "items": [],
+        "teams": {},
+    }
+    if doc.get("last_attempt_at"):
+        payload["last_attempt_at"] = doc["last_attempt_at"]
+    if doc.get("last_success_at"):
+        payload["last_success_at"] = doc["last_success_at"]
+    if doc.get("query_end_time"):
+        payload["query_end_time"] = doc["query_end_time"]
+    if doc.get("source_error"):
+        payload["source_error"] = doc["source_error"]
+    for item in sorted(doc["items"], key=lambda row: row["id"]):
+        payload["items"].append({
+            "id": item["id"],
+            "team": item["team"],
+            "sport": item["sport"],
+            "canonical_post_url": item.get("canonical_post_url") or item["url"],
+            "author_handle": item["author_handle"],
+            "author_name": item["author_name"],
+            "author_id": item["author_id"],
+            "published_at": item["published_at"],
+            "collected_at": item["collected_at"],
+            "summary": item["summary"],
+            "source_provenance": item.get("source_provenance") or item["author_role"],
+            "source_text": item["source_text"],
+            "status": item.get("status") or "fresh",
+        })
+    for name in TEAM_ORDER:
+        meta = doc["teams"][name]
+        entry = {"status": "empty" if meta["status"] == "retain" else meta["status"], "detail": meta.get("detail") or ""}
+        if meta.get("last_success_at"):
+            entry["last_success_at"] = meta["last_success_at"]
+        if entry["status"] == "error" and not entry["detail"]:
+            entry["detail"] = "Source error."
+        payload["teams"][name] = entry
+    if payload["status"] == "partial" and not any(entry["status"] == "error" for entry in payload["teams"].values()):
+        payload["status"] = "ok" if payload["items"] else "empty"
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
 def view(doc, now, origin, inbox_error=None, source_error=None, attempt_at=None, freshness=None):
-    success = parse_time(doc["last_success_at"], "last_success_at") if doc.get("last_success_at") else None
     collected = parse_time(doc["collected_at"], "collected_at") if doc.get("collected_at") else None
-    stale = bool(success and (now - success).total_seconds() > 2 * planned_seconds(now))
+    limit = 2 * planned_seconds(now)
+    team_rows = []
+    for name in TEAM_ORDER:
+        meta = doc["teams"][name]
+        success = parse_time(meta["last_success_at"], "last_success_at") if meta.get("last_success_at") else None
+        team_rows.append({
+            "team": name,
+            "sport": TEAM_SPORT[name],
+            "status": "empty" if meta["status"] == "retain" else meta["status"],
+            "detail": meta.get("detail") or "",
+            "last_success_at": meta.get("last_success_at"),
+            "last_success_at_et": format_et(success) if success else None,
+            "stale": bool(success and (now - success).total_seconds() > limit),
+            "count": sum(1 for item in doc["items"] if item["team"] == name),
+        })
+    stale = any(row["stale"] for row in team_rows)
+    team_error = any(row["status"] == "error" for row in team_rows)
     if freshness is None:
-        if doc["status"] == "error" or inbox_error or source_error:
+        if doc["status"] == "error" or team_error or inbox_error or source_error:
             freshness = "error"
-        elif doc["status"] == "empty":
+        elif doc["status"] == "empty" or all(row["status"] == "empty" for row in team_rows):
             freshness = "empty"
         elif stale:
             freshness = "stale"
         else:
             freshness = "fresh"
+    success = None
+    dated = [row for row in team_rows if row.get("last_success_at")]
+    if dated:
+        oldest = min(dated, key=lambda row: parse_time(row["last_success_at"], "last_success_at"))
+        success = parse_time(oldest["last_success_at"], "last_success_at")
+        success_text = oldest["last_success_at"]
+    else:
+        success_text = None
     if source_error is None:
         source_error = doc.get("source_error")
+    if not source_error and team_error:
+        source_error = "; ".join(
+            row["team"] + ": " + row["detail"] for row in team_rows if row["status"] == "error" and row["detail"]
+        ) or "A team source failed."
     if attempt_at is None:
         attempt_at = doc.get("last_attempt_at")
     published = [parse_time(item["published_at"], "published_at") for item in doc["items"]]
@@ -379,16 +567,8 @@ def view(doc, now, origin, inbox_error=None, source_error=None, attempt_at=None,
             "source_text": item["source_text"],
             "older": (now - published_at).total_seconds() > OLDER_SECONDS,
         })
-    teams = []
-    for name in TEAM_ORDER:
-        meta = doc["teams"][name]
-        teams.append({
-            "team": name,
-            "sport": TEAM_SPORT[name],
-            "status": meta["status"],
-            "detail": meta["detail"],
-            "count": sum(1 for item in items if item["team"] == name),
-        })
+    for row in team_rows:
+        row["count"] = sum(1 for item in items if item["team"] == row["team"])
     payload = {
         "ok": freshness != "error" or bool(items),
         "live_feed": False,
@@ -401,7 +581,7 @@ def view(doc, now, origin, inbox_error=None, source_error=None, attempt_at=None,
         "collected_at_et": format_et(collected) if collected else None,
         "last_attempt_at": attempt_at,
         "last_attempt_at_et": format_et(parse_time(attempt_at, "last_attempt_at")) if attempt_at else None,
-        "last_success_at": doc.get("last_success_at"),
+        "last_success_at": success_text,
         "last_success_at_et": format_et(success) if success else None,
         "newest_published_at": newest.strftime("%Y-%m-%dT%H:%M:%SZ") if newest else None,
         "newest_published_at_et": format_et(newest) if newest else None,
@@ -413,7 +593,7 @@ def view(doc, now, origin, inbox_error=None, source_error=None, attempt_at=None,
         "inbox_error": inbox_error,
         "source_error": source_error,
         "warnings": list(doc.get("warnings") or []),
-        "teams": teams,
+        "teams": team_rows,
         "items": items,
     }
     payload["messages"] = _messages(payload)
@@ -439,6 +619,8 @@ def _messages(payload):
         )
     if payload["source_error"]:
         lines.append("Source error: " + payload["source_error"])
+    if any(row["status"] == "error" for row in payload["teams"]):
+        lines.append("Failed teams still show their previous posts. Those success times were not reset.")
     if payload["freshness"] == "empty":
         lines.append("This collection succeeded and returned no posts.")
     if payload["stale"]:

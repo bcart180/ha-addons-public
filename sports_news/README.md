@@ -2,23 +2,13 @@
 
 Personal sidebar panel for Seattle Seahawks football, Navy Midshipmen football, and Gonzaga Bulldogs men's basketball. Pure-black page (`#000000`), Trading Desk reading size, 16px cards. Seahawks are purple, Navy orange, Gonzaga pink. Yellow, red, green, and cyan mark stale, error, official, and reporter labels. The words are always there with the color.
 
-The panel does not call X, does not use a bearer token, and does not schedule a collector. It reads a snapshot. The page checks that file every 60 seconds. That check is not a new collection.
+The panel does not call X, does not use a bearer token, and does not schedule a collector. It does not mount the Home Assistant config directory or the shared folder. The installed page shows the starter collection from Nov 8, 2026, 4:50 AM ET and says it is not a live feed.
 
-Until a snapshot is published, the panel shows the starter collection from Nov 8, 2026, 4:50 AM ET and says it is not a live feed.
+Publishing is blocked. The Home Assistant file tool can write under `custom_templates/`, but this add-on would have to mount the whole config directory to read that file. That directory holds secrets and auth files. Read-only access would not keep them private. The shared folder is also broad, and that writer path was not granted. No narrower sanctioned writer was found. See [SECURITY_REVIEW.md](SECURITY_REVIEW.md).
 
-## Publish
+No host port is opened. There is no write URL. Ingress is the only page, and it accepts GET and HEAD only. `panel_admin` hides the sidebar entry from non-admins. It is not a per-request admin check inside this process. The process allows only the Supervisor ingress proxy address.
 
-A parent writes one complete JSON document with the Home Assistant file tool `ha_write_file`. Preferred path:
-
-`custom_templates/sports_news/inbox.json`
-
-The add-on reads that file at `/homeassistant/custom_templates/sports_news/inbox.json` or `/config/custom_templates/sports_news/inbox.json`. Alternate path: `/share/sports_news/inbox.json`.
-
-Do not write it under `www/`. That folder is web-public. This add-on does not read `www/`.
-
-No host port is opened. There is no write URL. Ingress is the only page, and it accepts GET and HEAD only.
-
-See [DOCS.md](DOCS.md) for the schema and [SECURITY_REVIEW.md](SECURITY_REVIEW.md) before install.
+The snapshot rules (allowlist, stale states, last-good retention) are implemented and tested for a future narrow bridge. They are not connected to a host directory in this version.
 
 ## Proposed collector
 

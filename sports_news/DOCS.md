@@ -27,44 +27,45 @@ One team can be in error while the other teams still show their posts.
 |---|---|---|---|
 | Seahawks | Seattle Seahawks | official | 23642374 |
 | NavyFB | Navy Midshipmen | official | 2429051735 |
-| ZagMBB | Gonzaga Bulldogs | official | not pinned; must be a numeric string |
+| ZagMBB | Gonzaga Bulldogs | official | 602989093 |
 | TheoLawson_SR | Gonzaga Bulldogs | reporter | 291955806 |
-| BWagner_CapGaz | Navy Midshipmen | reporter | not pinned; must be a numeric string |
+| BWagner_CapGaz | Navy Midshipmen | reporter | 872205181 |
 
-`bcondotta` is rejected. Any other handle is rejected. Official posts must use `source_provenance: official`. Reporter posts must use `reporter`. `rumor` and any other provenance are rejected. A reporter summary is shown as that reporter's post, not as a house fact check.
+`bcondotta` is rejected. Any other handle is rejected. A different numeric id is rejected for every allowlisted handle. Official posts must use `source_provenance: official`. Reporter posts must use `reporter`. `rumor` and any other provenance are rejected. A reporter summary is shown as that reporter's post, not as a house fact check. The ids for ZagMBB and BWagner_CapGaz come from the Nov 8 public-profile payload, not from the starter post list.
 
-ZagMBB and BWagner_CapGaz ids were not in the Nov 8 starter file. A later public-profile read was not available here, so those two ids are not pinned. The handle still has to match.
+## Publish status
 
-## Publish contract
+Not connected. `ha_write_file` can write `custom_templates/sports_news/inbox.json`, and a future overwrite needs `overwrite: true`. Reading it requires the whole Home Assistant config mount. This add-on does not use that mount, does not mount `/share`, and does not read `/config`. The add-on's own config folder is narrower, but the file tool's allowed directories do not include it. No publish call is made.
 
-`schema_version` 1. `display_timezone` must be `America/New_York`. `collected_at` is the collection time, ISO-8601 with a timezone, and not more than 5 minutes in the future. `published_at` on every post must be at or before `collected_at`. Post `collected_at` must match the document.
+If a later bridge feeds the tested inbox rules, those rules are:
+
+- A missing inbox after a successful save keeps `/data/last_good.json` and reports that the inbox file is missing. It does not return to the starter.
+- `collected_at` older than the saved snapshot is rejected.
+- `status: error` does not replace the saved snapshot. With no saved snapshot, the error is shown and is not stored as a success.
+- `status: partial` with a team `status: error` keeps that team's previous posts and that team's success time. Other teams can update. The page state is error, not fresh.
+- Omitting a team is not a successful empty. An explicit team `status: empty`, or a document `status: empty`, clears that team.
+- A team `last_success_at` is kept on the saved document. The page shows it per team.
+- The inbox open does not follow symlinks. An allowed directory that is itself a symlink is rejected.
+- Identical saved bytes are not rewritten on the 60-second page check.
+
+## Document rules
+
+`schema_version` 1. `display_timezone` must be `America/New_York`. `collected_at` is the collection time, ISO-8601 with a timezone, and not more than 5 minutes in the future. `published_at` on every post must be at or before that post's `collected_at`. A post `collected_at` must not be after the document `collected_at`. JSON checks do not prove a post is true, that the display name is the account's name, or that the URL still exists.
 
 `status` is one of `starter_snapshot_not_live`, `ok`, `empty`, `partial`, `error`.
 
 - `ok` and `starter_snapshot_not_live` need at least one post.
 - `empty` needs zero posts.
-- `error` needs `source_error` text. Zero posts means "keep last good". Posts included are shown with the error.
+- `error` needs `source_error` text. It does not replace a saved snapshot, whether or not it includes posts. With no saved snapshot, those posts can be shown as an error and are not stored as a success.
 - `partial` needs `teams` with at least one team `status: error`.
 
-Optional `last_attempt_at` and `last_success_at`. If omitted on a success, both equal `collected_at`. Optional `query_end_time` must be within 14 days before collection and not more than 2 minutes after it. Optional `warnings` is a list of plain strings, required as a key (it may be empty).
+Optional `last_attempt_at`. Team `last_success_at` is the success time for that team. A failed team does not receive the new document time. Optional `query_end_time` must be within 14 days before collection and not more than 2 minutes after it. `warnings` is a list of plain strings, required as a key (it may be empty).
 
 Each post needs `id` (numeric status id string), `team`, `sport`, `canonical_post_url`, `author_handle`, `author_name`, `author_id` (string, not a JSON number), `published_at`, `collected_at`, `summary`, `source_provenance`, `source_text`, and `status` (`fresh` or `older`). The URL must be `https://x.com/{handle}/status/{id}` or the same path on `twitter.com`, with no query, fragment, user, or port. `source_text` is plain text, 4000 characters max. `<` and `>` are rejected. The whole file must be UTF-8 JSON at most 262144 bytes and at most 75 posts.
 
 `evidence_files`, when present, may only be `raw/<simple name>`. They are checked and then dropped. The page does not serve them.
 
-Write the document in one call. A partial or invalid file does not replace the last good snapshot.
-
-Example publish, after the parent has built the document from public X reads:
-
-- Tool: `ha_write_file`
-- Path: `custom_templates/sports_news/inbox.json`
-- `overwrite`: true
-- `create_dirs`: true
-- Content: the JSON document
-
-Alternate absolute path: `/share/sports_news/inbox.json`.
-
-This repository does not call that tool and does not create a routine.
+This repository does not call a publish tool and does not create a routine.
 
 ## Colors
 
