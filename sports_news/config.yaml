@@ -1,5 +1,5 @@
 name: Sports News
-version: "0.1.3"
+version: "0.1.4"
 slug: sports_news
 description: Personal Seahawks, Navy, and Gonzaga snapshot. Read-only ingress panel. Does not call X.
 url: https://github.com/bcart180/ha-addons-public/tree/main/sports_news

@@ -43,7 +43,7 @@ h1 { margin: 0; font-size: 17px; font-weight: 500; letter-spacing: -.02em; }
   padding: 12px 14px; color: var(--text);
 }
 .banner p.starter { border-color: var(--purple); }
-.banner p.stale { color: var(--yellow); border-color: rgba(255, 229, 102, .45); }
+.banner p.age { color: var(--text); border-color: var(--line); }
 .banner p.error { color: var(--red); border-color: rgba(255, 122, 122, .45); }
 .banner p.note { color: var(--cyan); }
 .seg {

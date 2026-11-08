@@ -35,7 +35,7 @@
 
   function messageClass(text) {
     if (text.indexOf("Starter snapshot") === 0) return "starter";
-    if (text.indexOf("Stale.") === 0) return "stale";
+    if (text.indexOf("Content age:") === 0) return "age";
     if (text.indexOf("Source error") === 0 || text.indexOf("Inbox rejected") === 0) return "error";
     if (text.indexOf("Note:") === 0) return "note";
     return "";
@@ -44,8 +44,8 @@
   function render(snapshot) {
     shown = snapshot;
     updated.textContent = snapshot.collected_at_et
-      ? "Updated " + snapshot.collected_at_et
-      : "No collection time";
+      ? "Content collected " + snapshot.collected_at_et
+      : "No content collection time";
     banner.textContent = "";
     (snapshot.messages || []).forEach(function (line) {
       addText(banner, "p", messageClass(line), line);
@@ -60,7 +60,6 @@
       var title = document.createElement("div");
       addText(title, "h2", "", row.team + " · " + row.sport);
       if (row.status === "error") addText(title, "p", "state error", "Source error");
-      if (row.stale) addText(title, "p", "older", "Stale");
       head.appendChild(title);
       var count = document.createElement("div");
       addText(count, "p", "figure", String(row.count));
@@ -68,7 +67,7 @@
       head.appendChild(count);
       section.appendChild(head);
       if (row.detail) addText(section, "p", "detail", row.detail);
-      if (row.last_success_at_et) addText(section, "p", "time", "Last success " + row.last_success_at_et);
+      if (row.last_success_at_et) addText(section, "p", "time", "Content collected " + row.last_success_at_et);
       var posts = (snapshot.items || []).filter(function (item) { return item.team === row.team; });
       if (!posts.length && row.status !== "error") addText(section, "p", "detail", "No posts in this snapshot.");
       posts.forEach(function (item) {
