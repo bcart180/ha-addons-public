@@ -4,7 +4,7 @@
 <style>
 /* Soft Slate dark variant (house-soft-slate-theme accent/status tokens on the add-on's dark base). */
 :root{--bg:#000000;--elev:#1a1a1a;--card:#414141;--text:#ffffff;--dim:#b4b6bb;--line:#5c5c5c;
---accent:#005aff;--accent-h:#005aff;--soft:#ffffff;--good:#3ddc5a;--bad:#d0d0d0;--warn:#d0d0d0;--selected:#757575;--r:8px;--rc:8px;--face:#1a1a1a}
+--accent:#005aff;--accent-h:#005aff;--blue:#005aff;--soft:#ffffff;--good:#3ddc5a;--bad:#d0d0d0;--warn:#d0d0d0;--selected:#757575;--r:8px;--rc:8px;--face:#1a1a1a}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:18px "Segoe UI",system-ui,sans-serif}
 .shell{max-width:1180px;margin:0 auto;padding:20px}
 .header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px}
@@ -37,7 +37,7 @@ display:flex;flex-direction:column;align-items:center;justify-content:center;use
 .chip{padding:4px 10px;border-radius:20px;font-size:13.5px;background:var(--elev);color:var(--dim);border:1px solid var(--line)}
 .chip.auto{color:#ffffff;border-color:var(--selected);background:var(--selected)}.chip.hold{color:#ffffff;border-color:#6a6a6a}
 .chip.ok{color:#bfe8d3;border-color:var(--good)}.chip.bad{color:#f2c2c2;border-color:var(--bad)}
-.chip.dfr{color:#7fd6ff;border-color:#7fd6ff}
+.chip.dfr{color:#757575;background:#414141;border-color:#757575}
 .why{font-size:14.5px;color:var(--dim);margin:2px 0 10px;min-height:20px}
 .row{display:flex;gap:8px;flex-wrap:wrap}
 .btn{background:var(--elev);color:var(--text);border:1px solid var(--line);border-radius:var(--rc);padding:10px 14px;font-size:15px;cursor:pointer}
@@ -159,7 +159,7 @@ function drawG(z){const el=$("g-"+z),h=H[z];if(!el)return;const d=h&&h.d;
  const hold=pts=>{const l=pts[pts.length-1];return l&&l[1]!=null&&l[0]<x1?[...pts,[x1,l[1]]]:pts;}; // carry last value to now
  const line=(pts,step)=>{let p="",prev=null;for(const [t,v] of hold(pts)){if(v==null){prev=null;continue;}const x=X(t),y=Y(v);
   if(prev==null)p+=`M${x},${y}`;else p+=step?`H${x}V${y}`:`L${x},${y}`;prev=y;}return p;};
- if(h.out!==false&&d.outdoor.length)s+=`<path d="${line(d.outdoor)}" fill="none" stroke="#6f8296" stroke-width="1.5" stroke-dasharray="4 4"/>`;
+ if(h.out!==false&&d.outdoor.length)s+=`<path d="${line(d.outdoor)}" fill="none" stroke="#757575" stroke-width="1.5" stroke-dasharray="4 4"/>`;
  s+=`<path d="${line(d.setpoint,1)}" fill="none" stroke="#005aff" stroke-width="2"/>`;
  s+=`<path d="${line(d.indoor)}" fill="none" stroke="#3ddc5a" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
  const lab=d.range==="7d"?t=>new Date(t*1000).toLocaleDateString([],{weekday:"short"}):t=>new Date(t*1000).toLocaleTimeString([],{hour:"numeric"});
