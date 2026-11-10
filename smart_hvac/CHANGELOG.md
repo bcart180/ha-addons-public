@@ -1,3 +1,9 @@
+## 0.9.2 — 2026-11-10
+
+- Climate, classic, and thermostat screens use the same dark presentation as the Home trial: black page, `#414141` cards, `#757575` selected controls, `#005aff` for the active mark and the target line. Green `#3ddc5a` is only the current indoor temperature. Heating, cooling, holds, and defrost stay labeled in words. No amber, gold, or left stripe.
+- Each room on the Climate screen shows its history graph with the temperature, before the schedule and hold controls. The shared history card, its range and room buttons, and every existing control stay. Opening the screen still only reads state.
+- Controls, endpoints, ingress checks, mode lock, and the spare heater are unchanged.
+
 ## 0.9.1 — 2026-11-07
 
 - Climate screen colors only. Layout, controls, and behavior are unchanged. The base stays black and gray.
