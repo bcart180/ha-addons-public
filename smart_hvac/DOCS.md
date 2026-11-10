@@ -91,7 +91,7 @@ The old `vacation_mode_handler` automation is left as-is until vacation mode is 
 ## Climate screen (0.9.0)
 The ingress panel (`/`) is the Climate screen: large temperatures, the schedule, and a history graph. It reads `/api/state` when it opens and does not change a hold or a thermostat by being opened.
 
-Color (0.9.1), layout unchanged. The screen stays black and gray. Amber `#e8a05a` means heating. Teal `#5ec8c5` means cooling or defrost. Gold `#e2c07a` means a temporary hold. A manual profile is white text, not teal. Each room also has a stable left stripe (slate, tan, or gray) chosen from its name. The printed words remain the meaning; the color only repeats them.
+Color (0.9.2). The screen stays black, with `#414141` cards and `#757575` for a selected control. Blue `#005aff` marks an active control and the target line. Green `#3ddc5a` is only the current indoor temperature. Heating, cooling, a temporary hold, and defrost are told by their words. There is no amber, gold, or colored left stripe. Each room shows its history graph with the temperature.
 
 Three different controls:
 

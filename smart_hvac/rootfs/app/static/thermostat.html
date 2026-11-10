@@ -3,14 +3,14 @@
 <title>Thermostats</title>
 <style>
 /* Soft Slate dark variant (house-soft-slate-theme accent/status tokens on the add-on's dark base). */
-:root{--bg:#0e1318;--elev:#151c23;--card:#1a222b;--text:#e8eef4;--dim:#8a9bac;--line:#2a3540;
---accent:#2a9d8f;--accent-h:#21867a;--soft:#d5f0ec;--good:#2f9e6b;--bad:#c94c4c;--warn:#c9892b;--r:14px;--rc:10px;--face:#050607}
+:root{--bg:#000000;--elev:#1a1a1a;--card:#414141;--text:#ffffff;--dim:#b4b6bb;--line:#5c5c5c;
+--accent:#005aff;--accent-h:#005aff;--soft:#ffffff;--good:#3ddc5a;--bad:#d0d0d0;--warn:#d0d0d0;--selected:#757575;--r:8px;--rc:8px;--face:#1a1a1a}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:18px "Segoe UI",system-ui,sans-serif}
 .shell{max-width:1180px;margin:0 auto;padding:20px}
 .header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px}
-.header h1{font-size:28px;font-weight:500;margin:0}.dim{color:var(--dim);font-size:15px}
+.header h1{font-size:24px;line-height:29px;font-weight:500;margin:0}.dim{color:var(--dim);font-size:16px}
 .header a{color:var(--accent);text-decoration:none;font-size:15px}
-.notice{background:var(--elev);border-left:4px solid var(--warn);border-radius:var(--rc);padding:10px 14px;margin-bottom:14px;font-size:15px}
+.notice{background:var(--elev);border:1px solid var(--line);border-radius:var(--rc);padding:10px 14px;margin-bottom:14px;font-size:16px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px}
 .card{background:var(--card);border-radius:var(--r);padding:16px;box-shadow:0 2px 10px rgba(0,0,0,.35)}
 .zhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
@@ -26,23 +26,23 @@ display:flex;flex-direction:column;align-items:center;justify-content:center;use
 .menu{background:none;border:0;padding:6px;cursor:pointer;border-radius:8px}.menu:focus-visible{outline:2px solid var(--accent)}
 .status{position:absolute;top:27%;font-size:14px;color:#b9c4cf;display:flex;gap:10px;align-items:center}
 .status .sep{width:1px;height:14px;background:#3a4550}
-.big{font-size:min(92px,24vw);font-weight:200;line-height:1;letter-spacing:-2px;margin-top:4%}
+.big{font-size:min(92px,24vw);font-weight:400;line-height:1;letter-spacing:0;margin-top:4%;color:#3ddc5a}
 .sp{position:absolute;bottom:13%;display:flex;align-items:center;gap:14px}
 .pill{min-width:62px;padding:6px 14px;border:2px solid var(--accent);border-radius:20px;color:var(--soft);font-weight:600;font-size:17px;text-align:center}
-.pill.heat{border-color:var(--warn);color:#f1d3a6}.pill.off{border-color:#3a4550;color:#5c6873}
+.pill.heat{border-color:#6a6a6a;color:#ffffff}.pill.off{border-color:#5c5c5c;color:#b4b6bb}
 .step{width:44px;height:44px;border-radius:50%;border:1px solid #2b333c;background:#0d1114;color:#e8eef4;font-size:24px;cursor:pointer;line-height:1}
 .step:hover{border-color:var(--accent)}.step:disabled{opacity:.35;cursor:default}
 /* smart hvac strip */
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0 8px}
 .chip{padding:4px 10px;border-radius:20px;font-size:13.5px;background:var(--elev);color:var(--dim);border:1px solid var(--line)}
-.chip.auto{color:var(--soft);border-color:var(--accent)}.chip.hold{color:#f1d3a6;border-color:var(--warn)}
+.chip.auto{color:#ffffff;border-color:var(--selected);background:var(--selected)}.chip.hold{color:#ffffff;border-color:#6a6a6a}
 .chip.ok{color:#bfe8d3;border-color:var(--good)}.chip.bad{color:#f2c2c2;border-color:var(--bad)}
 .chip.dfr{color:#7fd6ff;border-color:#7fd6ff}
 .why{font-size:14.5px;color:var(--dim);margin:2px 0 10px;min-height:20px}
 .row{display:flex;gap:8px;flex-wrap:wrap}
 .btn{background:var(--elev);color:var(--text);border:1px solid var(--line);border-radius:var(--rc);padding:10px 14px;font-size:15px;cursor:pointer}
-.btn.primary{background:var(--accent);border-color:var(--accent)}.btn:hover{border-color:var(--accent)}
-.btn.sel{border-color:var(--accent);color:var(--soft)}
+.btn.primary{background:var(--selected);border-color:var(--blue);color:#fff}.btn:hover{border-color:var(--blue)}
+.btn.sel{border-color:var(--blue);background:var(--selected);color:#fff}
 /* menu sheet */
 .sheet{position:absolute;inset:0;border-radius:24%;background:rgba(5,6,7,.96);display:none;flex-direction:column;justify-content:center;align-items:center;gap:10px;padding:14%}
 .sheet.open{display:flex}.sheet h3{margin:0;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);font-weight:500}
@@ -53,7 +53,7 @@ display:flex;flex-direction:column;align-items:center;justify-content:center;use
 .gbar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:var(--rc);overflow:hidden}
 .seg button{background:none;border:0;color:var(--dim);padding:5px 11px;font-size:13px;cursor:pointer}
-.seg button.on{background:var(--accent);color:#fff}
+.seg button.on{background:var(--selected);color:#fff}
 .tog{font-size:13px;color:var(--dim);display:flex;align-items:center;gap:5px;cursor:pointer}
 svg.g{width:100%;height:150px;display:block}
 .leg{display:flex;gap:12px;flex-wrap:wrap;font-size:12.5px;color:var(--dim);margin-top:4px}
@@ -132,7 +132,7 @@ function card(z){
  <div class="gwrap"><div class="gbar"><span class="seg">${["24h","7d"].map(g=>`<button class="${(H[z.name]?.range||"24h")===g?"on":""}" onclick="loadHist('${z.name}','${g}')">${g}</button>`).join("")}</span>
   <label class="tog"><input type="checkbox" ${H[z.name]?.out!==false?"checked":""} onchange="H['${z.name}'].out=this.checked;drawG('${z.name}')"> Outdoor</label></div>
   <svg class="g" id="g-${z.name}" viewBox="0 0 600 150"></svg>
-  <div class="leg"><span><i style="background:#e8eef4"></i>Indoor</span><span><i style="background:var(--accent)"></i>Setpoint</span><span><i style="background:rgba(201,137,43,.55);height:8px"></i>Heating</span><span><i style="background:#6f8296"></i>Outdoor</span><span><i style="background:rgba(127,214,255,.7);height:8px"></i>Defrost</span></div></div>
+  <div class="leg"><span><i style="background:#3ddc5a"></i>Indoor</span><span><i style="background:#005aff"></i>Setpoint</span><span><i style="background:#757575;height:8px"></i>Heating</span><span><i style="background:#757575"></i>Outdoor</span><span><i style="background:#6a6a6a;height:8px"></i>Defrost</span></div></div>
  </div>`;}
 function render(){if(!S)return;
  $("sub").textContent=!S.enabled?"App is off — cards are read-only":S.dry_run?"Dry run — cards are read-only":"Live";
@@ -154,14 +154,14 @@ function drawG(z){const el=$("g-"+z),h=H[z];if(!el)return;const d=h&&h.d;
  if(!vals.length){el.innerHTML='<text x="50%" y="80" fill="#8a9bac" font-size="14" text-anchor="middle">No history yet</text>';return;}
  let lo=Math.floor(Math.min(...vals)-2),hi=Math.ceil(Math.max(...vals)+2);const Y=v=>Ht-P-(v-lo)/(hi-lo)*(Ht-2*P)+6;
  let s="";for(let i=0;i<=3;i++){const v=lo+(hi-lo)*i/3,y=Y(v);s+=`<line x1="28" x2="${W-2}" y1="${y}" y2="${y}" stroke="#2a3540" stroke-width="1"/><text x="2" y="${y+4}" fill="#8a9bac" font-size="11">${Math.round(v)}°</text>`;}
- const hp=d.heating;for(let i=0;i<hp.length;i++)if(hp[i][1]){const a=X(hp[i][0]),b=X(i+1<hp.length?hp[i+1][0]:x1);s+=`<rect x="${a}" y="6" width="${Math.max(1,b-a)}" height="${Ht-P-6}" fill="rgba(201,137,43,.22)"/>`;}
- const df=d.defrost||[];for(let i=0;i<df.length;i++)if(df[i][1]){const a=X(df[i][0]),b=X(i+1<df.length?df[i+1][0]:x1);s+=`<rect x="${a}" y="6" width="${Math.max(2,b-a)}" height="${Ht-P-6}" fill="rgba(127,214,255,.35)"/><text x="${a+3}" y="16" fill="#7fd6ff" font-size="11">Defrosting</text>`;}
+ const hp=d.heating;for(let i=0;i<hp.length;i++)if(hp[i][1]){const a=X(hp[i][0]),b=X(i+1<hp.length?hp[i+1][0]:x1);s+=`<rect x="${a}" y="6" width="${Math.max(1,b-a)}" height="${Ht-P-6}" fill="rgba(117,117,117,.45)"/>`;}
+ const df=d.defrost||[];for(let i=0;i<df.length;i++)if(df[i][1]){const a=X(df[i][0]),b=X(i+1<df.length?df[i+1][0]:x1);s+=`<rect x="${a}" y="6" width="${Math.max(2,b-a)}" height="${Ht-P-6}" fill="rgba(117,117,117,.28)"/><text x="${a+3}" y="18" fill="#d0d0d0" font-size="16">Defrosting</text>`;}
  const hold=pts=>{const l=pts[pts.length-1];return l&&l[1]!=null&&l[0]<x1?[...pts,[x1,l[1]]]:pts;}; // carry last value to now
  const line=(pts,step)=>{let p="",prev=null;for(const [t,v] of hold(pts)){if(v==null){prev=null;continue;}const x=X(t),y=Y(v);
   if(prev==null)p+=`M${x},${y}`;else p+=step?`H${x}V${y}`:`L${x},${y}`;prev=y;}return p;};
  if(h.out!==false&&d.outdoor.length)s+=`<path d="${line(d.outdoor)}" fill="none" stroke="#6f8296" stroke-width="1.5" stroke-dasharray="4 4"/>`;
- s+=`<path d="${line(d.setpoint,1)}" fill="none" stroke="#2a9d8f" stroke-width="2"/>`;
- s+=`<path d="${line(d.indoor)}" fill="none" stroke="#e8eef4" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+ s+=`<path d="${line(d.setpoint,1)}" fill="none" stroke="#005aff" stroke-width="2"/>`;
+ s+=`<path d="${line(d.indoor)}" fill="none" stroke="#3ddc5a" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
  const lab=d.range==="7d"?t=>new Date(t*1000).toLocaleDateString([],{weekday:"short"}):t=>new Date(t*1000).toLocaleTimeString([],{hour:"numeric"});
  for(let i=0;i<=4;i++){const t=x0+(x1-x0)*i/4;s+=`<text x="${Math.min(X(t),W-40)}" y="${Ht-3}" fill="#8a9bac" font-size="11">${lab(t)}</text>`;}
  el.innerHTML=s;}

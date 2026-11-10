@@ -6,83 +6,78 @@
 <title>Climate</title>
 <style>
 :root{
-  --bg:#000;--card:#141414;--elev:#1c1c1c;--line:#2a2a2a;--fg:#fff;--mut:#9a9a9a;--dim:#6e6e6e;
-  /* 0.9.1 accents. Black and gray stay the base. Words stay the meaning; color only repeats it. */
-  --heat:#e8a05a;--cool:#5ec8c5;--hold:#e2c07a;--bad:#ff8f8f;
-  --room-0:#8aa4b8;--room-1:#c4a882;--room-2:#9aa0a6;
+  --bg:#000000;--band:#1a1a1a;--card:#414141;--selected:#757575;--blue:#005aff;--green:#3ddc5a;
+  --line:#5c5c5c;--fg:#ffffff;--mut:#d0d0d0;--dim:#b4b6bb;
+  /* Words stay the meaning. Blue is the active mark. Green is only the current temperature. */
+  --heat:#d0d0d0;--cool:var(--blue);--hold:#f2f2f2;
   color-scheme:dark;
 }
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
-button{font:inherit;color:inherit;background:transparent;border:1px solid var(--line);border-radius:12px;min-height:48px;padding:0 16px;cursor:pointer}
+button{font:inherit;color:inherit;background:#2f2f2f;border:1px solid var(--line);border-radius:8px;min-height:48px;padding:0 16px;cursor:pointer}
 button:disabled{opacity:.35;cursor:default}
-button.on{border-color:var(--fg);color:var(--fg)}
-button.heat.on{border-color:var(--heat);color:var(--heat)}
-button.cool.on{border-color:var(--cool);color:var(--cool)}
-:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
-.wrap{max-width:1120px;margin:0 auto;padding:16px 16px 48px}
-header{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px 16px;padding-bottom:14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:2}
-h1{font-size:22px;font-weight:500;letter-spacing:-.03em;margin:0}
-.pills{display:flex;flex-wrap:wrap;gap:6px}
-.pill{font-size:12px;letter-spacing:.04em;text-transform:uppercase;border:1px solid var(--line);border-radius:999px;padding:6px 10px;color:var(--mut)}
-.pill.auto{color:var(--fg);border-color:#3a3a3a}
-.pill.hold{color:var(--hold);border-color:#6a5a32}
-.pill.manual{color:var(--fg);border-color:#3a3a3a}
-.sub{flex:1 1 100%;color:var(--mut);font-size:14px;min-height:1.2em}
-.links{margin-left:auto;display:flex;gap:12px;font-size:14px}
-.links a{color:var(--mut);text-decoration:none;min-height:48px;display:flex;align-items:center}
-.banner{margin:14px 0;padding:12px 14px;border:1px solid var(--line);border-radius:12px;color:var(--mut);font-size:14px}
+button.on{background:var(--selected);border-color:var(--selected);color:#ffffff}
+button.heat.on,button.cool.on{background:var(--selected);color:#ffffff;border-color:var(--blue)}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.wrap{max-width:1200px;margin:0 auto;padding:16px 16px 48px;container-type:inline-size}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px 16px;padding-bottom:14px;border-bottom:1px solid #3a3a3a;position:sticky;top:0;background:var(--bg);z-index:2}
+h1{font-size:24px;line-height:29px;font-weight:500;letter-spacing:0;margin:0}
+.pills{display:flex;flex-wrap:wrap;gap:8px}
+.pill{font-size:16px;letter-spacing:.02em;border:1px solid var(--line);border-radius:999px;padding:6px 12px;color:var(--mut);background:var(--band)}
+.pill.auto,.pill.manual,.pill.hold{color:var(--fg);border-color:#6a6a6a}
+.sub{flex:1 1 100%;color:var(--mut);font-size:16px;min-height:1.2em}
+.links{margin-left:auto;display:flex;gap:12px;font-size:16px}
+.links a{color:var(--blue);text-decoration:none;min-height:48px;display:flex;align-items:center}
+.banner{margin:14px 0;padding:12px 14px;border:1px solid #3a3a3a;border-radius:8px;background:var(--band);color:var(--mut);font-size:16px}
 .banner strong{color:var(--fg);font-weight:500}
 .sched{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
-.grid{display:grid;grid-template-columns:1fr;gap:12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px}
-.card.rm0{box-shadow:inset 3px 0 0 var(--room-0)}
-.card.rm1{box-shadow:inset 3px 0 0 var(--room-1)}
-.card.rm2{box-shadow:inset 3px 0 0 var(--room-2)}
-.zh{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
-.zh h2{margin:0;font-size:16px;font-weight:500}
-.zh span{color:var(--mut);font-size:13px}
-.st.heat{color:var(--heat)}
-.st.cool,.st.defrost{color:var(--cool)}
+.grid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px;min-width:0}
+.card.rm0,.card.rm1,.card.rm2{box-shadow:none}
+.zh{display:flex;justify-content:space-between;gap:8px 12px;align-items:baseline;flex-wrap:wrap}
+.zh h2{margin:0;font-size:24px;line-height:29px;font-weight:500}
+.zh span{color:var(--mut);font-size:16px}
+.st.heat,.st.cool,.st.defrost{color:var(--fg)}
 .rowlabel.holdlab{color:var(--hold)}
-.now{font-size:84px;font-weight:200;letter-spacing:-.04em;line-height:.9;margin:12px 0 4px;font-variant-numeric:tabular-nums}
-.now small{font-size:32px;font-weight:300}
+.now{display:flex;align-items:baseline;gap:12px;font-size:56px;font-weight:400;letter-spacing:0;line-height:64px;margin:8px 0 4px;font-variant-numeric:tabular-nums;color:var(--green)}
+.now small{font-size:32px;font-weight:400;color:var(--green)}
+.hum{font-size:16px;line-height:1.4;color:var(--mut);font-weight:400}
 .target{font-size:16px;margin:0 0 4px}
-.why{color:var(--mut);font-size:14px;min-height:1.3em;margin:0 0 12px}
-.rowlabel{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin:14px 0 6px}
+.why{color:var(--mut);font-size:16px;min-height:1.3em;margin:0 0 8px}
+.zone-graph{min-width:0;margin:0 0 8px}
+.zone-graph svg{height:160px}
+.rowlabel{font-size:16px;letter-spacing:.04em;text-transform:uppercase;color:var(--dim);margin:14px 0 6px}
 .stepper{display:flex;align-items:center;gap:10px}
-.stepper button{width:56px;height:56px;border-radius:50%;font-size:26px;padding:0}
+.stepper button{width:56px;height:56px;border-radius:8px;font-size:26px;padding:0}
 .stepper b{font-size:28px;font-weight:400;min-width:72px;text-align:center;font-variant-numeric:tabular-nums}
-.hint{color:var(--dim);font-size:13px;margin:6px 0 0}
+.hint{color:var(--dim);font-size:16px;margin:6px 0 0}
 .durs{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
 .durs button{min-width:64px}
 .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .actions button{flex:1 1 160px}
-button.go{background:#1a1a1a}
-.count{color:var(--hold);font-variant-numeric:tabular-nums}
+button.go{background:#2a2a2a}
+button.go.on,button.on.go{background:var(--selected)}
+.count{color:var(--hold);font-size:16px;font-variant-numeric:tabular-nums}
 .modes{display:flex;flex-wrap:wrap;gap:8px}
-.modes button{flex:1}
+.modes button{flex:1 1 180px}
 .graphhead{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.graphhead h2{font-size:24px;line-height:29px}
 svg.g{width:100%;height:200px;display:block;margin-top:8px}
-.leg{display:flex;flex-wrap:wrap;gap:12px;color:var(--mut);font-size:12px;margin-top:6px}
-.leg i{display:inline-block;width:14px;height:2px;margin-right:6px;vertical-align:middle}
+.leg{display:flex;flex-wrap:wrap;gap:12px;color:var(--mut);font-size:16px;margin-top:8px}
+.leg i{display:inline-block;width:14px;height:3px;margin-right:6px;vertical-align:middle}
 .metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
-.metric{border:1px solid var(--line);border-radius:12px;padding:10px 12px}
-.metric b{display:block;font-size:22px;font-weight:400;font-variant-numeric:tabular-nums}
-.metric.heat b{color:var(--heat)}
-.metric.cool b{color:var(--cool)}
-.metric span{color:var(--mut);font-size:12px}
-details{margin-top:8px;color:var(--mut)}
+.metric{border:1px solid #6a6a6a;border-radius:8px;padding:10px 12px;background:#2f2f2f}
+.metric b{display:block;font-size:24px;font-weight:400;font-variant-numeric:tabular-nums;color:var(--fg)}
+.metric.heat b,.metric.cool b{color:var(--fg)}
+.metric span{color:var(--mut);font-size:16px}
+details{margin-top:8px;color:var(--mut);font-size:16px}
 details summary{min-height:48px;display:flex;align-items:center;cursor:pointer}
-.prefrow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)}
-.synth{border-color:#6a5a32;color:var(--hold)}
-@media(min-width:800px){
-  .wrap{padding:28px 28px 64px}
-  h1{font-size:28px}
-  .now{font-size:104px}
-  .grid{grid-template-columns:1fr 1fr}
+.prefrow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-top:1px solid #6a6a6a;font-size:16px}
+.synth{border-color:#6a6a6a;color:var(--fg)}
+@container (min-width: 900px){
+  .grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
   .wide{grid-column:1 / -1}
-  .metrics{grid-template-columns:repeat(4,1fr)}
+  .metrics{grid-template-columns:repeat(4,minmax(0,1fr))}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -109,7 +104,7 @@ const REASONS = {ok:"Schedule target",no_change:"At the schedule target",manual_
   "missing:indoor_temp":"Indoor temperature missing","missing:outdoor_temp":"Outdoor temperature missing",
   "missing:presence":"Presence unknown — holding the last target",mode_lock:"Matched to the other mini split"};
 const HOURS = [[0.5,"30m"],[1,"1h"],[2,"2h"],[4,"4h"]];
-let S = null, hours = 2, msg = "", hist = {}, histErr = {};
+let S = null, hours = 2, msg = "", hist = {by:{}}, histErr = {};
 const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
 const $ = (id) => document.getElementById(id);
 
@@ -214,9 +209,12 @@ function zoneCard(z){
   const draft = held && live.setpoint != null ? live.setpoint : (pt != null ? pt : 70);
   let html = '<article class="card rm' + slot + (held ? " held" : "") + '" data-zone="' + esc(z.name) + '"><div class="zh"><h2>' + esc(z.label) + '</h2><span class="st ' + tone + '">' +
     (z.heat_only ? "Radiant" : "Mini split") + " · " + esc(status) + "</span></div>";
-  html += '<div class="now">' + (indoor != null ? Math.round(indoor) : "—") + "<small>°</small></div>";
+  const hum = live.humidity != null ? '<span class="hum">' + Math.round(live.humidity) + "%</span>" : "";
+  html += '<div class="now">' + (indoor != null ? Math.round(indoor) : "—") + "<small>°</small>" + hum + "</div>";
   html += '<p class="target">' + (target != null ? esc(String(target)) + "° target" : "No target") + " · " + esc(src) + "</p>";
   html += '<p class="why">' + esc(why) + (next ? " · " + esc(next) : "") + "</p>";
+  const tileGraph = hist.by && hist.by[z.name];
+  html += '<div class="zone-graph">' + (histErr[z.name] ? '<p class="hint">History unavailable. Nothing is filled in.</p>' : graphSvg(tileGraph, 160)) + "</div>";
   html += '<div class="rowlabel">Schedule preference · ' + esc(prefLabel(key)) + "</div>";
   html += '<div class="stepper"><button data-pref="-0.5" data-key="' + key + '" aria-label="Lower preference">−</button><b>' +
     (pt != null ? pt : "—") + '°</b><button data-pref="0.5" data-key="' + key + '" aria-label="Raise preference">+</button></div>';
@@ -270,9 +268,9 @@ function gaps(pts){
   for (let i = 1; i < pts.length; i++) if (pts[i][0] - pts[i - 1][0] > 45 * 60) return true;
   return false;
 }
-function graphSvg(d){
+function graphSvg(d, plotH){
   if (!d) return "";
-  const w = 640, h = 200, pad = {l:36, r:8, t:16, b:22};
+  const w = 640, h = plotH || 200, pad = {l:8, r:44, t:20, b:12};
   const W = w - pad.l - pad.r, H = h - pad.t - pad.b;
   const vals = [...(d.indoor || []), ...(d.setpoint || []), ...(d.outdoor || [])].map((p) => p[1]).filter((v) => v != null);
   if (!vals.length) return '<p class="hint">No temperature history in this range.</p>';
@@ -290,17 +288,17 @@ function graphSvg(d){
   };
   let bands = "";
   (d.heating || []).forEach(([t, on], i) => { if (!on) return; const t2 = (d.heating[i + 1] || [d.end])[0];
-    bands += '<rect x="' + X(t).toFixed(1) + '" y="' + pad.t + '" width="' + Math.max(1, X(t2) - X(t)).toFixed(1) + '" height="' + H + '" fill="rgba(232,160,90,.18)"/>'; });
+    bands += '<rect x="' + X(t).toFixed(1) + '" y="' + pad.t + '" width="' + Math.max(1, X(t2) - X(t)).toFixed(1) + '" height="' + H + '" fill="rgba(117,117,117,.45)"/>'; });
   (d.cooling || []).forEach(([t, on], i) => { if (!on) return; const t2 = (d.cooling[i + 1] || [d.end])[0];
-    bands += '<rect x="' + X(t).toFixed(1) + '" y="' + pad.t + '" width="' + Math.max(1, X(t2) - X(t)).toFixed(1) + '" height="' + H + '" fill="rgba(94,200,197,.16)"/>'; });
+    bands += '<rect x="' + X(t).toFixed(1) + '" y="' + pad.t + '" width="' + Math.max(1, X(t2) - X(t)).toFixed(1) + '" height="' + H + '" fill="rgba(0,90,255,.22)"/>'; });
   (d.defrost || []).forEach(([t, on], i) => { if (!on) return; const t2 = (d.defrost[i + 1] || [d.end])[0];
-    bands += '<rect x="' + X(t).toFixed(1) + '" y="' + pad.t + '" width="' + Math.max(2, X(t2) - X(t)).toFixed(1) + '" height="' + H + '" fill="rgba(94,200,197,.28)"/><text x="' + (X(t) + 4).toFixed(1) + '" y="' + (pad.t + 14) + '" fill="#5ec8c5" font-size="11">Defrosting</text>'; });
+    bands += '<rect x="' + X(t).toFixed(1) + '" y="' + pad.t + '" width="' + Math.max(2, X(t2) - X(t)).toFixed(1) + '" height="' + H + '" fill="rgba(117,117,117,.28)"/><text x="' + (X(t) + 4).toFixed(1) + '" y="' + (pad.t + 16) + '" fill="#d0d0d0" font-size="16">Defrosting</text>'; });
   let grid = "";
-  for (const v of [lo, Math.round((lo + hi) / 2), hi]) grid += '<line x1="' + pad.l + '" x2="' + (w - pad.r) + '" y1="' + Y(v) + '" y2="' + Y(v) + '" stroke="#2a2a2a"/><text x="2" y="' + (Y(v) + 4) + '" fill="#6e6e6e" font-size="11">' + v + "°</text>";
+  for (const v of [lo, Math.round((lo + hi) / 2), hi]) grid += '<line x1="' + pad.l + '" x2="' + (w - pad.r) + '" y1="' + Y(v) + '" y2="' + Y(v) + '" stroke="#6a6a6a"/><text x="' + (w - 2) + '" y="' + (Y(v) + 4) + '" fill="#b4b6bb" font-size="16" text-anchor="end">' + v + "°</text>";
   return '<svg class="g" viewBox="0 0 ' + w + " " + h + '" role="img">' + grid + bands +
-    '<path d="' + line(d.outdoor) + '" fill="none" stroke="#6e6e6e" stroke-dasharray="4 3" stroke-width="1.2"/>' +
-    '<path d="' + line(d.setpoint) + '" fill="none" stroke="#5ec8c5" stroke-width="1.4"/>' +
-    '<path d="' + line(d.indoor) + '" fill="none" stroke="#fff" stroke-width="1.6"/></svg>';
+    '<path d="' + line(d.outdoor) + '" fill="none" stroke="#757575" stroke-dasharray="4 3" stroke-width="1.2"/>' +
+    '<path d="' + line(d.setpoint) + '" fill="none" stroke="#005aff" stroke-width="1.6"/>' +
+    '<path d="' + line(d.indoor) + '" fill="none" stroke="#3ddc5a" stroke-width="1.8"/></svg>';
 }
 
 function graphCard(){
@@ -322,11 +320,11 @@ function graphCard(){
   const z = zones.find((x) => x.name === name);
   const liveH = z && (zoneResult(z.name).live || {}).humidity;
   if (liveH != null) add(Math.round(liveH) + "%", "humidity now");
-  return '<article class="card wide"><div class="graphhead"><h2 style="margin:0;font-size:16px;font-weight:500">History</h2><div class="durs"><button data-range="24h"' +
+  return '<article class="card wide"><div class="graphhead"><h2 style="margin:0">History</h2><div class="durs"><button data-range="24h"' +
     (rng === "24h" ? ' class="on"' : "") + '>24h</button><button data-range="7d"' + (rng === "7d" ? ' class="on"' : "") + ">7d</button></div></div>" +
     '<div class="durs">' + names + "</div>" + body +
     (gap ? '<p class="hint">Gap in the recorded history. Missing time is not drawn as a real temperature.</p>' : "") +
-    '<div class="leg"><span><i style="background:#fff"></i>Indoor</span><span><i style="background:#5ec8c5"></i>Target</span><span><i style="background:#6e6e6e"></i>Outdoor</span><span><i style="background:rgba(232,160,90,.8);height:8px"></i>Heating</span><span><i style="background:rgba(94,200,197,.8);height:8px"></i>Cooling / defrost</span></div>' +
+    '<div class="leg"><span><i style="background:#3ddc5a"></i>Indoor</span><span><i style="background:#005aff"></i>Target</span><span><i style="background:#757575"></i>Outdoor</span><span><i style="background:#757575;height:8px"></i>Heating</span><span><i style="background:#005aff;height:8px"></i>Cooling / defrost</span></div>' +
     '<div class="metrics">' + metrics.join("") + "</div>" +
     '<p class="hint">Times above are measured from the history that was returned. No energy, cost, or efficiency number is estimated.</p></article>';
 }
@@ -339,12 +337,20 @@ function render(){
   $("zones").innerHTML = S ? ((S.zones || []).map(zoneCard).join("") + sharedMode() + graphCard()) : "";
 }
 
-async function loadHist(name, range){
-  hist.zone = name; hist.range = range || hist.range || "24h";
+async function fetchHist(name){
   try {
-    hist.data = await api("api/zone/" + name + "/history?range=" + hist.range);
+    hist.by[name] = await api("api/zone/" + name + "/history?range=" + (hist.range || "24h"));
     histErr[name] = false;
-  } catch (e) { hist.data = null; histErr[name] = true; }
+  } catch (e) { hist.by[name] = null; histErr[name] = true; }
+}
+async function loadHist(name, range){
+  const next = range || hist.range || "24h";
+  const changed = next !== hist.range;
+  hist.zone = name;
+  hist.range = next;
+  const names = (changed || !hist.by[name]) ? (S.zones || []).map((z) => z.name) : [name];
+  await Promise.all(names.map((zone) => fetchHist(zone)));
+  hist.data = hist.by[name] || null;
   render();
 }
 
