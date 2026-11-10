@@ -6,8 +6,11 @@ module are fixtures for the reader; they are not usage claims.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -202,14 +205,38 @@ class SnapshotTests(unittest.TestCase):
 
     def test_version_matches_config(self):
         config = (ROOT / "config.yaml").read_text(encoding="utf-8")
+        self.assertEqual(snapshot.ADDON_VERSION, "0.1.1")
         self.assertIn(f'version: "{snapshot.ADDON_VERSION}"', config)
         self.assertIn("slug: usage_dashboard", config)
         self.assertIn("ingress: true", config)
         self.assertIn("ingress_port: 8098", config)
         self.assertIn('panel_title: Usage', config)
         self.assertIn("panel_icon: mdi:chart-donut", config)
+        self.assertIn("panel_admin: true", config)
         self.assertIn("homeassistant_api: false", config)
         self.assertNotIn("ports:", config)
+        self.assertIn("## 0.1.1", (ROOT / "CHANGELOG.md").read_text(encoding="utf-8"))
+        self.assertIn("/ui-trial", (ROOT / "README.md").read_text(encoding="utf-8"))
+        data = snapshot.validate(snapshot.load_json(str(BUNDLED)))
+        view = snapshot.build_view(data, "bundled")
+        self.assertIn("Add-on 0.1.1 · schema version 1.", view["context"])
+
+
+def trial_ingress_root(pathname: str) -> str:
+    """Mirror the trial head script: strip the trial document, then keep a trailing slash."""
+    text = (APP / "static" / "ui-trial" / "index.html").read_text(encoding="utf-8")
+    listed = re.search(r"var suffixes = \[(.*?)\];", text, re.S)
+    if listed is None:
+        raise AssertionError("trial head script is missing the suffix list")
+    suffixes = re.findall(r'"([^"]+)"', listed.group(1))
+    path = pathname
+    for suffix in suffixes:
+        if len(path) >= len(suffix) and path.endswith(suffix):
+            path = path[: len(path) - len(suffix)]
+            break
+    if not path or not path.endswith("/"):
+        path += "/"
+    return path
 
 
 class ServerTests(unittest.TestCase):
@@ -334,6 +361,99 @@ class ServerTests(unittest.TestCase):
     def test_health(self):
         self.assertEqual(json.loads(self.get("/api/health")[2]), {"ok": True})
 
+    def test_root_stays_010_and_trial_serves_ui4(self):
+        root_body = self.get("/")[2]
+        index_body = self.get("/index.html")[2]
+        css_body = self.get("/app.css")[2]
+        js_body = self.get("/app.js")[2]
+        self.assertEqual(root_body, index_body)
+        self.assertEqual(len(root_body), 2192)
+        self.assertEqual(hashlib.sha256(root_body).hexdigest(), "dc92887525dff53769f3d4518f955c8de30568c74ddf36e411924fa62a755786")
+        self.assertEqual(len(css_body), 6286)
+        self.assertEqual(hashlib.sha256(css_body).hexdigest(), "c7decfc47eed68c746fb9d2fea87e1161c4a7ddb8c654a57a1186eacee78e5f8")
+        self.assertEqual(len(js_body), 16672)
+        self.assertEqual(hashlib.sha256(js_body).hexdigest(), "bef447f8c4872abd83994804b98a1178c74b7bcdde00e9b9348de51e52aab0f5")
+        self.assertIn(b'href="app.css"', root_body)
+        self.assertIn(b'src="app.js"', root_body)
+        self.assertNotIn(b"bryson-ui-4", root_body)
+        self.assertNotIn(b"/ui-trial/", root_body)
+        self.assertNotIn(b"/legacy", root_body)
+
+        status, headers, trial = self.get("/ui-trial")
+        self.assertEqual(status, 200)
+        self.assertEqual(self.get("/ui-trial/")[2], trial)
+        self.assertEqual(self.get("/ui-trial/index.html")[2], trial)
+        for suffix in ("/ui-trial/", "/ui-trial/index.html"):
+
+            class StopRedirect(urllib.request.HTTPRedirectHandler):
+                def redirect_request(self, req, fp, code, msg, hdrs, newurl):
+                    raise urllib.error.HTTPError(req.full_url, code, msg, hdrs, fp)
+
+            stopped = urllib.request.build_opener(StopRedirect)
+            request = urllib.request.Request(self.base + suffix, method="GET")
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                stopped.open(request)
+            self.assertEqual(caught.exception.code, 302)
+            self.assertEqual(caught.exception.headers["Location"], "../ui-trial")
+        self.assertNotEqual(trial, root_body)
+        self.assertIn(b'data-ui="bryson-ui-4"', trial)
+        self.assertIn(b'href="ui-trial/app.css"', trial)
+        self.assertIn(b'src="ui-trial/app.js"', trial)
+        self.assertNotIn(b'href="/ui-trial/', trial)
+        self.assertNotIn(b'src="/ui-trial/', trial)
+        self.assertIn(b'id="reread"', trial)
+        self.assertIn(b'id="focus"', trial)
+        self.assertIn(b'id="kicker"', trial)
+        self.assertIn(b'id="provenance"', trial)
+        self.assertNotIn(b"/legacy", trial)
+        self.assertEqual(trial_ingress_root("/ui-trial"), "/")
+        self.assertEqual(trial_ingress_root("/ui-trial/"), "/")
+        self.assertEqual(trial_ingress_root("/ui-trial/index.html"), "/")
+        prefix = "/hassio/ingress/example"
+        for suffix in ("/ui-trial", "/ui-trial/", "/ui-trial/index.html"):
+            self.assertEqual(trial_ingress_root(prefix + suffix), prefix + "/")
+        csp = headers["Content-Security-Policy"]
+        self.assertIn("base-uri 'self'", csp)
+        self.assertNotIn("base-uri 'none'", csp)
+        script = re.search(br"<script>(.*?)</script>", trial, re.S).group(1)
+        script_hash = base64.b64encode(hashlib.sha256(script).digest()).decode()
+        self.assertIn(f"'sha256-{script_hash}'", csp)
+        trial_js = self.get("/ui-trial/app.js")[2]
+        self.assertIn(b"return name;", trial_js)
+        self.assertNotIn(b'return "/" + name', trial_js)
+        self.assertNotIn(b'fetch("/', trial_js)
+        self.assertIn(b'cache: "no-store"', trial_js)
+        self.assertIn(b'endpoint("api/snapshot")', trial_js)
+        self.assertNotIn(b"setInterval", trial_js)
+        trial_css = self.get("/ui-trial/app.css")[2]
+        self.assertNotIn(b"#d9c7a2", trial_css.lower())
+        self.assertIn(b"#d9c7a2", css_body)
+
+        request = urllib.request.Request(self.base + "/ui-trial", data=b"{}", method="POST")
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(request)
+        self.assertEqual(caught.exception.code, 405)
+        self.assertIn(b"read-only", caught.exception.read())
+
+
+def _hue_sat(hex_color: str) -> tuple[float | None, float]:
+    value = hex_color[1:]
+    channels = [int(value[index:index + 2], 16) / 255 for index in (0, 2, 4)]
+    high = max(channels)
+    low = min(channels)
+    if high == 0 or high == low:
+        return None, 0.0
+    sat = (high - low) / high
+    delta = high - low
+    red, green, blue = channels
+    if high == red:
+        hue = ((green - blue) / delta) % 6
+    elif high == green:
+        hue = (blue - red) / delta + 2
+    else:
+        hue = (red - green) / delta + 4
+    return hue * 60, sat
+
 
 class StaticTests(unittest.TestCase):
     def test_page_does_not_embed_the_report(self):
@@ -350,6 +470,35 @@ class StaticTests(unittest.TestCase):
         self.assertIn("/data/usage_snapshot.json", docs)
         self.assertIn("a1d3bd4b_usage_dashboard", docs)
         self.assertIn("does not count", docs.lower())
+        bundled = (APP / "bundled" / "usage_snapshot.json").read_bytes()
+        self.assertEqual(len(bundled), 4537)
+        self.assertEqual(hashlib.sha256(bundled).hexdigest(), "0283c3dd60c5183c870e6b60e91b6515611a9c823640585dae25b0173b784bff")
+
+    def test_trial_shell_has_no_warm_hues_or_usage_api(self):
+        trial = APP / "static" / "ui-trial"
+        banned = ("#d9c7a2", "#f59e0b", "#ff9f1a", "#ffe14a", "orange", "amber")
+        for name in ("index.html", "app.css", "app.js"):
+            text = (trial / name).read_text(encoding="utf-8")
+            lowered = text.lower()
+            for token in banned:
+                self.assertNotIn(token, lowered)
+            scanned = text.replace("http://www.w3.org/2000/svg", "")
+            for token in ("http://", "https://", "ws://", "wss://", "setInterval", "WebSocket"):
+                self.assertNotIn(token, scanned)
+            for number in ("37.4", "32.7", "8:02"):
+                self.assertNotIn(number, text)
+            for match in re.finditer(r"#[0-9a-f]{6}\b", lowered):
+                hue, sat = _hue_sat(match.group(0))
+                if hue is not None and 18 <= hue <= 62 and sat >= 0.18:
+                    self.fail(f"{name} warm hue {match.group(0)} h={hue:.1f} s={sat:.2f}")
+        css = (trial / "app.css").read_text(encoding="utf-8")
+        self.assertIn("min-height: 48px", css)
+        self.assertIn("#005aff", css)
+        self.assertIn("#101010", css)
+        self.assertIn("#414141", css)
+        server_text = (APP / "server.py").read_text(encoding="utf-8")
+        self.assertIn('files["/ui-trial"]', server_text)
+        self.assertNotIn("/legacy", server_text)
 
 
 if __name__ == "__main__":
