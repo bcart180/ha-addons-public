@@ -35,7 +35,7 @@ APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC = APP_DIR / "static"
 EXAMPLE_STATUS = APP_DIR / "example_status.json"
 ET = ZoneInfo("America/New_York")
-VERSION = "0.3.3"
+VERSION = "0.3.4"
 BOTS = ["Desk Lead", "Strategist", "Risk Manager", "Research Analyst",
         "Execution Trader", "Trade Reviewer", "Trading Floor"]
 DEFAULT_STATUS_PATHS = [   # spec order: HA config custom_templates first, then /share
@@ -1179,20 +1179,31 @@ async def ingress_only(request, handler):
 
 
 async def index(request):
+    """UI-4 production document. Relative static/ and api/ resolve at the ingress root."""
+    return web.FileResponse(STATIC / "ui-trial" / "index.html", headers={"Cache-Control": "no-cache"})
+
+
+async def legacy(request):
+    """Previous production document, for rollback. Served without a trailing slash."""
     return web.FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
 
 
+async def legacy_slash(request):
+    """Keep the no-slash /legacy URL so the old page's relative paths stay at the ingress root."""
+    return web.Response(status=302, headers={"Location": "../legacy", "Cache-Control": "no-store"})
+
+
 async def ui_trial(request):
-    """UI-4 trial document. Production / is a different file and is not replaced."""
+    """Same UI-4 page as /. The no-slash URL keeps relative api/ and static/ on the ingress root."""
     return web.FileResponse(STATIC / "ui-trial" / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 async def ui_trial_slash(request):
-    """Drop the trailing slash so relative api/ and static/ resolve at the ingress root.
+    """Trailing slash only. Relative Location ../ is the ingress root, which serves this same page.
 
-    The Location is relative, not host-absolute, so the Supervisor ingress prefix stays.
+    A no-slash /ui-trial must not use ../ : that resolution drops the ingress prefix.
     """
-    return web.Response(status=302, headers={"Location": "../ui-trial", "Cache-Control": "no-store"})
+    return web.Response(status=302, headers={"Location": "../", "Cache-Control": "no-store"})
 
 
 async def api_state(request):
@@ -1391,6 +1402,8 @@ async def on_cleanup(app):
 def build_app():
     app = web.Application(middlewares=[ingress_only])
     app.router.add_get("/", index)
+    app.router.add_get("/legacy", legacy)
+    app.router.add_get("/legacy/", legacy_slash)
     app.router.add_get("/ui-trial", ui_trial)
     app.router.add_get("/ui-trial/", ui_trial_slash)
     app.router.add_get("/api/state", api_state)

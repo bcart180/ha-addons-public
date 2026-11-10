@@ -218,11 +218,16 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802 — stdlib handler name
         parsed = urlparse(self.path)
         path, qs = parsed.path, parse_qs(parsed.query)
-        if path == "/ui-trial":
+        if path in ("/", "/ui-trial"):
             body = (STATIC / "ui-trial" / "index.html").read_bytes()
             return self._send(200, "text/html; charset=utf-8", body, "no-cache")
         if path == "/ui-trial/":
-            return self._send(302, "text/plain", b"see ui-trial\n", "no-store", {"Location": "../ui-trial"})
+            return self._send(302, "text/plain", b"see /\n", "no-store", {"Location": "../"})
+        if path == "/legacy":
+            body = (STATIC / "index.html").read_bytes()
+            return self._send(200, "text/html; charset=utf-8", body, "no-cache")
+        if path == "/legacy/":
+            return self._send(302, "text/plain", b"see legacy\n", "no-store", {"Location": "../legacy"})
         if path.startswith("/static/"):
             rel = path[len("/static/"):]
             target = (STATIC / rel).resolve()
@@ -271,7 +276,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     httpd = ThreadingHTTPServer((HOST, PORT), Handler)
-    print("synthetic trial preview http://%s:%d/ui-trial" % (HOST, PORT))
+    print("synthetic UI-4 preview http://%s:%d/  legacy at /legacy" % (HOST, PORT))
     httpd.serve_forever()
 
 

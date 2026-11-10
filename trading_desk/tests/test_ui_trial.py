@@ -1,4 +1,4 @@
-"""UI-4 trial guards. Run: python3 tests/test_ui_trial.py
+"""UI-4 production guards. Run: python3 tests/test_ui_trial.py
 
 Synthetic checks only. No broker, no Home Assistant, no secrets.
 """
@@ -19,8 +19,8 @@ import sys
 sys.path.insert(0, str(sys_path))
 import server  # noqa: E402
 
-# Production shell, locked so / cannot drift in this change.
-PROD = {
+# Previous production shell, locked so /legacy stays a byte rollback.
+LEGACY = {
     "index.html": ("521205e5b5d2b41152632a10fb8b17de8d2091f9b0f131e49afaa0ce4bf5b80a", 5089),
     "app.js": ("7f0b1a6fec2a20e6adf536b1e4d092f34696803ddec69b3c0c72fd729275eec4", 31283),
     "assets.js": ("bff8b346aeb5015d34b58568a200d67e9619e799d356818a88e7368642a6b65e", 4215),
@@ -57,7 +57,8 @@ def _amber(r, g, b):
     hue *= 60
     light = (hi + lo) / 2
     sat = d / (1 - abs(2 * light - 1))
-    return 15 <= hue <= 52 and sat >= 0.35 and light >= 0.18
+    # Hue 20–50° is orange/amber. Near-gray stays out via saturation.
+    return 20 <= hue <= 50 and sat >= 0.25 and light >= 0.15
 
 
 def _colors(text):
@@ -76,8 +77,8 @@ def _colors(text):
     return found
 
 
-def test_production_shell_unchanged():
-    for name, (digest, size) in PROD.items():
+def test_legacy_shell_is_the_previous_page():
+    for name, (digest, size) in LEGACY.items():
         raw = (STATIC / name).read_bytes()
         assert len(raw) == size, name
         assert hashlib.sha256(raw).hexdigest() == digest, name
@@ -85,8 +86,9 @@ def test_production_shell_unchanged():
 
 def test_version_bump_and_schema():
     cfg = _read(ROOT / "config.yaml")
-    assert 'version: "0.3.3"' in cfg
-    assert server.VERSION == "0.3.3"
+    assert 'version: "0.3.4"' in cfg
+    assert 'version: "0.3.3"' not in cfg
+    assert server.VERSION == "0.3.4"
     for key in SCHEMA_KEYS:
         assert re.search(r"^  %s:" % re.escape(key), cfg, re.M), key
     schema = cfg.split("schema:", 1)[1]
@@ -102,19 +104,25 @@ def test_trial_routes_are_get_only():
         path = info.get("path") or info.get("formatter") or info.get("prefix")
         found.setdefault(route.method, set()).add(path)
     assert "/" in found["GET"]
+    assert "/legacy" in found["GET"]
+    assert "/legacy/" in found["GET"]
     assert "/ui-trial" in found["GET"]
     assert "/ui-trial/" in found["GET"]
-    assert "HEAD" in found or "GET" in found
     for method in found:
         assert method in ("GET", "HEAD"), method
-    resp = asyncio.run(server.ui_trial_slash(None))
-    assert resp.status == 302
-    assert resp.headers["Location"] == "../ui-trial"
-    trial = asyncio.run(server.ui_trial(None))
+    slash = asyncio.run(server.ui_trial_slash(None))
+    assert slash.status == 302 and slash.headers["Location"] == "../"
+    legacy_slash = asyncio.run(server.legacy_slash(None))
+    assert legacy_slash.status == 302 and legacy_slash.headers["Location"] == "../legacy"
     prod = asyncio.run(server.index(None))
-    assert trial._path.name == "index.html"
-    assert "ui-trial" in str(trial._path)
-    assert prod._path == STATIC / "index.html"
+    trial = asyncio.run(server.ui_trial(None))
+    old = asyncio.run(server.legacy(None))
+    assert prod._path == trial._path == TRIAL / "index.html"
+    assert old._path == STATIC / "index.html"
+    assert prod._path != old._path
+    text = (APP / "server.py").read_text(encoding="utf-8")
+    assert "middlewares=[ingress_only]" in text
+    assert len(server.build_app().middlewares) == 1
 
 
 def test_trial_keeps_controls_and_reads():
@@ -149,6 +157,32 @@ def test_trial_keeps_controls_and_reads():
     ):
         blob = html + main + app + assets
         assert needle in blob, needle
+
+
+def test_ingress_root_for_relative_assets():
+    """The page's <base> must keep the ingress prefix for / and for /ui-trial."""
+    html = _read(TRIAL / "index.html")
+    assert 'if (/\\/ui-trial$/.test(path)) root = path.slice(0, -"/ui-trial".length) + "/"' in html
+    assert 'else if (path.charAt(path.length - 1) === "/") root = path;' in html
+    assert "else root = path + \"/\";" in html
+    assert 'src="static/main.js"' not in html
+    assert 'href="static/style.css"' not in html
+    assert "UI-4 trial" not in html
+
+    def root_for(path):
+        if path.endswith("/ui-trial"):
+            return path[: -len("/ui-trial")] + "/"
+        if path.endswith("/static/ui-trial/index.html"):
+            return path[: -len("/static/ui-trial/index.html")] + "/"
+        if path.endswith("/"):
+            return path
+        return path + "/"
+
+    token = "/api/hassio_ingress/TOKEN"
+    assert root_for(token + "/") == token + "/"
+    assert root_for(token) == token + "/"
+    assert root_for(token + "/ui-trial") == token + "/"
+    assert root_for("/") == "/"
 
 
 def test_no_orange_and_no_write_verbs():

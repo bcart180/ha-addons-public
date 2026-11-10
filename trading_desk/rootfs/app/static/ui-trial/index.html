@@ -6,17 +6,18 @@
 <meta name="theme-color" content="#000000">
 <title>Trading Desk</title>
 <script>
-/* Resolve static/ and api/ at the ingress root, including when this file is opened as /ui-trial. */
+/* Point <base> at the ingress root so static/ and api/ resolve there from / and from /ui-trial. */
 (function () {
   var path = location.pathname;
   if (/\/ui-trial\/$/.test(path)) {
-    location.replace(path.replace(/\/$/, "") + location.search + location.hash);
+    location.replace(path.replace(/ui-trial\/$/, "") + location.search + location.hash);
     return;
   }
   var root;
   if (/\/ui-trial$/.test(path)) root = path.slice(0, -"/ui-trial".length) + "/";
   else if (/\/static\/ui-trial\/index\.html$/.test(path)) root = path.replace(/\/static\/ui-trial\/index\.html$/, "/");
-  else root = path.replace(/[^/]*$/, "");
+  else if (path.charAt(path.length - 1) === "/") root = path;
+  else root = path + "/";
   document.write('<base href="' + root.replace(/&/g, "&amp;").replace(/"/g, "") + '">');
 })();
 </script>
@@ -25,7 +26,7 @@
 </head>
 <body class="ui4">
 <header>
-  <div class="brand">Trading Desk <span class="badge trial">UI-4 trial</span><span id="env" class="badge">…</span><span id="mock" class="badge mock hidden">MOCK DATA</span><span id="readonly" class="badge ro">READ-ONLY</span></div>
+  <div class="brand">Trading Desk <span id="env" class="badge">…</span><span id="mock" class="badge mock hidden">MOCK DATA</span><span id="readonly" class="badge ro">READ-ONLY</span></div>
   <nav class="tabs" id="tabs" role="tablist" aria-label="Trading Desk views"><button type="button" role="tab" id="tab-main" data-tab="main" aria-selected="true" aria-controls="mainview" class="on">Main</button><button type="button" role="tab" id="tab-desk" data-tab="desk" aria-selected="false" aria-controls="deskview">Detail</button><button type="button" role="tab" id="tab-assets" data-tab="assets" aria-selected="false" aria-controls="assetsview">Schwab</button></nav>
   <div id="health" class="health" aria-live="polite"></div>
   <div id="clock" class="clock"></div>
