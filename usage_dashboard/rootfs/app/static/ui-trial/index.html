@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101010">
+<meta name="referrer" content="no-referrer">
+<title>Usage</title>
+<script>
+(function () {
+  var path = location.pathname;
+  var suffixes = ["/ui-trial/index.html", "/ui-trial/", "/ui-trial"];
+  var i;
+  for (i = 0; i < suffixes.length; i++) {
+    if (path.length >= suffixes[i].length && path.slice(path.length - suffixes[i].length) === suffixes[i]) {
+      path = path.slice(0, path.length - suffixes[i].length);
+      break;
+    }
+  }
+  if (!path || path.charAt(path.length - 1) !== "/") path += "/";
+  var base = document.createElement("base");
+  base.setAttribute("href", path);
+  document.head.appendChild(base);
+})();
+</script>
+<link rel="stylesheet" href="ui-trial/app.css">
+</head>
+<body data-ui="bryson-ui-4">
+<main class="page">
+  <header class="top">
+    <div class="titles">
+      <p class="kicker" id="kicker">Usage</p>
+      <h1 id="title">Usage</h1>
+      <p class="summary" id="summary"></p>
+    </div>
+    <button type="button" id="reread">Re-read snapshot</button>
+  </header>
+
+  <p class="provenance" id="provenance" aria-live="polite">Reading the snapshot file…</p>
+  <p class="provenance-detail" id="provenance-detail"></p>
+  <p class="warning" id="warning" hidden></p>
+  <p class="error" id="error" hidden></p>
+  <p class="reread-result" id="reread-result" hidden></p>
+
+  <section class="metrics" id="metrics" aria-label="Header metrics"></section>
+
+  <section class="card" id="by-bot">
+    <div class="section-head">
+      <h2>By bot</h2>
+      <label class="focus">
+        <span class="focus-label">Focus</span>
+        <span class="focus-control">
+          <select id="focus" aria-label="Focus"></select>
+        </span>
+      </label>
+    </div>
+    <div class="split">
+      <div>
+        <h3>Share of Grok Bot usage</h3>
+        <div id="donut"></div>
+      </div>
+      <div>
+        <h3>Activity within each bot</h3>
+        <div class="legend" id="bar-legend"></div>
+        <div id="bars"></div>
+      </div>
+    </div>
+    <div id="notes"></div>
+  </section>
+
+  <section class="card" id="flow-section">
+    <h2>Usage flow</h2>
+    <p class="caption" id="flow-caption"></p>
+    <div class="legend" id="flow-legend"></div>
+    <div class="flow-scroll" id="flow"></div>
+    <p class="fine" id="flow-note"></p>
+    <p class="fine" id="flow-omit"></p>
+  </section>
+
+  <section class="card" id="below-section">
+    <h2>Below 1%</h2>
+    <div id="below"></div>
+  </section>
+
+  <section class="card" id="context-section">
+    <h2>Usage context</h2>
+    <div id="context"></div>
+  </section>
+</main>
+<noscript>
+  <p class="provenance">This panel reads a snapshot file. Enable JavaScript to view it. Nothing is fetched from a usage API.</p>
+</noscript>
+<script src="ui-trial/app.js"></script>
+</body>
+</html>

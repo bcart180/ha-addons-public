@@ -1,6 +1,6 @@
 # Usage
 
-Read-only Home Assistant sidebar panel for a weekly Grok Bot usage snapshot. Version 0.1.0.
+Read-only Home Assistant sidebar panel for a weekly Grok Bot usage snapshot. Version 0.1.1.
 
 Canonical source: https://github.com/bcart180/ha-usage-dashboard
 
@@ -17,6 +17,10 @@ One saved snapshot. The panel labels the time and the source, for example:
 If the add-on data directory has no snapshot yet, the same report ships inside the image and the line starts with **Bundled snapshot**.
 
 There is no usage API. Re-read only opens the snapshot file again. The reset figure does not count down.
+
+## Trial
+
+`/ui-trial` is a BRYSON-UI-4 presentation of the same snapshot. Production `/`, `/index.html`, `/app.css`, and `/app.js` are still the 0.1.0 page. Re-read on the trial calls `GET /api/snapshot` on the add-on root. This version does not add a second snapshot API or a `/legacy` path.
 
 ## Install
 
@@ -37,7 +41,7 @@ python3 tests/test_usage_dashboard.py
 UD_ALLOW=127.0.0.1 UD_PORT=8098 python3 rootfs/app/server.py
 ```
 
-Open http://127.0.0.1:8098/. Outside Home Assistant the allow list has to include your address. The image default is the Supervisor ingress proxy only (`172.30.32.2`).
+Open http://127.0.0.1:8098/ for the production page, or http://127.0.0.1:8098/ui-trial for the UI-4 trial. Outside Home Assistant the allow list has to include your address. The image default is the Supervisor ingress proxy only (`172.30.32.2`).
 
 ## Font
 
