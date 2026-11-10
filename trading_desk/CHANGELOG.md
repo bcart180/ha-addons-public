@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.3 — 2026-11-10
+
+- UI-4 trial at `/ui-trial` on the same add-on. Black and charcoal surfaces, light type, Tesla blue `#3e6ae1` for the selected tab and range. Production `/` and its static files are unchanged.
+- The version bump is required so Home Assistant will ship the new route. `/ui-trial` is registered in the add-on process; a static file alone cannot be that path. Options, schema, keys, feeds, and risk caps are unchanged.
+- The trial keeps the nine controls and every existing data surface. It uses GET and EventSource only. It cannot place, change, or cancel orders.
+- Allocation swatches are labeled: Schwab cool gray, Alpaca blue, Bitcoin violet. Orange and amber are not used.
+
 ## 0.3.2 — 2026-11-06
 
 - Presentation only: calm 2022 Model S Plaid surfaces (near-black cards, hairline borders, light-weight figures, quiet pills). Green and red stay on gain/loss and status. No data, order, or API changes. Still read-only.

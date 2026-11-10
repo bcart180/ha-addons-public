@@ -35,7 +35,7 @@ APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC = APP_DIR / "static"
 EXAMPLE_STATUS = APP_DIR / "example_status.json"
 ET = ZoneInfo("America/New_York")
-VERSION = "0.3.2"
+VERSION = "0.3.3"
 BOTS = ["Desk Lead", "Strategist", "Risk Manager", "Research Analyst",
         "Execution Trader", "Trade Reviewer", "Trading Floor"]
 DEFAULT_STATUS_PATHS = [   # spec order: HA config custom_templates first, then /share
@@ -1182,6 +1182,19 @@ async def index(request):
     return web.FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
 
 
+async def ui_trial(request):
+    """UI-4 trial document. Production / is a different file and is not replaced."""
+    return web.FileResponse(STATIC / "ui-trial" / "index.html", headers={"Cache-Control": "no-cache"})
+
+
+async def ui_trial_slash(request):
+    """Drop the trailing slash so relative api/ and static/ resolve at the ingress root.
+
+    The Location is relative, not host-absolute, so the Supervisor ingress prefix stays.
+    """
+    return web.Response(status=302, headers={"Location": "../ui-trial", "Cache-Control": "no-store"})
+
+
 async def api_state(request):
     return web.json_response(DESK.snapshot())
 
@@ -1375,15 +1388,11 @@ async def on_cleanup(app):
     await DESK.session.close()
 
 
-def main():
-    global DESK
-    problems = selfcheck.scan()
-    if problems:
-        log.error("read-only self-check failed; refusing to start:\n%s", "\n".join(problems))
-        sys.exit(2)
-    DESK = Desk()
+def build_app():
     app = web.Application(middlewares=[ingress_only])
     app.router.add_get("/", index)
+    app.router.add_get("/ui-trial", ui_trial)
+    app.router.add_get("/ui-trial/", ui_trial_slash)
     app.router.add_get("/api/state", api_state)
     app.router.add_get("/api/health", api_health)
     app.router.add_get("/api/events", api_events)
@@ -1393,9 +1402,19 @@ def main():
     app.router.add_static("/static/", STATIC, append_version=False)
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
+    return app
+
+
+def main():
+    global DESK
+    problems = selfcheck.scan()
+    if problems:
+        log.error("read-only self-check failed; refusing to start:\n%s", "\n".join(problems))
+        sys.exit(2)
+    DESK = Desk()
     log.info("Trading Desk %s starting (env=%s feed=%s mock=%s keys=%s) on :%d",
              VERSION, ENV, FEED, MOCK, "set" if (KEY_ID and SECRET) else "missing", PORT)
-    web.run_app(app, host="0.0.0.0", port=PORT, access_log=None, print=None)
+    web.run_app(build_app(), host="0.0.0.0", port=PORT, access_log=None, print=None)
 
 
 if __name__ == "__main__":

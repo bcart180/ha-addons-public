@@ -87,6 +87,8 @@ jobs:
         run: python trading_desk/rootfs/app/selfcheck.py
       - name: test_readonly.py
         run: python trading_desk/tests/test_readonly.py
+      - name: test_ui_trial.py
+        run: python trading_desk/tests/test_ui_trial.py
 
   smart-hvac:
     name: Smart HVAC lint + tests
