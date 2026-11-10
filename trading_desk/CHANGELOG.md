@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.4 — 2026-11-10
+
+- UI-4 is the production page at `/`. `/ui-trial` serves the same page. `/ui-trial/` redirects with a relative `Location: ../` to the ingress root.
+- The previous page stays at `/legacy` for rollback. `/legacy/` redirects to `../legacy` so the old relative paths still resolve at the ingress root.
+- Options, schema, keys, feeds, and risk caps are unchanged. Still GET and EventSource only.
+
 ## 0.3.3 — 2026-11-10
 
 - UI-4 trial at `/ui-trial` on the same add-on. Black and charcoal surfaces, light type, Tesla blue `#3e6ae1` for the selected tab and range. Production `/` and its static files are unchanged.
