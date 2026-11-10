@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- Trial path `/ui-trial` serves a BRYSON-UI-4 presentation of the same snapshot page.
+- Production `/`, `/index.html`, `/app.css`, and `/app.js` are unchanged from 0.1.0.
+- Re-read still only opens the snapshot file. There is no usage API and no countdown.
+
 ## 0.1.0
 
 - First release. Read-only ingress panel for one weekly Grok Bot usage snapshot.

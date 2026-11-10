@@ -1,5 +1,5 @@
 name: Usage
-version: "0.1.0"
+version: "0.1.1"
 slug: usage_dashboard
 description: Weekly Grok Bot usage snapshot, read-only sidebar panel
 url: https://github.com/bcart180/ha-usage-dashboard

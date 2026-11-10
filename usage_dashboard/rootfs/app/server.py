@@ -46,10 +46,13 @@ def load_static(static_dir: str) -> dict:
             rel = "/" + os.path.relpath(path, root).replace(os.sep, "/")
             with open(path, "rb") as handle:
                 files[rel] = (CONTENT_TYPES[suffix], handle.read())
-    if "/" not in files and "/index.html" in files:
+    if "/index.html" in files:
         files["/"] = files["/index.html"]
-    elif "/index.html" in files:
-        files["/"] = files["/index.html"]
+    # 0.1.1 trial document. Production / stays the 0.1.0 page.
+    trial = "/ui-trial/index.html"
+    if trial in files:
+        files["/ui-trial"] = files[trial]
+        files["/ui-trial/"] = files[trial]
     return files
 
 
@@ -144,8 +147,9 @@ def make_handler(config: Config):
             self.send_header(
                 "Content-Security-Policy",
                 "default-src 'self'; style-src 'self' 'unsafe-inline'; "
-                "font-src 'self'; img-src 'self'; script-src 'self'; "
-                "frame-ancestors 'self'; base-uri 'none'; form-action 'none'",
+                "font-src 'self'; img-src 'self'; "
+                "script-src 'self' 'sha256-APXTj7mswJDcMDtXryUU/1g0GAT6SI9kk+p4q6tz4HM='; "
+                "frame-ancestors 'self'; base-uri 'self'; form-action 'none'",
             )
             self.send_header("Connection", "close")
             if extra:
@@ -167,6 +171,11 @@ def make_handler(config: Config):
             if path == "/api/snapshot":
                 body, _warning = read_snapshot(config)
                 self._json(200 if body.get("ok") else 500, body)
+                return
+            # Canonical trial document has no trailing slash, so relative
+            # ui-trial/app.css and api/snapshot resolve inside ingress.
+            if path in ("/ui-trial/", "/ui-trial/index.html"):
+                self._send(302, "text/plain; charset=utf-8", b"", extra=[("Location", "../ui-trial")])
                 return
             static = config.static.get(path)
             if static is None:
