@@ -12,6 +12,13 @@ Total assets strip (0.1.13+): combined Schwab+Alpaca at the top of Desk, with Da
 A read-only, live control room for an Alpaca equity desk, in the Home Assistant
 sidebar (Ingress, behind the HA login, no ports exposed).
 
+## UI-4 trial (0.3.3)
+
+`/ui-trial` on the same ingress is a read-only presentation trial. `/` is unchanged.
+It uses the same GET endpoints (`api/state`, `api/events`, `api/bars`, `api/history`, `api/assets`).
+A trailing slash redirects to `/ui-trial` with a relative `Location`, so the ingress prefix stays intact.
+The trial cannot place, change, or cancel orders. Options and the schema are unchanged.
+
 ## Configuration
 
 | option | default | |
