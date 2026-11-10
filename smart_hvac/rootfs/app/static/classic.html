@@ -3,25 +3,25 @@
 <title>Smart HVAC</title>
 <style>
 /* Soft Slate tokens, dark "Tesla" variant (same accent/status colors as house-soft-slate-theme). */
-:root{--bg:#0e1318;--elev:#151c23;--card:#1a222b;--text:#e8eef4;--dim:#8a9bac;--line:#2a3540;
---accent:#2a9d8f;--accent-h:#21867a;--good:#2f9e6b;--bad:#c94c4c;--warn:#c9892b;--r:14px;--rc:10px}
+:root{--bg:#000000;--elev:#1a1a1a;--card:#414141;--text:#ffffff;--dim:#b4b6bb;--line:#5c5c5c;
+--accent:#005aff;--accent-h:#005aff;--good:#3ddc5a;--bad:#d0d0d0;--warn:#d0d0d0;--selected:#757575;--r:8px;--rc:8px}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);
 font:18px "Segoe UI",system-ui,sans-serif}
 .shell{max-width:960px;margin:0 auto;padding:20px}
 .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
-.header h1{font-size:28px;font-weight:500;margin:0}.dim{color:var(--dim);font-size:15px}
-.notice{background:var(--elev);border-left:4px solid var(--warn);border-radius:var(--rc);padding:10px 14px;margin-bottom:14px;font-size:15px}
+.header h1{font-size:24px;line-height:29px;font-weight:500;margin:0}.dim{color:var(--dim);font-size:16px}
+.notice{background:var(--elev);border:1px solid var(--line);border-radius:var(--rc);padding:10px 14px;margin-bottom:14px;font-size:16px}
 .modes{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
 .btn{background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:var(--rc);
 padding:14px 20px;font-size:17px;cursor:pointer;min-width:84px}
-.btn.primary{background:var(--accent);border-color:var(--accent)}.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--selected);border-color:var(--blue);color:#fff}.btn:hover{border-color:var(--blue)}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
 .card{background:var(--card);border-radius:var(--r);padding:18px;box-shadow:0 2px 10px rgba(0,0,0,.35);text-align:center}
 .card h2{font-size:18px;font-weight:500;margin:0 0 6px;color:var(--dim)}
 .dial{width:220px;height:220px}.big{font-size:54px;font-weight:300}.ctrl{display:flex;justify-content:center;gap:16px;margin-top:6px}
 .ctrl .btn{min-width:64px;font-size:26px;padding:6px 0}
 .tag{display:inline-block;padding:3px 10px;border-radius:20px;font-size:14px;background:var(--elev);color:var(--dim);margin-top:8px}
-.tag.heat{color:var(--warn)}.tag.cool{color:var(--accent)}
+.tag.heat{color:var(--text)}.tag.cool{color:var(--accent)}
 canvas{width:100%;height:90px;margin-top:10px}
 .footer{color:var(--dim);font-size:14px;margin-top:18px;text-align:center}
 </style></head><body><div class="shell">
@@ -29,7 +29,7 @@ canvas{width:100%;height:90px;margin-top:10px}
 <div class="notice" id="notice" hidden></div>
 <div class="modes" id="modes"></div>
 <div class="grid" id="zones"></div>
-<div class="footer">Graph: <span style="color:#e8eef4">inside</span> · <span style="color:#8a9bac">outside</span> · <span style="color:#2a9d8f">target</span></div>
+<div class="footer">Graph: <span style="color:#3ddc5a">inside</span> · <span style="color:#757575">outside</span> · <span style="color:#005aff">target</span></div>
 </div><script>
 const MODES=[["auto","Auto"],["home","Home"],["away","Away"],["sleep","Sleep"],["guest","Guest"]];
 let S=null;
@@ -39,7 +39,7 @@ async function api(p,b){const r=await fetch(p,b?{method:"POST",headers:{"Content
  const j=await r.json(); if(!r.ok) throw new Error(j.error||r.status); return j;}
 function arc(v){const lo=55,hi=84,a=Math.max(0,Math.min(1,(v-lo)/(hi-lo)))*270-135,rad=(a-90)*Math.PI/180;
  return [110+90*Math.cos(rad),110+90*Math.sin(rad),a>45?1:0];}
-function dial(t,mode){const col=mode==="cool"?"#2a9d8f":mode==="heat"?"#c9892b":"#5a6b7c";
+function dial(t,mode){const col=mode==="cool"?"#005aff":mode==="heat"?"#757575":"#5c5c5c";
  const [x,y,l]=arc(t??55);
  return `<svg class="dial" viewBox="0 0 220 220"><path d="M46.4 173.6 A90 90 0 1 1 173.6 173.6" fill="none" stroke="#2a3540" stroke-width="14" stroke-linecap="round"/>
  ${t!=null?`<path d="M46.4 173.6 A90 90 0 ${l} 1 ${x.toFixed(1)} ${y.toFixed(1)}" fill="none" stroke="${col}" stroke-width="14" stroke-linecap="round"/>`:""}
@@ -47,7 +47,7 @@ function dial(t,mode){const col=mode==="cool"?"#2a9d8f":mode==="heat"?"#c9892b":
 function graph(c,h){const ctx=c.getContext("2d"),W=c.width=c.clientWidth*2,H=c.height=180;ctx.clearRect(0,0,W,H);
  if(h.length<2)return;const vals=h.flatMap(r=>[r[1],r[2],r[3]]).filter(v=>v!=null);
  const lo=Math.min(...vals)-1,hi=Math.max(...vals)+1;
- [[2,"#8a9bac"],[3,"#2a9d8f"],[1,"#e8eef4"]].forEach(([i,col])=>{ctx.strokeStyle=col;ctx.lineWidth=3;ctx.beginPath();let s=false;
+ [[2,"#757575"],[3,"#005aff"],[1,"#3ddc5a"]].forEach(([i,col])=>{ctx.strokeStyle=col;ctx.lineWidth=3;ctx.beginPath();let s=false;
   h.forEach((r,k)=>{if(r[i]==null)return;const x=k/(h.length-1)*W,y=H-(r[i]-lo)/(hi-lo)*H;s?ctx.lineTo(x,y):ctx.moveTo(x,y);s=true;});ctx.stroke();});}
 const REASONS={vacation_setback:"Vacation — setting back",vacation_at_setback:"Vacation — holding the setback",
  vacation_radiant_off:"Vacation — radiant floor stays off"};

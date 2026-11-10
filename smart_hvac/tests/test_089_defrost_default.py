@@ -17,7 +17,7 @@ CFG = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
 def test_config_defaults_defrost_aware_on():
     raw = open(CFG).read()
     cfg = yaml.safe_load(raw)
-    assert cfg["version"] == "0.9.1"
+    assert cfg["version"] == "0.9.2"
     assert cfg["options"]["defrost_aware"] is True
     assert "\n  defrost_aware: bool\n" in raw
 
