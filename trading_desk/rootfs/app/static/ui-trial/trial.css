@@ -239,9 +239,9 @@ td b { font-weight: 600; }
 .rlist { list-style: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 12px; margin: 4px 0 0; padding: 0; }
 .rlist .sym { color: var(--mut); }
 
-.chart, .mv-chart { width: 100%; max-width: 100%; height: 220px; overflow: hidden; }
-.price .chart { height: 200px; }
-.mv-chart { height: 240px; }
+.chart, .mv-chart { width: 100%; max-width: 100%; height: 220px; min-height: 220px; overflow: hidden; }
+.price .chart { height: 200px; min-height: 200px; }
+.mv-chart { height: 240px; min-height: 240px; }
 .uplot { width: 100% !important; max-width: 100%; color: #b4b6bb; background: transparent; }
 .u-select { background: var(--acc-soft); }
 
@@ -405,7 +405,7 @@ footer {
 }
 
 @media (max-width: 767px) {
-  header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 12px; padding: 14px 12px 12px; position: static; }
+  header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 12px; padding: 14px 12px 12px; position: sticky; top: 0; }
   .brand { grid-column: 1; grid-row: 1; font-size: 20px; }
   .clock { grid-column: 2; grid-row: 1; margin: 0; text-align: right; }
   .tabs { grid-column: 1 / -1; grid-row: 2; width: 100%; margin: 0; }
@@ -421,21 +421,21 @@ footer {
   footer { padding: 8px 14px 28px; }
 }
 
-/* Stack the wide Detail tables below 1100px so 390 and 768 do not scroll sideways.
-   Main and Schwab stay real tables; they have fewer columns. */
+/* Stack Detail tables below 1100px. The class is in the HTML, so layout does not
+   wait on a script adding data-l. */
 @media (max-width: 1099px) {
-  #deskview table:has(td[data-l]) { position: relative; }
-  #deskview table:has(td[data-l]) thead {
+  #deskview table.stack { position: relative; }
+  #deskview table.stack thead {
     position: absolute;
     width: 1px;
     height: 1px;
     overflow: hidden;
     clip: rect(0, 0, 0, 0);
   }
-  #deskview table:has(td[data-l]),
-  #deskview table:has(td[data-l]) tbody,
-  #deskview table:has(td[data-l]) tr { display: block; width: 100%; }
-  #deskview td[data-l] {
+  #deskview table.stack,
+  #deskview table.stack tbody,
+  #deskview table.stack tr { display: block; width: 100%; }
+  #deskview table.stack td[data-l] {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
@@ -445,7 +445,7 @@ footer {
     border: 0;
     padding: 4px 0;
   }
-  #deskview td[data-l]::before {
+  #deskview table.stack td[data-l]::before {
     content: attr(data-l);
     flex: 0 0 46%;
     color: var(--mut);
@@ -453,9 +453,62 @@ footer {
     font-weight: 600;
     text-align: left;
   }
-  #deskview table:has(td[data-l]) tr { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  #deskview table.stack tr { padding: 10px 0; border-bottom: 1px solid var(--line); }
   #positions tbody tr { min-height: 44px; }
   #deskview td[colspan] { display: block; text-align: left; white-space: normal; }
+}
+
+.sw-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 16px 16px 8px; margin: 0 0 14px; }
+.sw-hd { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.sw-hd h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.sw-mark { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--schwab); margin-right: 8px; vertical-align: -1px; }
+.sw-pill { color: var(--fg); border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 6px 12px; min-height: 44px; display: inline-flex; align-items: center; font-size: 14px; }
+.sw-fig { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; padding: 6px 0; }
+.sw-fig span { color: var(--mut); }
+.sw-total { font-size: 40px; font-weight: 500; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.sw-up { color: var(--up); }
+.sw-dn { color: var(--dn); }
+.sw-flat, .sw-muted, .sw-snap { color: var(--mut); }
+.sw-live { color: var(--up); }
+.sw-none { color: var(--dn); }
+.sw-ex, .sw-note, .sw-warn { color: var(--mut); font-size: 14px; line-height: 1.45; }
+.sw-warn { color: var(--fg); }
+.sw-pos { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.sw-pos th, .sw-pos td { text-align: right; padding: 10px 6px; border-bottom: 1px solid var(--line); vertical-align: top; font-variant-numeric: tabular-nums; }
+.sw-pos th:first-child, .sw-pos td:first-child { text-align: left; }
+.sw-pos th { color: var(--mut); font-size: 13px; font-weight: 600; }
+.sw-nm, .sw-age { display: block; color: var(--mut); font-size: 13px; font-weight: 400; }
+.sw-age.sw-live { color: var(--up); }
+.sw-age.sw-none { color: var(--dn); }
+.sw-age.sw-muted, .sw-age.sw-snap { color: var(--mut); }
+
+@media (min-width: 481px) {
+  .sw-pos { table-layout: fixed; }
+  .sw-pos th, .sw-pos td { overflow-wrap: anywhere; }
+}
+@media (max-width: 480px) {
+  .sw-total { font-size: 32px; }
+  .sw-pos, .sw-pos tbody, .sw-pos tr { display: block; width: 100%; }
+  .sw-pos thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+  .sw-pos tr { padding: 8px 0; border-bottom: 1px solid var(--line); min-height: 44px; }
+  .sw-pos td[data-l] {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    text-align: right;
+    border: 0;
+    padding: 4px 0;
+    min-height: 44px;
+  }
+  .sw-pos td[data-l]::before {
+    content: attr(data-l);
+    flex: 0 0 42%;
+    color: var(--mut);
+    font-size: 13px;
+    font-weight: 600;
+    text-align: left;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

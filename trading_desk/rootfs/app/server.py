@@ -29,13 +29,14 @@ from zoneinfo import ZoneInfo
 import aiohttp
 from aiohttp import web
 
+import schwab
 import selfcheck
 
 APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC = APP_DIR / "static"
 EXAMPLE_STATUS = APP_DIR / "example_status.json"
 ET = ZoneInfo("America/New_York")
-VERSION = "0.3.4"
+VERSION = "0.3.5"
 BOTS = ["Desk Lead", "Strategist", "Risk Manager", "Research Analyst",
         "Execution Trader", "Trade Reviewer", "Trading Floor"]
 DEFAULT_STATUS_PATHS = [   # spec order: HA config custom_templates first, then /share
@@ -243,10 +244,27 @@ class Desk:
         self.resync_now = asyncio.Event()
         self.symbols_changed = asyncio.Event()
         self.session = None
+        # Schwab holdings are priced from the file plus Alpaca. Trades stay split by
+        # source so the newest timestamp wins. Snap quotes never replace a newer trade.
+        self.trades = {}
+        self.quotes = {}
+        self.bars = {}
+        self.clock = None
+        self.schwab_doc = None
+        self.schwab_error = "no holdings file"
+        self.schwab_key = None
+        self.schwab_fetch_error = None
+        self.schwab_gate = schwab.FetchGate()
 
     # ------------------------------------------------------------- derived
     def held_symbols(self):
         return sorted({p.get("symbol") for p in self.positions if p.get("symbol")})
+
+    def schwab_symbols(self):
+        return schwab.alpaca_symbols(self.schwab_doc)
+
+    def watch_symbols(self):
+        return sorted(set(self.held_symbols()) | set(self.schwab_symbols()))
 
     def snapshot(self):
         acct = self.account or {}
@@ -282,6 +300,7 @@ class Desk:
             hist_t.append(int(time.time()))
             hist_e.append(equity)
         st = self.status or {}
+        sw = self.schwab_view()
         return {
             "v": VERSION, "ts_ms": now_ms(), "mock": MOCK, "env": ENV,
             "keys_configured": bool(KEY_ID and SECRET) or MOCK,
@@ -307,7 +326,8 @@ class Desk:
                      "feed": self.feed_state(),
                      "thresholds": st.get("thresholds") or [], "error": self.status_error,
                      "holdings": st.get("holdings"), "portfolio": st.get("portfolio")},
-            "totals": self.totals(equity, day_pl, st.get("holdings") or {}),
+            "totals": self.totals(equity, day_pl, st.get("holdings") or {}, sw),
+            "schwab": sw,
             "crypto": self.crypto_view(),
             "ha_prices": getattr(self, "ha_prices", {}),
             "ranges": self.ranges_view(),
@@ -315,10 +335,54 @@ class Desk:
         }
 
 
-    def totals(self, alpaca_equity, alpaca_day_pl, holdings):
+    def schwab_view(self):
+        reason = self._schwab_reason()
+        keys = bool(KEY_ID and SECRET) or MOCK
+        if self.schwab_doc:
+            return schwab.build_view(
+                self.schwab_doc, self.trades, self.quotes, self.bars, self.clock,
+                now_ms(), FEED, reason, keys)
+        return schwab.build_view(None, {}, {}, {}, self.clock, now_ms(), FEED,
+                                 self.schwab_error or "no holdings file", keys)
+
+    def _schwab_reason(self):
+        parts = []
+        if self.schwab_fetch_error:
+            parts.append(self.schwab_fetch_error)
+        ds = self.health["data_stream"]
+        if ds.get("error") and ds.get("state") != "streaming":
+            parts.append(str(ds.get("error")))
+        if self.health["rest"].get("error"):
+            parts.append(str(self.health["rest"]["error"]))
+        out, seen = [], set()
+        for bit in parts:
+            text = redact(bit)[:200]
+            if text and text not in seen:
+                seen.add(text)
+                out.append(text)
+        return "; ".join(out)[:240]
+
+    def totals(self, alpaca_equity, alpaca_day_pl, holdings, schwab_view=None):
         """Combined Schwab+Alpaca assets and period gains for the top strip."""
         h = holdings or {}
-        schwab = fnum(h.get("schwab_total"))
+        sv = self.schwab_view() if schwab_view is None else schwab_view
+        if sv and sv.get("ok") and sv.get("combined"):
+            combo = sv["combined"]
+            schwab = fnum(combo.get("total"))
+            schwab_day = fnum(combo.get("day_pl"))
+            schwab_day_pc = fnum(combo.get("day_plpc"))
+            schwab_unrl = fnum(combo.get("unrealized_pl"))
+            schwab_as_of = sv.get("as_of")
+            schwab_price_as_of = sv.get("price_as_of")
+            schwab_source = "holdings file + Alpaca live"
+        else:
+            schwab = fnum(h.get("schwab_total"))
+            schwab_day = fnum(h.get("schwab_day_pl"))
+            schwab_day_pc = fnum(h.get("schwab_day_plpc"))
+            schwab_unrl = fnum(h.get("schwab_unrealized_pl"))
+            schwab_as_of = h.get("as_of")
+            schwab_price_as_of = h.get("price_as_of")
+            schwab_source = h.get("source")
         alpaca = alpaca_equity if alpaca_equity is not None else fnum(h.get("alpaca_equity"))
         combined = None
         if schwab is not None and alpaca is not None:
@@ -327,9 +391,6 @@ class Desk:
             combined = schwab
         elif alpaca is not None:
             combined = alpaca
-        schwab_day = fnum(h.get("schwab_day_pl"))
-        schwab_day_pc = fnum(h.get("schwab_day_plpc"))
-        schwab_unrl = fnum(h.get("schwab_unrealized_pl"))
         # Alpaca unrealized from open positions
         alpaca_unrl = 0.0
         have_unrl = False
@@ -375,9 +436,9 @@ class Desk:
             "month": {"alpaca_pl": a_month, "alpaca_plpc": a_month_pc, "scope": "alpaca"},
             "year": {"alpaca_pl": a_year, "alpaca_plpc": a_year_pc, "scope": "alpaca"},
             "unrealized": {"combined_pl": c_unrl, "alpaca_pl": alpaca_unrl, "schwab_pl": schwab_unrl},
-            "schwab_as_of": h.get("as_of"),
-            "schwab_price_as_of": h.get("price_as_of"),
-            "schwab_source": h.get("source"),
+            "schwab_as_of": schwab_as_of,
+            "schwab_price_as_of": schwab_price_as_of,
+            "schwab_source": schwab_source,
             "periods_as_of_ms": periods.get("as_of_ms"),
         }
 
@@ -677,7 +738,7 @@ async def resync(reason):
             rest_get(TRADE_REST, "/v2/account/portfolio/history",
                      {"period": "1A", "timeframe": "1D"}),
         )
-        old = DESK.held_symbols()
+        old = DESK.watch_symbols()
         DESK.account, DESK.positions, DESK.orders = acct, pos, orders
         DESK.fills = [{"symbol": f.get("symbol"), "side": f.get("side"), "qty": fnum(f.get("qty")),
                        "price": fnum(f.get("price")), "time": f.get("transaction_time"),
@@ -705,11 +766,7 @@ async def resync(reason):
             "as_of_ms": now_ms(),
             "scope": "alpaca",
         }
-        # drop live prices for symbols no longer held
-        held = set(DESK.held_symbols())
-        DESK.live_prices = {k: v for k, v in DESK.live_prices.items() if k in held}
-        if DESK.held_symbols() != old:
-            DESK.symbols_changed.set()
+        prune_live_prices(old)
         await resync_ranges()
         h["last_ok_ms"], h["error"] = now_ms(), None
         log.info("resync ok (%s): %d positions, %d open orders, %d fills today",
@@ -737,7 +794,7 @@ async def price_poll_loop():
         await asyncio.sleep(15)
         if MOCK or not KEY_ID or DESK.health["data_stream"]["state"] == "streaming":
             continue
-        syms = DESK.held_symbols()
+        syms = DESK.watch_symbols()
         if not syms:
             continue
         try:
@@ -746,10 +803,162 @@ async def price_poll_loop():
             for sym, tr in (data.get("trades") or {}).items():
                 p = fnum(tr.get("p"))
                 if p:
-                    DESK.live_prices[sym] = (p, now_ms())
+                    note_trade(sym, p, schwab.ts_ms(tr.get("t"), now_ms()), "rest")
             DESK.mark()
         except Exception as e:  # noqa: BLE001
             log.debug("price poll failed: %s", redact(e))
+
+
+def prune_live_prices(previous):
+    """Drop prices for symbols that are neither an Alpaca position nor a Schwab quote."""
+    refresh_schwab_file()
+    keep = set(DESK.watch_symbols())
+    DESK.live_prices = {k: v for k, v in DESK.live_prices.items() if k in keep}
+    for sym in list(DESK.trades):
+        if sym not in keep:
+            DESK.trades.pop(sym, None)
+    if DESK.watch_symbols() != previous:
+        DESK.symbols_changed.set()
+
+
+def note_trade(sym, price, ts, source):
+    """Record one trade. Stream and REST also mark Alpaca positions when newer."""
+    px = fnum(price)
+    if not sym or px is None or px <= 0:
+        return
+    stamp = int(ts) if isinstance(ts, (int, float)) else now_ms()
+    DESK.trades.setdefault(sym, {})[source] = (px, stamp)
+    if source in ("stream", "rest"):
+        cur = DESK.live_prices.get(sym)
+        if cur is None or stamp >= (cur[1] or 0):
+            DESK.live_prices[sym] = (px, stamp)
+
+
+def _schwab_counts(doc):
+    accounts = (doc or {}).get("accounts") or []
+    return len(accounts), sum(len(a.get("positions") or []) for a in accounts)
+
+
+def refresh_schwab_file():
+    """Reload the holdings file when its mtime changes. Counts only in the log."""
+    if MOCK and not os.environ.get("TD_SCHWAB_FILE") and not pathlib.Path(schwab.PATH).is_file():
+        key = ("mock", 0)
+        changed = DESK.schwab_key != key
+        if changed:
+            doc, why = schwab.clean(schwab.MOCK_DOC)
+            DESK.schwab_doc = doc
+            DESK.schwab_error = None if doc else why
+            DESK.schwab_key = key
+            n_a, n_p = _schwab_counts(doc)
+            log.info("schwab holdings: %d accounts, %d positions", n_a, n_p)
+            log.debug("schwab holdings counts accounts=%d positions=%d", n_a, n_p)
+        return changed
+    loaded = schwab.load_file()
+    key = loaded.get("key")
+    changed = key != DESK.schwab_key
+    DESK.schwab_key = key
+    if loaded.get("ok"):
+        DESK.schwab_doc = loaded.get("holdings")
+        DESK.schwab_error = None
+    else:
+        DESK.schwab_doc = None
+        DESK.schwab_error = loaded.get("error") or "no holdings file"
+    if changed:
+        if DESK.schwab_doc:
+            n_a, n_p = _schwab_counts(DESK.schwab_doc)
+            log.info("schwab holdings: %d accounts, %d positions", n_a, n_p)
+            log.debug("schwab holdings counts accounts=%d positions=%d", n_a, n_p)
+        else:
+            log.info("schwab holdings unavailable: %s", redact(DESK.schwab_error or ""))
+    return changed
+
+
+def _mock_clock(now=None):
+    now = now or dt.datetime.now(ET)
+    open_t = now.replace(hour=9, minute=30, second=0, microsecond=0)
+    close_t = now.replace(hour=16, minute=0, second=0, microsecond=0)
+    is_open = now.weekday() < 5 and open_t <= now < close_t
+    if now.weekday() < 5 and now < open_t:
+        nxt_open, nxt_close = open_t, close_t
+    elif is_open:
+        nxt = now + dt.timedelta(days=1)
+        while nxt.weekday() >= 5:
+            nxt += dt.timedelta(days=1)
+        nxt_open = nxt.replace(hour=9, minute=30, second=0, microsecond=0)
+        nxt_close = close_t
+    else:
+        nxt = now + dt.timedelta(days=1)
+        while nxt.weekday() >= 5:
+            nxt += dt.timedelta(days=1)
+        nxt_open = nxt.replace(hour=9, minute=30, second=0, microsecond=0)
+        nxt_close = nxt.replace(hour=16, minute=0, second=0, microsecond=0)
+    return {"is_open": is_open, "next_open": nxt_open.isoformat(),
+            "next_close": nxt_close.isoformat(), "timestamp": now.isoformat()}
+
+
+def seed_mock_quotes():
+    """Placeholder Alpaca quotes for the mock holdings file. No network."""
+    if not hasattr(DESK, "_mock_sw"):
+        DESK._mock_sw = {"AAA": 110.0, "BBB": 20.0}
+    DESK.clock = _mock_clock()
+    now = dt.datetime.now(ET)
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    prev_day = today - dt.timedelta(days=1)
+    while prev_day.weekday() >= 5:
+        prev_day -= dt.timedelta(days=1)
+    bases = {"AAA": 100.0, "BBB": 18.0}
+    session_today = DESK.clock["is_open"] or now >= today.replace(hour=16)
+    for sym, base in bases.items():
+        if sym not in DESK._mock_sw:
+            DESK._mock_sw[sym] = base * 1.1
+        px = DESK._mock_sw[sym]
+        note_trade(sym, px, now_ms(), "stream")
+        if session_today:
+            DESK.bars[sym] = {"daily": (px, today.isoformat()), "prev": (base, prev_day.isoformat())}
+        else:
+            DESK.bars[sym] = {"daily": (base, prev_day.isoformat()), "prev": (base, prev_day.isoformat())}
+    DESK.schwab_fetch_error = None
+
+
+async def pull_schwab_market():
+    """GET snapshots for the holdings symbols and GET the market clock. Nothing else."""
+    syms = DESK.schwab_symbols()
+    try:
+        if syms:
+            data = await rest_get(DATA_REST, "/v2/stocks/snapshots",
+                                  {"symbols": ",".join(syms), "feed": FEED})
+            schwab.ingest_snapshots(DESK, data, now_ms())
+        clock = await rest_get(TRADE_REST, "/v2/clock")
+        DESK.clock = {
+            "is_open": bool(clock.get("is_open")),
+            "next_open": clock.get("next_open"),
+            "next_close": clock.get("next_close"),
+            "timestamp": clock.get("timestamp"),
+        }
+        DESK.schwab_fetch_error = None
+    except Exception as e:  # noqa: BLE001
+        DESK.schwab_fetch_error = redact(e)[:200]
+        log.warning("schwab market data: %s", DESK.schwab_fetch_error)
+
+
+async def schwab_loop():
+    """Refresh the holdings file often, and GET Alpaca at most every 60s plus on change."""
+    while True:
+        try:
+            changed = refresh_schwab_file()
+            if changed:
+                DESK.symbols_changed.set()
+            if DESK.schwab_gate.due(time.monotonic(), changed):
+                if MOCK:
+                    seed_mock_quotes()
+                elif KEY_ID and SECRET and DESK.session:
+                    await pull_schwab_market()
+                else:
+                    DESK.schwab_fetch_error = DESK.health["data_stream"].get("error") or DESK.health["rest"].get("error")
+                DESK.mark()
+        except Exception as e:  # noqa: BLE001
+            log.warning("schwab loop: %s", redact(e))
+        await asyncio.sleep(1)
 
 
 # --------------------------------------------------------------------------
@@ -829,7 +1038,7 @@ async def data_stream():
                 authed = False
 
                 async def sync_subs():
-                    want = set(DESK.held_symbols())
+                    want = set(DESK.watch_symbols())
                     add, drop = sorted(want - subscribed), sorted(subscribed - want)
                     if drop:
                         await ws.send_json({"action": "unsubscribe", "trades": drop})
@@ -872,8 +1081,9 @@ async def data_stream():
                                 raise RuntimeError(f"data stream error {code}: {it.get('msg')}")
                             elif t == "t":
                                 p = fnum(it.get("p"))
-                                if p:
-                                    DESK.live_prices[it.get("S")] = (p, now_ms())
+                                sym = it.get("S")
+                                if p and sym:
+                                    note_trade(sym, p, schwab.ts_ms(it.get("t"), now_ms()), "stream")
                         DESK.mark()
                 finally:
                     watcher.cancel()
@@ -1058,13 +1268,17 @@ async def mock_feed():
     h_t, h_d = DESK.health["trade_stream"], DESK.health["data_stream"]
     for h in (h_t, h_d):
         h.update({"state": "streaming", "connected_since_ms": now_ms(), "error": None})
-    h_d["symbols"] = sorted(MOCK_BOOK)
+    h_d["symbols"] = sorted(set(MOCK_BOOK) | set(DESK.schwab_symbols()))
     await resync("mock start")
     while True:
         await asyncio.sleep(1.0)
         s = random.choice(list(MOCK_BOOK))
         _mock_px[s] *= 1 + random.gauss(0, 0.0012)
-        DESK.live_prices[s] = (_mock_px[s], now_ms())
+        note_trade(s, _mock_px[s], now_ms(), "stream")
+        if getattr(DESK, "_mock_sw", None):
+            for sym in list(DESK._mock_sw):
+                DESK._mock_sw[sym] *= 1 + random.gauss(0, 0.0004)
+                note_trade(sym, DESK._mock_sw[sym], now_ms(), "stream")
         h_t["last_msg_ms"] = now_ms() - random.randint(0, 4000)
         h_d["last_msg_ms"] = now_ms()
         DESK.mark()
@@ -1214,6 +1428,10 @@ async def api_assets(request):
     return web.json_response(load_assets())
 
 
+async def api_schwab(request):
+    return web.json_response(DESK.schwab_view())
+
+
 async def api_health(request):
     # Unauthenticated watchdog probe — no version/error details without ingress.
     return web.json_response({"ok": True})
@@ -1257,7 +1475,7 @@ async def _read_ha_prices():
     """Keyless HA price sensors (ha/packages/trading_desk_prices.yaml): sensor.price_<sym>."""
     if not IN_HA:
         return
-    syms = set(DESK.held_symbols())
+    syms = set(DESK.watch_symbols())
     for a in ((DESK.status or {}).get("holdings") or {}).get("accounts") or []:
         syms |= {p.get("symbol") for p in a.get("positions") or [] if p.get("symbol")}
     out = {}
@@ -1377,7 +1595,7 @@ async def broadcaster():
 
 async def on_startup(app):
     DESK.session = make_session()
-    tasks = [broadcaster(), status_loop(), crypto_loop()]
+    tasks = [broadcaster(), status_loop(), crypto_loop(), schwab_loop()]
     if MOCK:
         tasks.append(mock_feed())
     elif KEY_ID and SECRET:
@@ -1411,6 +1629,7 @@ def build_app():
     app.router.add_get("/api/events", api_events)
     app.router.add_get("/api/bars", api_bars)
     app.router.add_get("/api/assets", api_assets)
+    app.router.add_get("/api/schwab", api_schwab)
     app.router.add_get("/api/history", api_history)
     app.router.add_static("/static/", STATIC, append_version=False)
     app.on_startup.append(on_startup)
