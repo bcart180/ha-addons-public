@@ -4,6 +4,10 @@ Read-only sidebar panel. X engagement for the accounts you list, and a per-site 
 
 Nothing on a card is estimated. A missing token, zone, or Web Analytics field stays empty or "Not available".
 
+## Trial
+
+`/ui-trial` is a BRYSON-UI-4 presentation of the same snapshot. Production `/`, `/index.html`, `/app.css`, `/app.js`, and `/soft-slate.css` stay the 0.3.1 page. The trial calls `GET api/snapshot` on the add-on root. This version does not add a second snapshot API.
+
 ## Tokens (Configuration only; password fields, stored in the add-on's /data/options.json)
 
 ### `cloudflare_api_token`
