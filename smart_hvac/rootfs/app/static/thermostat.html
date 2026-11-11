@@ -180,13 +180,14 @@ function mockApi(p,b){const now=Math.floor(Date.now()/1000);
    o.outdoor.push([t,+(44+9*Math.sin((hr-9)/24*2*Math.PI)+3*Math.sin(i/20)).toFixed(1)]); }
   return o;}
  return S||MOCK_STATE;}
+const PAUSE=new URLSearchParams(location.search).has("pause");
 const MOCK_STATE={enabled:true,dry_run:false,profile:"auto",override_hours:2,radiant_room_cap:85,radiant_setpoint_max:85,radiant_air_shutoff:80,radiant_floor_cap:85,
  zones:[{name:"room_a",label:"Room A",heat_only:false,override_until:null},
   {name:"room_b",label:"Room B",heat_only:false,override_until:Date.now()/1000+5400},
   {name:"bath_floor",label:"Bath floor",heat_only:true,override_until:null}],
  last:{ts:Date.now()/1000,presence_home:true,outdoor:47,weather:"partlycloudy",radiant_timeout:"on",zones:{
-  room_a:{action:"hold",reason:"no_change",profile:"home",setpoint:71,live:{mode:"heat",setpoint:71,indoor:70.4,humidity:41,hvac_action:"heating",fan_mode:"auto",fan_modes:["auto","low","medium","high"],hvac_modes:["off","heat","cool","fan_only","dry"]}},
-  room_b:{action:"hold",reason:"manual_override",profile:"home",setpoint:72,live:{mode:"heat",setpoint:72,indoor:71.2,humidity:44,hvac_action:"idle",fan_mode:"low",fan_modes:["auto","low","medium","high"],hvac_modes:["off","heat","cool"]}},
+  room_a:{action:"hold",reason:PAUSE?"window_slope_pause":"no_change",profile:"home",setpoint:71,live:{mode:PAUSE?"off":"heat",setpoint:71,indoor:70.4,humidity:41,hvac_action:PAUSE?"off":"heating",fan_mode:"auto",fan_modes:["auto","low","medium","high"],hvac_modes:["off","heat","cool","fan_only","dry"]}},
+  room_b:{action:"hold",reason:PAUSE?"window_slope_pause":"manual_override",profile:"home",setpoint:72,live:{mode:PAUSE?"off":"heat",setpoint:72,indoor:71.2,humidity:44,hvac_action:PAUSE?"off":"idle",fan_mode:"low",fan_modes:["auto","low","medium","high"],hvac_modes:["off","heat","cool"]}},
   bath_floor:{action:"hold",reason:"unit_off",profile:"home",setpoint:72,live:{mode:"off",setpoint:72,indoor:68.6,humidity:52,hvac_action:"off",hvac_modes:["off","heat"]}}}}};
 refresh();if(!MOCK)setInterval(refresh,30000);
 </script></body></html>

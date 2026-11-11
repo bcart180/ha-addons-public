@@ -35,11 +35,23 @@ canvas{width:100%;height:90px;margin-top:10px}
 <div class="footer">Graph: <span style="color:#3ddc5a">inside</span> · <span style="color:#757575">outside</span> · <span style="color:#005aff">target</span></div>
 </div><script>
 const MODES=[["auto","Auto"],["home","Home"],["away","Away"],["sleep","Sleep"],["guest","Guest"]];
+const MOCK=new URLSearchParams(location.search).has("mock");
+const PAUSE=new URLSearchParams(location.search).has("pause");
 let S=null;
 const esc=t=>String(t).replace(/[&<>"']/g,c=>"&#"+c.charCodeAt(0)+";");
 const $=id=>document.getElementById(id);
-async function api(p,b){const r=await fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{});
+async function api(p,b){if(MOCK)return mockClassic();
+ const r=await fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{});
  const j=await r.json(); if(!r.ok) throw new Error(j.error||r.status); return j;}
+function mockClassic(){
+ const why=PAUSE?"window_slope_pause":"no_change";
+ const hist=[[1,70,40,71],[2,70,40,71]];
+ return {enabled:true,dry_run:false,profile:"auto",
+  last:{outdoor:40,zones:{
+   room_a:{reason:why,mode:PAUSE?"off":"heat",setpoint:71},
+   room_b:{reason:why,mode:PAUSE?"off":"heat",setpoint:71}}},
+  zones:[{name:"room_a",label:"Room A",heat_only:false,override_until:null,history:hist},
+   {name:"room_b",label:"Room B",heat_only:false,override_until:null,history:hist}]};}
 function arc(v){const lo=55,hi=84,a=Math.max(0,Math.min(1,(v-lo)/(hi-lo)))*270-135,rad=(a-90)*Math.PI/180;
  return [110+90*Math.cos(rad),110+90*Math.sin(rad),a>45?1:0];}
 function dial(t,mode){const col=mode==="cool"?"#005aff":mode==="heat"?"#757575":"#5c5c5c";

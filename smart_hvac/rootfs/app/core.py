@@ -284,9 +284,17 @@ def _note_live(st, gates, now):
             st["seen_setpoint"][name] = sp
 
 
-def _recent_pauses(st, name, now):
-    kept = [t for t in st["pause_starts"].get(name, []) if now - t < 3600]
-    st["pause_starts"][name] = kept
+def _pauses_with_pair(g):
+    """A controlled non-radiant split is paused with the pair. Detection is separate (`eligible`)."""
+    if isinstance(g, dict) and "member" in g:
+        return bool(g.get("member"))
+    return bool((g or {}).get("eligible"))
+
+
+def _pair_recent(st, now):
+    """Pause starts for the whole pair, not one count per zone."""
+    kept = [t for t in st["pause_starts"].get("pair", []) if now - t < 3600]
+    st["pause_starts"]["pair"] = kept
     return kept
 
 
@@ -301,7 +309,7 @@ def _trigger_ok(name, g, gates, st, now):
     indoor, outdoor = _num(g.get("indoor")), _num(g.get("outdoor"))
     if indoor is None or outdoor is None or outdoor > indoor - SLOPE_OUTDOOR_GAP_F:
         return False
-    if len(_recent_pauses(st, name, now)) >= SLOPE_MAX_PAUSES_PER_HOUR:
+    if len(_pair_recent(st, now)) >= SLOPE_MAX_PAUSES_PER_HOUR:
         return False
     return True
 
@@ -310,7 +318,7 @@ def _hold_allows(gates):
     if SLOPE_PAUSE_DURING_HOLD:
         return True
     for g in (gates.get("zones") or {}).values():
-        if g.get("eligible") and g.get("controlled") and g.get("hold"):
+        if g.get("controlled") and g.get("hold") and _pauses_with_pair(g):
             return False
     return True
 
@@ -401,7 +409,9 @@ def slope_window_step(prev, samples, now, cfg, gates):
     c = zone_cfg.get(trigger, slope_zone_settings(None))
     saved = {}
     for name, g in zone_gates.items():
-        if g.get("eligible") and g.get("controlled") and not g.get("person_off") and g.get("mode") not in (None, "off"):
+        # Every controlled split pauses, including one that only has a contact sensor or no room sensor.
+        if (_pauses_with_pair(g) and g.get("controlled") and not g.get("person_off")
+                and g.get("mode") not in (None, "off")):
             saved[name] = {"mode": g.get("mode"), "setpoint": _num(g.get("setpoint")), "ts": now,
                            "cmd_mode": None, "cmd_setpoint": None}
     if not saved:
@@ -414,12 +424,9 @@ def slope_window_step(prev, samples, now, cfg, gates):
     st["event"] = "pause"
     st["below_since"] = {}
     st["saved"] = saved
-    for name, g in zone_gates.items():
-        if not g.get("eligible"):
-            continue
-        kept = _recent_pauses(st, name, now)
-        kept.append(now)
-        st["pause_starts"][name] = kept
+    kept = _pair_recent(st, now)
+    kept.append(now)
+    st["pause_starts"]["pair"] = kept
     return st
 
 

@@ -514,13 +514,16 @@ function mockApi(path, body){
 }
 function mockState(now){
   const holdA = now + 2 * 3600, holdB = now + 2 * 3600 + 30;
+  const pause = new URLSearchParams(location.search).has("pause");
   const pref = (n) => ({home:{temperature:n, source:"zone"}, sleep:{temperature:n - 3, source:"schedule"},
     away_heat:{temperature:65, source:"schedule"}, away_cool:{temperature:78, source:"schedule"}});
-  const live = (sp, indoor) => ({mode:"heat", setpoint:sp, indoor, humidity:41, hvac_action:"heating", fan_mode:"auto"});
+  const live = (sp, indoor) => ({mode: pause ? "off" : "heat", setpoint:sp, indoor, humidity:41,
+    hvac_action: pause ? "off" : "heating", fan_mode:"auto"});
+  const why = pause ? "window_slope_pause" : "manual_override";
   return {enabled:true, dry_run:false, profile:"auto", override_hours:2, radiant_setpoint_max:85, vacation:false,
     last:{ts:now - 180, presence_home:true, outdoor:34, zones:{
-      room_a:{profile:"away", reason:"manual_override", setpoint:70, action:"hold", next:null, live:live(70, 68.4), defrosting:false},
-      room_b:{profile:"away", reason:"manual_override", setpoint:70, action:"hold", next:null, live:live(70, 69.1), defrosting:false},
+      room_a:{profile:"away", reason:why, setpoint:70, action:"hold", next:null, live:live(70, 68.4), defrosting:false},
+      room_b:{profile:"away", reason:why, setpoint:70, action:"hold", next:null, live:live(70, 69.1), defrosting:false},
       bath_floor:{profile:"home", reason:"no_change", setpoint:72, action:"hold", next:{ts:now + 6 * 3600, setpoint:66, profile:"sleep"}, live:{mode:"heat", setpoint:72, indoor:71.2, hvac_action:"idle"}}
     }},
     preferences:{room_a:pref(71), room_b:pref(71), bath_floor:pref(72)},

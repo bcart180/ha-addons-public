@@ -1015,14 +1015,14 @@ class Engine:
                                 "reason": "window_slope_pause", "profile": None}
 
     def _slope_public(self, zone):
-        """/api/state block. Numbers or null. Radiant and contact-sensor zones stay idle."""
+        """/api/state block. Numbers or null. Radiant zones stay idle. A paused partner still reports active."""
         empty = {"active": False, "since": None, "max_until": None, "slope_f_per_h": None, "trigger_zone": None}
-        if not self._slope_eligible(zone):
+        if not zone or zone.get("heat_only"):
             return empty
         st = self.st.get("window_slope") if isinstance(self.st.get("window_slope"), dict) else {}
         name = zone.get("name")
         slopes = getattr(self, "_slope_view", None) or {}
-        slope = slopes.get(name)
+        slope = slopes.get(name) if self._slope_eligible(zone) else None
         paused = bool(st.get("active")) and name in (st.get("saved") or {})
         return {
             "active": paused,
@@ -1061,15 +1061,17 @@ class Engine:
             if item.get("defrost") or item.get("grace"):
                 if not z.get("heat_only"):
                     any_defrost = True
-            if not self._slope_eligible(z):
+            if z.get("heat_only"):
                 continue
-            cfg_zones[name] = core.slope_zone_settings(z)
+            detect = self._slope_eligible(z)
+            if detect:
+                cfg_zones[name] = core.slope_zone_settings(z)
             person_off = item["cl"] == "off" and name not in self.st["app_off"]
             gate_zones[name] = {
-                "eligible": True, "controlled": True, "person_off": person_off,
+                "eligible": detect, "member": True, "controlled": True, "person_off": person_off,
                 "hold": self._override_active(name, now), "mode": item["cl"], "setpoint": _num(item["eff_setpt"]),
                 "indoor": item.get("sensor_val") if item.get("sensor_ok") else None, "outdoor": outdoor_f,
-                "sensor_ok": bool(item.get("sensor_ok")),
+                "sensor_ok": bool(item.get("sensor_ok")) if detect else False,
             }
         gates = {"enabled": self.enabled, "vacation": bool(vac), "defrost": any_defrost, "zones": gate_zones}
         new = core.slope_window_step(prev, samples, now, {"zones": cfg_zones}, gates)

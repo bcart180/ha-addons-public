@@ -121,6 +121,7 @@ def drive(e, ha, clk, rate, hours, start=70.0, cycle=CYCLE, entity="sensor.lr_t"
             moved = True
         if moved:
             put(ha, clk, entity, reported)
+        ha.calls.clear()
         r = e.evaluate()
         if r["lr"]["reason"] == "window_slope_pause" or r["br"]["reason"] == "window_slope_pause":
             hit = clk.t
@@ -177,10 +178,10 @@ def test_step_rate_limit_and_rearm():
     samples = {"lr": [[now - 7200, 70], [now, 64]], "br": [[now - 7200, 70]]}
     prev = core.empty_slope_state()
     prev["below_since"] = {"lr": now - 120}
-    prev["pause_starts"] = {"lr": [now - 100, now - 50], "br": [now - 100, now - 50]}
+    prev["pause_starts"] = {"pair": [now - 100, now - 50]}
     blocked = core.slope_window_step(prev, samples, now, cfg, gates)
     assert blocked["event"] is None and blocked["active"] is False
-    prev["pause_starts"] = {"lr": [now - 100], "br": [now - 100]}
+    prev["pause_starts"] = {"pair": [now - 100]}
     armed = core.slope_window_step(prev, samples, now, cfg, gates)
     assert armed["event"] == "pause" and set(armed["saved"]) == {"lr", "br"}
     # max-duration resume stays disarmed while the slope is still falling
@@ -392,7 +393,7 @@ def test_pause_and_resume_are_paired_and_app_initiated():
         ha.calls.clear()
         r = e.evaluate()
         assert r["lr"]["reason"] == "window_slope_pause" and ha.calls == []
-        assert e.st.get("override_temps") or {} == temps
+        assert (e.st.get("override_temps") or {}) == temps
         assert e.st["override_until"] == until
     for name in ("lr", "br"):
         kinds = [row[1] for row in e.st["events"].get(name, [])]
@@ -407,6 +408,49 @@ def test_pause_and_resume_are_paired_and_app_initiated():
     assert {c[1]["entity_id"] for c in heats} == {"climate.lr", "climate.br"}
     assert {c[1]["hvac_mode"] for c in heats} == {"heat"}
     assert e.st["app_off"] == []
+
+
+def _same_cycle_off(ha, names):
+    offs = [c for c in ha.calls if c[0] == "set_hvac_mode" and c[1].get("hvac_mode") == "off"]
+    assert {c[1]["entity_id"] for c in offs} >= names
+
+
+def test_partner_with_contact_sensor_pauses_and_resumes_together():
+    zones = [dict(SPLITS[0]), dict(SPLITS[1], window="binary_sensor.br_win")]
+    e, ha, clk = world(zones=zones)
+    ha.s["binary_sensor.br_win"] = ("off", {})
+    settle(e)
+    ha.calls.clear()
+    assert drive(e, ha, clk, -20, hours=0.5) is not None
+    r = e.st["last_result"]["zones"]
+    assert r["lr"]["reason"] == r["br"]["reason"] == "window_slope_pause"
+    _same_cycle_off(ha, {"climate.lr", "climate.br"})
+    put(ha, clk, "sensor.lr_t", 70)
+    clk.t += CYCLE
+    ha.calls.clear()
+    e.evaluate()
+    heats = [c for c in ha.calls if c[0] == "set_hvac_mode"]
+    assert {c[1]["entity_id"] for c in heats} == {"climate.lr", "climate.br"}
+    assert {c[1]["hvac_mode"] for c in heats} == {"heat"}
+
+
+def test_partner_without_room_sensor_pauses_and_resumes_together():
+    br = dict(SPLITS[1])
+    br.pop("indoor")
+    e, ha, clk = world(zones=[dict(SPLITS[0]), br])
+    settle(e)
+    ha.calls.clear()
+    assert drive(e, ha, clk, -20, hours=0.5) is not None
+    r = e.st["last_result"]["zones"]
+    assert r["lr"]["reason"] == r["br"]["reason"] == "window_slope_pause"
+    _same_cycle_off(ha, {"climate.lr", "climate.br"})
+    put(ha, clk, "sensor.lr_t", 70)
+    clk.t += CYCLE
+    ha.calls.clear()
+    e.evaluate()
+    heats = [c for c in ha.calls if c[0] == "set_hvac_mode"]
+    assert {c[1]["entity_id"] for c in heats} == {"climate.lr", "climate.br"}
+    assert {c[1]["hvac_mode"] for c in heats} == {"heat"}
 
 
 def test_person_off_partner_stays_off():
