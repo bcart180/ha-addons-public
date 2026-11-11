@@ -146,7 +146,7 @@
         return '<div class="post">' + link + "<b>" + num(p.impressions) + " views · " + num((p.likes || 0) + (p.reposts || 0) + (p.replies || 0)) + " eng</b></div>";
       }).join("");
       return '<div class="card"><div class="acct"><div class="av">' + esc((a.name || a.handle || "?").charAt(0)) + '</div><div class="who"><div class="n">' + esc(a.name || a.handle) +
-        '</div><div class="handle">@' + esc(a.handle) + "</div></div></div>" +
+        '</div><a href="https://x.com/' + esc(a.handle) + '" target="_blank" rel="noopener">@' + esc(a.handle) + "</a></div></div>" +
         '<div class="metrics">' + metric("Followers", a.followers, null, w) + metric("Posts (7d)", a.posts_7d, null, w) + metric("Impressions (7d)", a.post_impressions_7d, null, w) +
         metric("Engagements (7d)", a.engagements_7d, null, w) + metric("Eng. rate", a.engagement_rate_7d, function (v) { return v + "%"; }, w) + metric("Total posts", a.posts_total, null, w) +
         metric("Profile visits", a.profile_visits, null, w) + metric("Link clicks", a.link_clicks, null, w) + metric("Account impressions", a.account_impressions, null, w) + "</div>" +
@@ -168,8 +168,8 @@
       }).join(" ");
     }
     var area = line("requests") + " L" + (W - P) + " " + (H - P) + " L" + P + " " + (H - P) + " Z";
-    return '<svg class="chart" viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none" role="img" aria-label="Edge requests and edge page views"><path d="' + area + '" fill="rgba(0,90,255,.16)"/><path d="' + line("requests") +
-      '" fill="none" stroke="#005aff" stroke-width="2.5"/><path d="' + line("page_views") + '" fill="none" stroke="#9747ff" stroke-width="2" stroke-dasharray="5 4"/></svg>' +
+    return '<svg class="chart" viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none" role="img" aria-label="Edge requests and edge page views"><path d="' + area + '" fill="rgba(62,106,225,.16)"/><path d="' + line("requests") +
+      '" fill="none" stroke="#3e6ae1" stroke-width="2.5"/><path d="' + line("page_views") + '" fill="none" stroke="#9747ff" stroke-width="2" stroke-dasharray="5 4"/></svg>' +
       '<div class="legend"><span><i class="req"></i>Edge requests</span><span><i class="pv"></i>Edge page views</span><span>' + esc(d[0].date) + " → " + esc(d[d.length - 1].date) + "</span></div>";
   }
   function shareLine(row) {
@@ -211,7 +211,7 @@
   function sites() {
     var rows = snap.sites || [];
     if (!rows.length) {
-      $("sites").innerHTML = '<div class="card"><p class="empty">No websites in this snapshot.</p></div>';
+      $("sites").innerHTML = '<div class="card site"><div class="err">No Cloudflare data for this site.</div><div class="cap">Add the zone name, zone id, and Web Analytics site tag in Configuration, plus the Cloudflare API token. This card stays empty until Cloudflare returns data. Nothing here is estimated.</div></div>';
       return;
     }
     $("sites").innerHTML = rows.map(function (s) {
