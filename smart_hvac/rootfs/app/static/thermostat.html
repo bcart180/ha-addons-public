@@ -5,6 +5,9 @@
 /* Soft Slate dark variant (house-soft-slate-theme accent/status tokens on the add-on's dark base). */
 :root{--bg:#000000;--elev:#1a1a1a;--card:#414141;--text:#ffffff;--dim:#b4b6bb;--line:#5c5c5c;
 --accent:#005aff;--accent-h:#005aff;--blue:#005aff;--soft:#ffffff;--good:#3ddc5a;--bad:#d0d0d0;--warn:#d0d0d0;--selected:#757575;--r:8px;--rc:8px;--face:#1a1a1a}
+/* slope-pause-start */
+.slope-pause{color:#3e6ae1}
+/* slope-pause-end */
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:18px "Segoe UI",system-ui,sans-serif}
 .shell{max-width:1180px;margin:0 auto;padding:20px}
 .header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px}
@@ -71,7 +74,7 @@ const $=id=>document.getElementById(id), esc=t=>String(t??"").replace(/[&<>"']/g
 let S=null; const UI={}; const H={}; const pend={};
 const REASONS={ok:"Target set by the active profile",defrosting:"Defrosting — the app waits",preheating:"Pre-heating coil — the app waits",no_change:"At target — nothing to change",manual_override:"Manual hold — app is waiting",
  unit_off:"Turned off by a person — app won't turn it back on",disabled:"App is off",short_cycle_guard:"Short-cycle guard (protecting the compressor)",
- overtemp_shutoff:"Safety cap reached — radiant shut off",window_open:"Window open — paused","missing:indoor_temp":"Indoor sensor offline — holding",
+ overtemp_shutoff:"Safety cap reached — radiant shut off",window_open:"Window open — paused",window_slope_pause:"Paused, window open?","missing:indoor_temp":"Indoor sensor offline — holding",
  "missing:outdoor_temp":"Outdoor temp unavailable — holding","missing:presence":"Presence unknown — holding","missing:unit":"Unit unavailable",zone_disabled:"Zone disabled in app",
  vacation_setback:"Vacation — setting back",vacation_at_setback:"Vacation — holding the setback",vacation_radiant_off:"Vacation — radiant floor stays off"};
 const PROF={home:"Home",away:"Away",sleep:"Sleep",guest:"Guest",auto:"Auto",vacation:"Vacation"};
@@ -127,7 +130,7 @@ function card(z){
    <h3>Power</h3><div class="row"><button class="btn ${!off?"sel":""}" onclick="act('${z.name}','power',{on:true})">On</button><button class="btn ${off?"sel":""}" onclick="act('${z.name}','power',{on:false})">Off</button></div>
   </div></div>
  <div class="chips">${chips}</div>
- <div class="why">${esc(why)}${esc(tgt)}</div>
+ <div class="${r.reason==="window_slope_pause"?"why slope-pause":"why"}">${esc(why)}${esc(tgt)}</div>
  <div class="row">${hold?`<button class="btn primary" onclick="act('${z.name}','resume',{})">Resume auto</button>`:`<button class="btn" onclick="act('${z.name}','hold',{})">Hold ${S.override_hours||2}h</button>`}</div>
  <div class="gwrap"><div class="gbar"><span class="seg">${["24h","7d"].map(g=>`<button class="${(H[z.name]?.range||"24h")===g?"on":""}" onclick="loadHist('${z.name}','${g}')">${g}</button>`).join("")}</span>
   <label class="tog"><input type="checkbox" ${H[z.name]?.out!==false?"checked":""} onchange="H['${z.name}'].out=this.checked;drawG('${z.name}')"> Outdoor</label></div>

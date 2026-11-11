@@ -181,7 +181,19 @@ test("0.4.0 next change / why line", () => {
   assert.equal(nextLine({ reason: "ok", next: { setpoint: 68, ts: t, profile: "sleep" } }, tz), "Next: 68° at 10:00 PM (sleep)");
   assert.equal(nextLine({ reason: "manual_override", next: null }, tz, t), "Manual hold until 10:00 PM");
   assert.equal(nextLine({ reason: "defrosting", next: null }, tz), "Defrosting — app waits");
+  assert.equal(nextLine({ reason: "window_slope_pause", next: null }, tz), "Paused, window open?");
   assert.equal(nextLine(null, tz), "");
+  const paused = statusOf({ state: "off", attributes: {} }, LR, false, { reason: "window_slope_pause" });
+  assert.equal(paused.why, "Paused, window open?");
+});
+
+test("0.9.5 slope pause color is the dark accent, not amber", () => {
+  const start = SRC.indexOf("/* slope-pause-start */");
+  const end = SRC.indexOf("/* slope-pause-end */");
+  assert.ok(start >= 0 && end > start);
+  const chunk = SRC.slice(start, end);
+  assert.match(chunk, /#3e6ae1/);
+  assert.doesNotMatch(chunk, /orange|amber|#d9902b|#e08a3c|#f0c27a|#e8a05a|#e2c07a/i);
 });
 
 test("0.4.0 event strip: spans, open spans run to now, clipped, escaped kinds only", () => {

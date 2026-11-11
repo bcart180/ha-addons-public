@@ -5,6 +5,9 @@
 /* Soft Slate tokens, dark "Tesla" variant (same accent/status colors as house-soft-slate-theme). */
 :root{--bg:#000000;--elev:#1a1a1a;--card:#414141;--text:#ffffff;--dim:#b4b6bb;--line:#5c5c5c;
 --accent:#005aff;--accent-h:#005aff;--blue:#005aff;--good:#3ddc5a;--bad:#d0d0d0;--warn:#d0d0d0;--selected:#757575;--r:8px;--rc:8px}
+/* slope-pause-start */
+.slope-pause{color:#3e6ae1}
+/* slope-pause-end */
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);
 font:18px "Segoe UI",system-ui,sans-serif}
 .shell{max-width:960px;margin:0 auto;padding:20px}
@@ -50,7 +53,7 @@ function graph(c,h){const ctx=c.getContext("2d"),W=c.width=c.clientWidth*2,H=c.h
  [[2,"#757575"],[3,"#005aff"],[1,"#3ddc5a"]].forEach(([i,col])=>{ctx.strokeStyle=col;ctx.lineWidth=3;ctx.beginPath();let s=false;
   h.forEach((r,k)=>{if(r[i]==null)return;const x=k/(h.length-1)*W,y=H-(r[i]-lo)/(hi-lo)*H;s?ctx.lineTo(x,y):ctx.moveTo(x,y);s=true;});ctx.stroke();});}
 const REASONS={vacation_setback:"Vacation — setting back",vacation_at_setback:"Vacation — holding the setback",
- vacation_radiant_off:"Vacation — radiant floor stays off"};
+ vacation_radiant_off:"Vacation — radiant floor stays off",window_slope_pause:"Paused, window open?"};
 function render(){
  $("sub").textContent=S.last&&S.last.outdoor!=null?`Outside ${Math.round(S.last.outdoor)}°`:"";
  const n=$("notice");n.hidden=S.enabled&&!S.dry_run;
@@ -63,7 +66,7 @@ function render(){
   <div class="dim">Inside ${last[1]!=null?Math.round(last[1])+"°":"--"}</div>
   <div class="ctrl"><button class="btn" onclick="bump('${z.name}',-1)">−</button><button class="btn" onclick="bump('${z.name}',1)">+</button></div>
   <span class="tag ${esc(r.mode||"")}">${word}${ov?" · manual":""}</span>
-  ${REASONS[r.reason]?`<div class="dim">${esc(REASONS[r.reason])}</div>`:""}
+  ${r.reason==="window_slope_pause"?`<div class="slope-pause">${esc(REASONS[r.reason])}</div>`:(REASONS[r.reason]?`<div class="dim">${esc(REASONS[r.reason])}</div>`:"")}
   ${ov?`<div><button class="btn" style="margin-top:8px" onclick="resume('${z.name}')">Back to auto</button></div>`:""}
   <canvas id="g_${z.name}"></canvas></div>`}).join("");
  S.zones.forEach(z=>graph($("g_"+z.name),z.history));}

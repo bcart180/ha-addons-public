@@ -150,6 +150,279 @@ def window_target(action, last_mode, last_setpoint, unit_modes, cfg):
     return "off", last_setpoint
 
 
+# 0.9.5 slope window (Versatile Thermostat "auto" shape: threshold, end at 0, max duration, delay).
+# The estimate is the room sensor's own 20-minute lookback, not an EMA: a 1 F step on a slow sensor
+# is about 3 F/hr over 20 minutes and stays under the default 5.4 F/hr trigger.
+# A manual hold still pauses with its partner. Set this false to skip the pair pause while any
+# controlled split is in a hold (the 0.5.0 priority). Tests cover both.
+SLOPE_PAUSE_DURING_HOLD = True
+SLOPE_THRESHOLD_F_PER_H = 5.4
+SLOPE_DELAY_S = 120
+SLOPE_MAX_MIN = 30
+SLOPE_LOOKBACK_MIN = 20
+SLOPE_GUARD_S = 45 * 60
+SLOPE_OUTDOOR_GAP_F = 5.0
+SLOPE_MAX_PAUSES_PER_HOUR = 2
+SLOPE_SAMPLE_MARGIN_S = 10 * 60
+
+
+def empty_slope_state():
+    """Persisted slope-window record. Absent from older state files."""
+    return {
+        "active": False, "since": None, "trigger_zone": None, "max_until": None, "await_flat": False,
+        "below_since": {}, "guard_until": {}, "pause_starts": {}, "seen_mode": {}, "seen_setpoint": {},
+        "samples": {}, "saved": {},
+    }
+
+
+def _clamp_num(raw, default, lo, hi, whole=False):
+    """Missing -> default. Non-numeric -> default. Out of range -> clamped."""
+    if raw is None or raw == "":
+        return default
+    v = _num(raw)
+    if v is None:
+        return default
+    if whole:
+        v = int(v)
+    return min(max(v, lo), hi)
+
+
+def slope_zone_settings(zone):
+    """Per-zone slope options. Absent keys use the 0.9.5 defaults."""
+    z = zone or {}
+    return {
+        "threshold": _clamp_num(z.get("window_slope_threshold_f_per_h"), SLOPE_THRESHOLD_F_PER_H, 2.0, 15.0),
+        "delay_s": int(_clamp_num(z.get("window_slope_delay_s"), SLOPE_DELAY_S, 0, 1800, whole=True)),
+        "max_min": int(_clamp_num(z.get("window_slope_max_min"), SLOPE_MAX_MIN, 5, 120, whole=True)),
+        "lookback_min": int(_clamp_num(z.get("window_slope_lookback_min"), SLOPE_LOOKBACK_MIN, 10, 60, whole=True)),
+    }
+
+
+def prune_slope_samples(samples, now, lookback_s, margin_s=SLOPE_SAMPLE_MARGIN_S):
+    """Keep the lookback window, a margin, and the one older sample that still holds the value."""
+    pts = []
+    for row in samples or []:
+        if isinstance(row, (list, tuple)) and len(row) >= 2:
+            ts, val = _num(row[0]), _num(row[1])
+            if ts is not None and val is not None:
+                pts.append((ts, val))
+    pts.sort()
+    if not pts:
+        return []
+    cutoff = now - lookback_s - max(0, margin_s)
+    older = [p for p in pts if p[0] < cutoff]
+    keep = [p for p in pts if p[0] >= cutoff]
+    if older:
+        keep.insert(0, older[-1])
+    return [[a, b] for a, b in keep]
+
+
+def slope_f_per_h(samples, now, lookback_s):
+    """(T_now - T held at now-lookback) / lookback, in F/hr. None until a sample covers the lookback."""
+    pts = []
+    for row in samples or []:
+        if isinstance(row, (list, tuple)) and len(row) >= 2:
+            ts, val = _num(row[0]), _num(row[1])
+            if ts is not None and val is not None and ts <= now + 1e-3:
+                pts.append((ts, val))
+    if not pts or lookback_s <= 0:
+        return None
+    pts.sort()
+    t_ref = now - lookback_s
+    prior = [p for p in pts if p[0] <= t_ref + 1e-3]
+    if not prior:
+        return None
+    return (pts[-1][1] - prior[-1][1]) / (lookback_s / 3600.0)
+
+
+def _copy_slope(prev):
+    base = empty_slope_state()
+    src = prev if isinstance(prev, dict) else {}
+    base["active"] = src.get("active") is True
+    base["await_flat"] = src.get("await_flat") is True
+    base["since"] = _num(src.get("since"))
+    base["max_until"] = _num(src.get("max_until"))
+    base["trigger_zone"] = src.get("trigger_zone") if isinstance(src.get("trigger_zone"), str) else None
+    for key in ("below_since", "guard_until"):
+        raw = src.get(key) if isinstance(src.get(key), dict) else {}
+        base[key] = {k: _num(v) for k, v in raw.items() if isinstance(k, str) and _num(v) is not None}
+    starts = src.get("pause_starts") if isinstance(src.get("pause_starts"), dict) else {}
+    for name, rows in starts.items():
+        if isinstance(name, str) and isinstance(rows, list):
+            kept = [t for t in (_num(x) for x in rows) if t is not None]
+            if kept:
+                base["pause_starts"][name] = kept
+    seen_m = src.get("seen_mode") if isinstance(src.get("seen_mode"), dict) else {}
+    base["seen_mode"] = {k: v for k, v in seen_m.items() if isinstance(k, str) and isinstance(v, str)}
+    seen_s = src.get("seen_setpoint") if isinstance(src.get("seen_setpoint"), dict) else {}
+    base["seen_setpoint"] = {k: _num(v) for k, v in seen_s.items() if isinstance(k, str) and _num(v) is not None}
+    saved = src.get("saved") if isinstance(src.get("saved"), dict) else {}
+    for name, rec in saved.items():
+        if isinstance(name, str) and isinstance(rec, dict) and isinstance(rec.get("mode"), str):
+            base["saved"][name] = {
+                "mode": rec["mode"], "setpoint": _num(rec.get("setpoint")), "ts": _num(rec.get("ts")),
+                "cmd_mode": rec.get("cmd_mode") if isinstance(rec.get("cmd_mode"), str) else None,
+                "cmd_setpoint": _num(rec.get("cmd_setpoint")),
+            }
+    return base
+
+
+def _note_live(st, gates, now):
+    """Remember mode and setpoint. A decrease or a mode change blocks a new pause for 45 min."""
+    for name, g in (gates.get("zones") or {}).items():
+        if not g.get("eligible"):
+            continue
+        mode, sp = g.get("mode"), _num(g.get("setpoint"))
+        seen_m, seen_s = st["seen_mode"].get(name), st["seen_setpoint"].get(name)
+        if seen_m is not None and mode is not None and mode != seen_m:
+            st["guard_until"][name] = now + SLOPE_GUARD_S
+        if seen_s is not None and sp is not None and sp < seen_s - 0.25:
+            st["guard_until"][name] = now + SLOPE_GUARD_S
+        if mode is not None:
+            st["seen_mode"][name] = mode
+        if sp is not None:
+            st["seen_setpoint"][name] = sp
+
+
+def _recent_pauses(st, name, now):
+    kept = [t for t in st["pause_starts"].get(name, []) if now - t < 3600]
+    st["pause_starts"][name] = kept
+    return kept
+
+
+def _trigger_ok(name, g, gates, st, now):
+    if not gates.get("enabled") or gates.get("vacation") or gates.get("defrost"):
+        return False
+    if g.get("mode") != "heat":
+        return False
+    until = st["guard_until"].get(name)
+    if until is not None and now < until:
+        return False
+    indoor, outdoor = _num(g.get("indoor")), _num(g.get("outdoor"))
+    if indoor is None or outdoor is None or outdoor > indoor - SLOPE_OUTDOOR_GAP_F:
+        return False
+    if len(_recent_pauses(st, name, now)) >= SLOPE_MAX_PAUSES_PER_HOUR:
+        return False
+    return True
+
+
+def _hold_allows(gates):
+    if SLOPE_PAUSE_DURING_HOLD:
+        return True
+    for g in (gates.get("zones") or {}).values():
+        if g.get("eligible") and g.get("controlled") and g.get("hold"):
+            return False
+    return True
+
+
+def slope_window_step(prev, samples, now, cfg, gates):
+    """One cycle of the pair slope detector.
+
+    samples: {zone: [[sensor_last_changed, temp_f], ...]} using the room sensor only.
+    cfg: {"zones": {name: slope_zone_settings}}
+    gates: enabled, vacation, defrost, zones[name] -> eligible, controlled, person_off, hold,
+      mode, setpoint, indoor, outdoor, sensor_ok.
+    Returns the new persisted state plus "event" ("pause"|"resume"|None) and "slopes".
+    """
+    st = _copy_slope(prev)
+    zone_cfg = (cfg or {}).get("zones") or {}
+    zone_gates = (gates or {}).get("zones") or {}
+    stored = {}
+    for name, rows in (samples or {}).items():
+        if not isinstance(name, str):
+            continue
+        look = int(zone_cfg.get(name, slope_zone_settings(None))["lookback_min"]) * 60
+        stored[name] = prune_slope_samples(rows, now, look)
+    st["samples"] = stored
+    if not st.get("active"):
+        _note_live(st, gates or {}, now)
+    slopes = {}
+    for name, g in zone_gates.items():
+        if not g.get("eligible"):
+            continue
+        if not g.get("sensor_ok"):
+            slopes[name] = None
+            st["below_since"].pop(name, None)
+            continue
+        look = int(zone_cfg.get(name, slope_zone_settings(None))["lookback_min"]) * 60
+        slopes[name] = slope_f_per_h(stored.get(name), now, look)
+    st["slopes"] = slopes
+    st["event"] = None
+    if st["active"]:
+        if not (gates or {}).get("enabled"):
+            return st
+        trig = st.get("trigger_zone")
+        slope = slopes.get(trig) if trig in slopes else None
+        natural = slope is not None and slope >= 0
+        max_until = st.get("max_until")
+        timed = max_until is not None and now >= max_until
+        if natural or timed:
+            st["event"] = "resume"
+            st["active"] = False
+            st["await_flat"] = bool(timed and not natural)
+            st["since"] = None
+            st["max_until"] = None
+            st["below_since"] = {}
+            if natural:
+                st["trigger_zone"] = None
+            for name, g in zone_gates.items():
+                if g.get("eligible"):
+                    st["guard_until"][name] = now + SLOPE_GUARD_S
+        return st
+    if st.get("await_flat"):
+        trig = st.get("trigger_zone")
+        slope = slopes.get(trig) if trig else None
+        if slope is not None and slope >= 0:
+            st["await_flat"] = False
+            st["trigger_zone"] = None
+        else:
+            return st
+    candidates = []
+    for name, g in zone_gates.items():
+        if not g.get("eligible"):
+            continue
+        c = zone_cfg.get(name, slope_zone_settings(None))
+        slope = slopes.get(name)
+        if slope is None or slope >= -c["threshold"]:
+            st["below_since"].pop(name, None)
+            continue
+        started = st["below_since"].get(name)
+        if started is None:
+            st["below_since"][name] = now
+            started = now
+        if now - started < c["delay_s"] or not _trigger_ok(name, g, gates or {}, st, now):
+            continue
+        if not g.get("sensor_ok"):
+            continue
+        candidates.append(name)
+    if not candidates or not _hold_allows(gates or {}):
+        return st
+    trigger = candidates[0]
+    c = zone_cfg.get(trigger, slope_zone_settings(None))
+    saved = {}
+    for name, g in zone_gates.items():
+        if g.get("eligible") and g.get("controlled") and not g.get("person_off") and g.get("mode") not in (None, "off"):
+            saved[name] = {"mode": g.get("mode"), "setpoint": _num(g.get("setpoint")), "ts": now,
+                           "cmd_mode": None, "cmd_setpoint": None}
+    if not saved:
+        return st
+    st["active"] = True
+    st["since"] = now
+    st["trigger_zone"] = trigger
+    st["max_until"] = now + c["max_min"] * 60
+    st["await_flat"] = False
+    st["event"] = "pause"
+    st["below_since"] = {}
+    st["saved"] = saved
+    for name, g in zone_gates.items():
+        if not g.get("eligible"):
+            continue
+        kept = _recent_pauses(st, name, now)
+        kept.append(now)
+        st["pause_starts"][name] = kept
+    return st
+
+
 def decide(inp, unit, cfg=None):
     """Return dict(action='set'|'hold', mode, setpoint, reason, profile).
 
@@ -173,6 +446,9 @@ def decide(inp, unit, cfg=None):
             # No saved number keeps the 0.9.2 freeze. A saved number is the target.
             # pick_mode runs. Sun and humidity offsets do not.
             ot = _num(inp.get("override_temp"))
+            if ot is None and inp.get("slope_resume") and inp.get("app_turned_off"):
+                # 0.9.5: a freeze-hold paused for a slope window resumes onto the setpoint it held.
+                ot = _num((inp.get("restore") or {}).get("setpoint"))
             if ot is None:
                 return hold("manual_override")
             if inp.get("unit_available") is False:

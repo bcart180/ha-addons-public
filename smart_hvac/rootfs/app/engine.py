@@ -177,8 +177,11 @@ class Engine:
         self._sanitize_state()
         self._sanitize_prefs()
         self._sanitize_override_temps()
+        self._sanitize_slope()
         # After a restart every "off" is treated as a person's off (M1), like the pyscript version.
+        # A slope pause that is still active is the app's own off, so those splits can resume.
         self.st["app_off"] = []
+        self._recover_slope_app_off()
 
     # MA L1 (0.5.1): a state file that parses but has the wrong shape must not error every cycle.
     _STATE_DICTS = ("last_change", "last_cmd", "override_until", "history", "last_result", "events",
@@ -297,6 +300,68 @@ class Engine:
                 continue
             clean[name] = float(t)
         self.st["override_temps"] = clean
+
+    def _sanitize_slope(self):
+        """Drop a malformed slope-window record. A missing key stays missing (0.9.4 files)."""
+        if "window_slope" not in self.st:
+            return
+        raw = self.st.get("window_slope")
+        if not isinstance(raw, dict):
+            log.debug("state: window_slope is %s, not an object; reset", type(raw).__name__)
+            self.st["window_slope"] = core.empty_slope_state()
+            return
+        clean = core.empty_slope_state()
+        clean["active"] = raw.get("active") is True
+        clean["await_flat"] = raw.get("await_flat") is True
+        clean["since"] = _num(raw.get("since"))
+        clean["max_until"] = _num(raw.get("max_until"))
+        if isinstance(raw.get("trigger_zone"), str):
+            clean["trigger_zone"] = raw["trigger_zone"]
+        for key in ("below_since", "guard_until"):
+            src = raw.get(key) if isinstance(raw.get(key), dict) else {}
+            clean[key] = {k: _num(v) for k, v in src.items() if isinstance(k, str) and _num(v) is not None}
+        starts = raw.get("pause_starts") if isinstance(raw.get("pause_starts"), dict) else {}
+        for name, rows in starts.items():
+            if isinstance(name, str) and isinstance(rows, list):
+                kept = [t for t in (_num(x) for x in rows) if t is not None]
+                if kept:
+                    clean["pause_starts"][name] = kept
+        seen_m = raw.get("seen_mode") if isinstance(raw.get("seen_mode"), dict) else {}
+        clean["seen_mode"] = {k: v for k, v in seen_m.items() if isinstance(k, str) and isinstance(v, str)}
+        seen_s = raw.get("seen_setpoint") if isinstance(raw.get("seen_setpoint"), dict) else {}
+        clean["seen_setpoint"] = {k: _num(v) for k, v in seen_s.items()
+                                   if isinstance(k, str) and _num(v) is not None}
+        samples = raw.get("samples") if isinstance(raw.get("samples"), dict) else {}
+        for name, rows in samples.items():
+            if not isinstance(name, str) or not isinstance(rows, list):
+                continue
+            kept = []
+            for row in rows:
+                if isinstance(row, list) and len(row) >= 2 and _num(row[0]) is not None and _num(row[1]) is not None:
+                    kept.append([_num(row[0]), _num(row[1])])
+            if kept:
+                clean["samples"][name] = kept
+        saved = raw.get("saved") if isinstance(raw.get("saved"), dict) else {}
+        for name, rec in saved.items():
+            if isinstance(name, str) and isinstance(rec, dict) and isinstance(rec.get("mode"), str):
+                clean["saved"][name] = {
+                    "mode": rec["mode"], "setpoint": _num(rec.get("setpoint")), "ts": _num(rec.get("ts")),
+                    "cmd_mode": rec.get("cmd_mode") if isinstance(rec.get("cmd_mode"), str) else None,
+                    "cmd_setpoint": _num(rec.get("cmd_setpoint")),
+                }
+        if not clean["active"]:
+            clean["saved"] = {}
+        self.st["window_slope"] = clean
+
+    def _recover_slope_app_off(self):
+        st = self.st.get("window_slope")
+        if not isinstance(st, dict) or not st.get("active"):
+            return
+        names = []
+        for name, rec in (st.get("saved") or {}).items():
+            if isinstance(rec, dict) and (rec.get("cmd_mode") or "off") == "off":
+                names.append(name)
+        self.st["app_off"] = sorted(set(names))
 
     def save(self):
         if not self.state_path:
@@ -695,6 +760,17 @@ class Engine:
             for n in [n for n in self.st.get(key, {}) if n not in names]:
                 self.st[key].pop(n, None)
                 dropped.add(n)
+        slope = self.st.get("window_slope")
+        if isinstance(slope, dict):
+            for key in ("samples", "saved", "below_since", "guard_until", "pause_starts", "seen_mode", "seen_setpoint"):
+                bucket = slope.get(key)
+                if not isinstance(bucket, dict):
+                    continue
+                for n in [n for n in bucket if n not in names]:
+                    bucket.pop(n, None)
+                    dropped.add(n)
+            if slope.get("trigger_zone") not in names and slope.get("trigger_zone") is not None:
+                slope["trigger_zone"] = None
         if dropped:
             log.info("pruned state of removed zones: %s", ", ".join(sorted(dropped)))
         return sorted(dropped)
@@ -847,6 +923,193 @@ class Engine:
                 "indoor": thin(indoor), "setpoint": thin(setpt), "heating": thin(heat), "cooling": thin(cool),
                 "humidity": thin(humid), "defrost": defrost, "outdoor": thin(outdoor)}
 
+    # ---------- slope window (0.9.5) ----------
+    def _slope_on(self):
+        return bool(self.opts.get("window_slope", True))
+
+    @staticmethod
+    def _slope_eligible(zone):
+        """Splits with a room sensor and no contact window. Radiant (heat_only) never takes part."""
+        return bool(zone and not zone.get("heat_only") and zone.get("indoor") and not zone.get("window")
+                    and zone.get("enabled", True))
+
+    def _slope_diverged(self, name, cl, setpt, rec):
+        """True when the unit no longer matches the pause command the app managed to write."""
+        cmd = rec.get("cmd_mode")
+        if not isinstance(cmd, str):
+            return False
+        last = self.st["last_cmd"].get(name) or {}
+        if last.get("mode") != cmd:
+            return False  # the pause write has not landed (dry run, or this same cycle)
+        if cl != cmd:
+            return True
+        if cl != "off":
+            want = _num(rec.get("cmd_setpoint"))
+            got = _num(setpt)
+            return want is not None and got is not None and abs(got - want) > OWN_WRITE_TOLERANCE_F
+        orig = _num(rec.get("setpoint"))
+        got = _num(setpt)
+        return orig is not None and got is not None and abs(got - orig) > OWN_WRITE_TOLERANCE_F
+
+    def _slope_collect(self, staged, prev):
+        base = {}
+        if isinstance(prev, dict) and isinstance(prev.get("samples"), dict):
+            for name, rows in prev["samples"].items():
+                if isinstance(rows, list):
+                    base[name] = [list(p) for p in rows if isinstance(p, list)]
+        saw = False
+        now = self.clock()
+        for item in staged:
+            z, name = item["z"], item["name"]
+            if not self._slope_eligible(z):
+                continue
+            if not item.get("sensor_ok"):
+                base.pop(name, None)
+                continue
+            ts = _ts((item.get("sensor_state") or {}).get("last_changed"))
+            val = item.get("sensor_val")
+            if ts is None or val is None:
+                continue
+            saw = True
+            rows = base.setdefault(name, [])
+            if rows and abs(rows[-1][0] - ts) < 1e-3:
+                rows[-1][1] = val
+            else:
+                rows.append([ts, val])
+                rows.sort()
+            look = core.slope_zone_settings(z)["lookback_min"] * 60
+            base[name] = core.prune_slope_samples(rows, now, look)
+        return base, saw
+
+    def _slope_drop_diverged(self, staged, prev):
+        if not isinstance(prev, dict) or not prev.get("active"):
+            return prev
+        saved = dict(prev.get("saved") or {})
+        for item in staged:
+            rec = saved.get(item["name"])
+            if not isinstance(rec, dict):
+                continue
+            # A person's edit pops last_cmd before this runs, so the command no longer matches.
+            if item.get("manual") or self._slope_diverged(item["name"], item["cl"], item["setpt"], rec):
+                saved.pop(item["name"], None)
+                item["diverged"] = True
+                if item["cl"] == "off":
+                    self.st["app_off"] = [n for n in self.st["app_off"] if n != item["name"]]
+                log.info("window slope: discarded saved state for %s (manual change)", item["name"])
+        prev = dict(prev, saved=saved)
+        if not saved:
+            prev["active"] = False
+            prev["await_flat"] = True
+            prev["below_since"] = {}
+        return prev
+
+    def _slope_force(self, item, rec):
+        mode = rec.get("cmd_mode") or "off"
+        sp = rec.get("cmd_setpoint")
+        if mode == "off":
+            sp = item.get("eff_setpt")
+        same = item["cl"] == mode and (mode == "off" or sp is None or _num(item["setpt"]) is None
+                                        or abs(_num(item["setpt"]) - _num(sp)) < 0.5)
+        item["slope_force"] = True
+        item["slope_result"] = {"action": "hold" if same else "set", "mode": mode, "setpoint": sp,
+                                "reason": "window_slope_pause", "profile": None}
+
+    def _slope_public(self, zone):
+        """/api/state block. Numbers or null. Radiant and contact-sensor zones stay idle."""
+        empty = {"active": False, "since": None, "max_until": None, "slope_f_per_h": None, "trigger_zone": None}
+        if not self._slope_eligible(zone):
+            return empty
+        st = self.st.get("window_slope") if isinstance(self.st.get("window_slope"), dict) else {}
+        name = zone.get("name")
+        slopes = getattr(self, "_slope_view", None) or {}
+        slope = slopes.get(name)
+        paused = bool(st.get("active")) and name in (st.get("saved") or {})
+        return {
+            "active": paused,
+            "since": st.get("since") if paused else None,
+            "max_until": st.get("max_until") if paused else None,
+            "slope_f_per_h": None if slope is None else round(float(slope), 3),
+            "trigger_zone": st.get("trigger_zone") if st.get("active") else None,
+        }
+
+    def _slope_apply(self, staged, now, vac, outdoor_f):
+        """Update the pair detector and mark staged zones to pause or restore. No-op without sensor timestamps
+        and without a persisted pause, so a cycle that never sees last_changed matches 0.9.4."""
+        if not self._slope_on():
+            prev = self.st.get("window_slope")
+            if isinstance(prev, dict) and prev.get("active"):
+                for item in staged:
+                    rec = (prev.get("saved") or {}).get(item["name"])
+                    if isinstance(rec, dict):
+                        item["inp"]["restore"] = {"mode": rec.get("mode"), "setpoint": rec.get("setpoint")}
+                        item["inp"]["slope_resume"] = True
+                prev = dict(prev, active=False, saved={}, await_flat=False, since=None, max_until=None)
+                self.st["window_slope"] = prev
+                log.info("window slope: option off, resuming paused splits")
+            return
+        prev = self.st.get("window_slope") if isinstance(self.st.get("window_slope"), dict) else None
+        if prev is not None:
+            prev = self._slope_drop_diverged(staged, prev)
+        samples, saw = self._slope_collect(staged, prev)
+        if prev is None and not saw:
+            self._slope_view = {}
+            return
+        cfg_zones, gate_zones = {}, {}
+        any_defrost = False
+        for item in staged:
+            z, name = item["z"], item["name"]
+            if item.get("defrost") or item.get("grace"):
+                if not z.get("heat_only"):
+                    any_defrost = True
+            if not self._slope_eligible(z):
+                continue
+            cfg_zones[name] = core.slope_zone_settings(z)
+            person_off = item["cl"] == "off" and name not in self.st["app_off"]
+            gate_zones[name] = {
+                "eligible": True, "controlled": True, "person_off": person_off,
+                "hold": self._override_active(name, now), "mode": item["cl"], "setpoint": _num(item["eff_setpt"]),
+                "indoor": item.get("sensor_val") if item.get("sensor_ok") else None, "outdoor": outdoor_f,
+                "sensor_ok": bool(item.get("sensor_ok")),
+            }
+        gates = {"enabled": self.enabled, "vacation": bool(vac), "defrost": any_defrost, "zones": gate_zones}
+        new = core.slope_window_step(prev, samples, now, {"zones": cfg_zones}, gates)
+        by = {item["name"]: item for item in staged}
+        if new.get("event") == "resume":
+            for name, rec in list((new.get("saved") or {}).items()):
+                item = by.get(name)
+                if item is None or item.get("diverged") or not isinstance(rec, dict):
+                    continue
+                item["inp"]["restore"] = {"mode": rec.get("mode"), "setpoint": rec.get("setpoint")}
+                item["inp"]["slope_resume"] = True
+            new["saved"] = {}
+            log.info("window slope: resume (trigger %s)", new.get("trigger_zone"))
+        if new.get("event") == "pause":
+            for name, rec in (new.get("saved") or {}).items():
+                item = by.get(name)
+                if item is None or not isinstance(rec, dict):
+                    continue
+                mode, sp = core.window_target(item["z"].get("window_action") or "off", rec.get("mode"),
+                                              rec.get("setpoint"), item["inp"].get("unit_modes"), item["cfg"])
+                rec["cmd_mode"] = mode
+                rec["cmd_setpoint"] = None if mode == "off" else _num(sp)
+                new.setdefault("seen_mode", {})[name] = mode
+            log.info("window slope: pause both splits (trigger %s)", new.get("trigger_zone"))
+        if new.get("active"):
+            for name, rec in (new.get("saved") or {}).items():
+                item = by.get(name)
+                if item is None or item.get("diverged") or not isinstance(rec, dict):
+                    continue
+                if rec.get("cmd_mode") is None:
+                    mode, sp = core.window_target(item["z"].get("window_action") or "off", rec.get("mode"),
+                                                  rec.get("setpoint"), item["inp"].get("unit_modes"), item["cfg"])
+                    rec["cmd_mode"] = mode
+                    rec["cmd_setpoint"] = None if mode == "off" else _num(sp)
+                self._slope_force(item, rec)
+        self._slope_view = {k: v for k, v in (new.get("slopes") or {}).items()}
+        for key in ("event", "slopes", "pause_zones", "resume_zones"):
+            new.pop(key, None)
+        self.st["window_slope"] = new
+
     # ---------- main loop ----------
     def evaluate(self):
         states = {s["entity_id"]: s for s in self.ha.get_states()}
@@ -877,6 +1140,7 @@ class Engine:
         vac = self.vacation_on(states)
         results = {}
         pending = []
+        staged = []
         results_lead = {}
         results_adv = {}
         for z in self.opts.get("zones", []) or []:
@@ -887,6 +1151,9 @@ class Engine:
             floor, _ = self._get(states, z.get("floor"))
             win, _ = self._get(states, z.get("window"))
             ind_stale = self._indoor_stale(states, z, now)
+            sensor_state = states.get(z.get("indoor")) if z.get("indoor") else None
+            sensor_val = _num(ind)
+            sensor_ok = sensor_val is not None and not ind_stale
             if ind_stale:
                 ind = None  # frozen room sensor: fall back to the unit's own reading, same as unavailable
             indoor = _num(ind) if _num(ind) is not None else self._unit_temp(cattr)
@@ -919,6 +1186,7 @@ class Engine:
                 else:
                     self.st["defrost_since"].pop(name, None)
             last = self.st["last_cmd"].get(name)
+            manual = False
             # Grace matches an active defrost: the reversing valve and the room drop are not a person.
             if last and cl is not None and not defrost and not grace and not self._override_active(name, now):
                 if (cl != last.get("mode") and cl != "off") or (
@@ -928,6 +1196,7 @@ class Engine:
                         self.remember_override_temp(z, setpt)
                     self.start_override(name)
                     self.st["last_cmd"].pop(name, None)
+                    manual = True
             # the unit rounded the app's own write: decide against what the app wrote, so the setback is not
             # re-sent every cycle and leaving vacation restores the scheduled setpoint from there.
             eff_setpt = setpt
@@ -1064,11 +1333,24 @@ class Engine:
                     self._learner_fault("coast", e)
             if vac:  # vacation setback on the splits: core's away path with the vacation targets
                 cfg["away_heat"], cfg["away_cool"] = self.vacation_targets()
-            r = core.decide(inp, z, cfg)
+            staged.append({
+                "name": name, "z": z, "cl": cl, "cattr": cattr, "indoor": indoor, "hum": hum, "setpt": setpt,
+                "eff_setpt": eff_setpt, "inp": inp, "cfg": cfg, "defrost": defrost, "grace": grace, "dact": dact,
+                "stuck": stuck, "aware": aware, "inferred": inferred, "manual": manual,
+                "sensor_state": sensor_state, "sensor_val": sensor_val, "sensor_ok": sensor_ok,
+            })
+        outdoor_f = self._outdoor_f(outdoor, wattr.get("temperature_unit") if w is not None else None)
+        self._slope_apply(staged, now, vac, outdoor_f)
+        for s in staged:
+            (name, z, cl, cattr, indoor, hum, setpt, inp, cfg, defrost, dact, stuck, aware, inferred) = (
+                s["name"], s["z"], s["cl"], s["cattr"], s["indoor"], s["hum"], s["setpt"], s["inp"], s["cfg"],
+                s["defrost"], s["dact"], s["stuck"], s["aware"], s["inferred"])
+            grace = s["grace"]
+            r = s["slope_result"] if s.get("slope_force") else core.decide(inp, z, cfg)
             if grace and not defrost and r.get("reason") == "defrosting":
                 # Post-defrost grace skips the setpoint chase without leaving a Defrosting badge up.
                 r = dict(r, reason="no_change")
-            if defrost and r["action"] == "set" and r.get("reason") != "window_open":
+            if defrost and r["action"] == "set" and r.get("reason") not in ("window_open", "window_slope_pause"):
                 # busy defrosting / pre-heating: no write, no mode-change timestamp, no missed-setpoint retry
                 r = {"action": "hold", "mode": cl, "setpoint": setpt, "reason": dact, "profile": r.get("profile")}
             elif defrost and r.get("reason") in ("no_change", "ok"):
@@ -1114,7 +1396,7 @@ class Engine:
             kinds = set()
             if self._override_active(name, now):
                 kinds.add("hold")
-            if r.get("reason") == "window_open":
+            if r.get("reason") in ("window_open", "window_slope_pause"):
                 kinds.add("window")
             if vac:
                 kinds.add("vacation")
@@ -1324,6 +1606,7 @@ class Engine:
                            "override_until": self.st["override_until"].get(z["name"]),
                            "override_temps": self.override_temp_view(z),
                            "preferences": self.preference_view(z),
+                           "window_slope": self._slope_public(z),
                            "history": self.st["history"].get(z["name"], []),
                            "events": self.events(z["name"], self.clock() - 86400)}
                           for z in self.opts.get("zones", []) or []],

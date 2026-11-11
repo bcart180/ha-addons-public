@@ -92,6 +92,20 @@ def test_defrost_entry_wrong_containers(tmp_path):
     e.evaluate()
 
 
+def test_window_slope_block_and_malformed_reset(tmp_path, caplog):
+    caplog.set_level(logging.DEBUG, logger="smart_hvac")
+    e = make(tmp_path, {"window_slope": {"active": "yes", "samples": {"lr": "no"}, "saved": 4,
+                                         "below_since": {"lr": "soon"}, "pause_starts": {"lr": [1, "x"]}}})
+    assert e.st["window_slope"]["active"] is False
+    assert e.st["window_slope"]["samples"] == {}
+    assert e.st["window_slope"]["pause_starts"]["lr"] == [1]
+    e.evaluate()
+    block = e.snapshot()["zones"][0]["window_slope"]
+    assert set(block) == {"active", "since", "max_until", "slope_f_per_h", "trigger_zone"}
+    assert block["active"] is False and block["slope_f_per_h"] is None
+    assert block["since"] is None and block["max_until"] is None and block["trigger_zone"] is None
+
+
 def test_well_formed_state_unchanged(tmp_path):
     e = make(tmp_path, {}, defrost_aware=True)
     for _ in range(3):

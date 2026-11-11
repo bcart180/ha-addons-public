@@ -1,5 +1,5 @@
 name: Smart HVAC
-version: "0.9.4"
+version: "0.9.5"
 slug: smart_hvac
 description: Smart thermostat for multi-zone mini-split systems. All heads share one outdoor unit, so they are always kept in the same heat/cool mode. Presence-, weather- and sun-aware, plus radiant floor (Ingress panel)
 url: https://github.com/bcart180/ha-addons-public/tree/main/smart_hvac
@@ -32,6 +32,9 @@ options:
   # Heat-pump defrost: reported hvac_action, or inferred when a head only reports heating/idle.
   # false restores the previous short-cycle and setpoint-chase behavior.
   defrost_aware: true
+  # Open-window pause from the room sensor's 20-minute temperature slope. Radiant zones are excluded.
+  # false restores 0.9.4 (contact sensors only). Per-zone window_slope_* keys override the defaults.
+  window_slope: true
   # Bath radiant: floor setpoint cap 85, air shutoff 80 (owner, 30 Oct).
   radiant_setpoint_max: 85
   radiant_air_shutoff: 80
@@ -88,6 +91,7 @@ schema:
   vacation_heat: float(50,68)?
   vacation_cool: float(76,90)?
   defrost_aware: bool
+  window_slope: bool?
   learned_preheat: bool?
   away_delay_min: int(0,120)?
   sleep_coast_max_min: int(0,180)?
@@ -113,6 +117,10 @@ schema:
       window_action: list(off|fan_only|eco)?
       window_open_delay_s: int(0,3600)?
       window_close_delay_s: int(0,3600)?
+      window_slope_threshold_f_per_h: float(2,15)?
+      window_slope_delay_s: int(0,1800)?
+      window_slope_max_min: int(5,120)?
+      window_slope_lookback_min: int(10,60)?
       facing_az: int(0,359)
       solar_factor: float(0,1)
       heat_only: bool
