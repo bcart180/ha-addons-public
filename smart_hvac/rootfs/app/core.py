@@ -170,7 +170,45 @@ def decide(inp, unit, cfg=None):
         if not inp.get("enabled"):
             return hold("disabled")
         if inp.get("override_active"):
-            return hold("manual_override")
+            # No saved number keeps the 0.9.2 freeze. A saved number is the target.
+            # pick_mode runs. Sun and humidity offsets do not.
+            ot = _num(inp.get("override_temp"))
+            if ot is None:
+                return hold("manual_override")
+            if inp.get("unit_available") is False:
+                return hold("missing:unit")
+            if inp.get("last_mode") == "off" and not inp.get("app_turned_off"):
+                return hold("unit_off")
+            indoor, outdoor = _num(inp.get("indoor_temp")), _num(inp.get("outdoor_temp"))
+            if indoor is None:
+                return hold("missing:indoor_temp")
+            if outdoor is None:
+                return hold("missing:outdoor_temp")
+            # Window, vacation, and the schedule stay on the path below. A temperature hold still
+            # returns here, so those rules keep the same priority they had when a hold froze the zone.
+            fc = _num(inp.get("forecast_temp"))
+            outdoor_eff = outdoor if fc is None else (outdoor + fc) / 2.0
+            outdoor_hi = outdoor if fc is None else max(outdoor, fc)
+            if _num(inp.get("forecast_high")) is not None:
+                outdoor_hi = max(outdoor_hi, _num(inp["forecast_high"]))
+            heat_only = bool(unit.get("heat_only"))
+            target = ot
+            if heat_only and _num(c.get("radiant_setpoint_max")) is not None:
+                target = min(target, _num(c["radiant_setpoint_max"]))
+            target = round(min(max(target, c["min_temp"]), c["max_temp"]) * 2) / 2.0
+            mode = pick_mode(indoor, target, outdoor_eff, inp.get("last_mode"), c, heat_only, outdoor_hi)
+            last_mode = inp.get("last_mode")
+            last_sp = _num(inp.get("last_setpoint"))
+            thawing = bool(inp.get("defrosting"))
+            if mode != last_mode and last_mode in ("heat", "cool") and mode in ("heat", "cool"):
+                since = _num(inp.get("now_ts")) - (_num(inp.get("last_mode_change_ts")) or 0)
+                if since < c["min_cycle_s"]:
+                    return hold("short_cycle_guard")
+            if thawing and mode == last_mode and last_sp is not None and abs(last_sp - target) >= 0.5:
+                return hold("defrosting")
+            if mode == last_mode and last_sp is not None and abs(last_sp - target) < 0.5:
+                return hold("manual_override")
+            return {"action": "set", "mode": mode, "setpoint": target, "reason": "manual_override", "profile": None}
         if inp.get("unit_available") is False:
             return hold("missing:unit")
         if inp.get("last_mode") == "off" and not inp.get("app_turned_off"):

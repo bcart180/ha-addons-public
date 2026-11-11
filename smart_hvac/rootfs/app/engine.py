@@ -176,6 +176,7 @@ class Engine:
                 pass
         self._sanitize_state()
         self._sanitize_prefs()
+        self._sanitize_override_temps()
         # After a restart every "off" is treated as a person's off (M1), like the pyscript version.
         self.st["app_off"] = []
 
@@ -277,6 +278,25 @@ class Engine:
             if kept:
                 clean_z[name] = kept
         self.st["prefs"] = {"global": clean_g, "zones": clean_z}
+
+    def _sanitize_override_temps(self):
+        """Keep numeric per-zone override temperatures. A missing key stays missing (0.9.2 files)."""
+        if "override_temps" not in self.st:
+            return
+        raw = self.st.get("override_temps")
+        if not isinstance(raw, dict):
+            log.debug("state: override_temps is %s, not an object; dropped", type(raw).__name__)
+            self.st.pop("override_temps", None)
+            return
+        clean = {}
+        for name, v in raw.items():
+            if not isinstance(name, str) or isinstance(v, bool) or not isinstance(v, (int, float)):
+                continue
+            t = _num(v)
+            if t is None:
+                continue
+            clean[name] = float(t)
+        self.st["override_temps"] = clean
 
     def save(self):
         if not self.state_path:
@@ -393,6 +413,63 @@ class Engine:
                 source = "schedule"
             out[key] = {"temperature": cfg.get(key), "source": source}
         return out
+
+    def saved_override_temp(self, name):
+        """The room's remembered override temperature, or None when the key or the room is unset."""
+        raw = self.st.get("override_temps")
+        if not isinstance(raw, dict) or name not in raw:
+            return None
+        v = raw.get(name)
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            return None
+        t = _num(v)
+        return None if t is None else float(t)
+
+    def override_temp_view(self, zone):
+        """State payload: one number and where it came from. Never a heat/cool pair, never an invented number."""
+        t = self.saved_override_temp(zone.get("name"))
+        if t is None:
+            return {"temperature": None, "source": "unset"}
+        return {"temperature": t, "source": "zone"}
+
+    def _temp_hi(self, zone):
+        return self.radiant_setpoint_max if zone.get("heat_only") else 84.0
+
+    def _store_override_temp(self, name, t):
+        raw = self.st.get("override_temps")
+        if not isinstance(raw, dict):
+            raw = {}
+            self.st["override_temps"] = raw
+        raw[name] = float(t)
+        self.save()
+        return float(t)
+
+    def set_override_temp(self, name, temperature):
+        """Remember one override temperature. Does not start or clear a hold and does not write the unit."""
+        zone = self.zone(name)
+        if zone is None:
+            raise ValueError("bad zone")
+        if isinstance(temperature, bool):
+            raise ValueError("bad temperature")
+        t = _num(temperature)
+        if t is None:
+            raise ValueError("bad temperature")
+        t = round(float(t) * 2) / 2.0
+        hi = self._temp_hi(zone)
+        if not 55.0 <= t <= hi:
+            raise ValueError("out of range")
+        return self._store_override_temp(name, t)
+
+    def remember_override_temp(self, zone, temperature):
+        """Clamp and store a temperature a hold actually used, or a change made on the thermostat."""
+        if not zone or not zone.get("name") or isinstance(temperature, bool):
+            return None
+        t = _num(temperature)
+        if t is None:
+            return None
+        t = round(float(t) * 2) / 2.0
+        t = min(max(t, 55.0), self._temp_hi(zone))
+        return self._store_override_temp(zone["name"], t)
 
     def _get(self, states, eid):
         if not eid:
@@ -847,6 +924,8 @@ class Engine:
                 if (cl != last.get("mode") and cl != "off") or (
                         _num(setpt) is not None and _num(last.get("setpoint")) is not None
                         and abs(_num(setpt) - _num(last["setpoint"])) > OWN_WRITE_TOLERANCE_F and cl != "off"):
+                    if _num(setpt) is not None:
+                        self.remember_override_temp(z, setpt)
                     self.start_override(name)
                     self.st["last_cmd"].pop(name, None)
             # the unit rounded the app's own write: decide against what the app wrote, so the setback is not
@@ -919,6 +998,7 @@ class Engine:
             inp = {
                 "enabled": self.enabled or self.dry_run,
                 "override_active": self._override_active(name, now),
+                "override_temp": self.saved_override_temp(name) if self._override_active(name, now) else None,
                 "manual_profile": "away" if vac else self.st.get("profile", "auto"),
                 "owner_home": home,
                 "minute_of_day": lt.tm_hour * 60 + lt.tm_min,
@@ -1238,9 +1318,11 @@ class Engine:
                 "radiant_floor_cap": _num(self.opts.get("radiant_floor_cap")) or core.DEFAULTS.get("radiant_floor_cap"),
                 "shared_mode": getattr(self, "shared_mode", None),
                 "preferences": {z["name"]: self.preference_view(z) for z in self.opts.get("zones", []) or []},
+                "override_temps": {z["name"]: self.override_temp_view(z) for z in self.opts.get("zones", []) or []},
                 "zones": [{"name": z["name"], "label": z.get("label", z["name"]),
                            "heat_only": bool(z.get("heat_only")),
                            "override_until": self.st["override_until"].get(z["name"]),
+                           "override_temps": self.override_temp_view(z),
                            "preferences": self.preference_view(z),
                            "history": self.st["history"].get(z["name"], []),
                            "events": self.events(z["name"], self.clock() - 86400)}

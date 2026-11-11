@@ -148,6 +148,9 @@ def make_app(engine, interval=300, heater=None, heater_tick=HEATER_TICK_S):
     def done(zone, hours=None, **wrote):
         # Every card change is a manual hold the app respects until it expires or "Resume auto".
         # hours None keeps the 2 h default. The reply reflects the write right away (0.3.2).
+        # A temperature hold remembers the number it used. A mode-only write does not invent one.
+        if "setpoint" in wrote and wrote.get("setpoint") is not None:
+            engine.remember_override_temp(zone, wrote["setpoint"])
         engine.start_override(zone["name"], hours)
         if wrote:
             engine.note_card_write(zone["name"], **wrote)
@@ -177,7 +180,9 @@ def make_app(engine, interval=300, heater=None, heater_tick=HEATER_TICK_S):
         hours, err = parse_hours(body)
         if err:
             return err
-        return done(zone, setpoint=t, hours=hours)
+        done(zone, setpoint=t, hours=hours)
+        await run_once()  # mode follows the override temperature on this request, not the next interval
+        return web.json_response(engine.snapshot())
 
     async def try_mode(zone, mode):
         """set_hvac_mode on one zone; False (logged) when the write fails."""
@@ -353,7 +358,31 @@ def make_app(engine, interval=300, heater=None, heater_tick=HEATER_TICK_S):
                 return web.json_response({"error": "setpoint not supported: %s" % why}, status=409)
             if data is not None:
                 await call("set_temperature", data)
-        return done(zone, setpoint=t, hours=hours)
+        done(zone, setpoint=t, hours=hours)
+        await run_once()  # mode follows the override temperature on this request, not the next interval
+        return web.json_response(engine.snapshot())
+
+    async def api_override_temp(r):
+        """Remember one override temperature. Does not start or clear a hold and does not write the unit.
+        Same gate as a schedule preference: allowed while the master switch is off and in practice mode."""
+        zone = engine.zone(r.match_info["zone"])
+        if not zone:
+            return web.json_response({"error": "bad zone"}, status=400)
+        body = await read_json(r)
+        if body is None:
+            return web.json_response({"error": "bad request"}, status=400)
+        temp = body.get("temperature") if "temperature" in body else None
+        if isinstance(temp, (bool, dict, list)) or temp is None:
+            return web.json_response({"error": "bad temperature"}, status=400)
+        before = dict(engine.st.get("override_until") or {})
+        try:
+            engine.set_override_temp(zone["name"], temp)
+        except ValueError:
+            return web.json_response({"error": "out of range"}, status=400)
+        if engine.st.get("override_until") != before:
+            engine.st["override_until"] = before
+            engine.save()
+        return web.json_response(engine.snapshot())
 
     async def api_resume_all(r):
         """Drop every zone hold and let the schedule run. Does not change the global profile."""
@@ -376,6 +405,8 @@ def make_app(engine, interval=300, heater=None, heater_tick=HEATER_TICK_S):
             if isinstance(h, bool) or not isinstance(h, (int, float)) or not 0.5 <= h <= 12:
                 return web.json_response({"error": "bad hours"}, status=400)
         engine.start_override(zone["name"], h)
+        if engine.saved_override_temp(zone["name"]) is not None:
+            await run_once()  # a remembered temperature picks heat or cool on this request
         return web.json_response(engine.snapshot())
 
     async def api_resume(r):
@@ -415,6 +446,7 @@ def make_app(engine, interval=300, heater=None, heater_tick=HEATER_TICK_S):
     app.router.add_post("/api/profile", api_profile)
     app.router.add_post("/api/preset", api_preset)
     app.router.add_post("/api/zone/{zone}/preference", api_preference)
+    app.router.add_post("/api/zone/{zone}/override-temp", api_override_temp)
     app.router.add_post("/api/zone/{zone}/override", api_override)
     app.router.add_post("/api/resume-all", api_resume_all)
     app.router.add_post("/api/zone/{zone}/setpoint", api_setpoint)

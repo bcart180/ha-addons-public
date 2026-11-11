@@ -74,7 +74,7 @@ Do not Start until the go-live checklist below is done; Start alone is still dry
 5. Verify both mini splits still read 71°F after one cycle.
 
 ## Thermostat cards
-Open the Climate panel and tap **Thermostat cards** (or `<ingress>/thermostat`). Each zone shows current temp, setpoint
+`<ingress>/thermostat` still opens the thermostat card page. The Climate screen does not link to it. Each zone shows current temp, setpoint
 (-/+), mode, fan and power in the ☰ menu, and the app's state: profile, "App in control" or "Manual hold until …",
 the reason, outdoor temp, and for the bath floor the 90-min cap automation state and the room cap.
 Any card change = manual hold for `override_hours` (default 2). **Resume auto** hands the zone back immediately.
@@ -93,19 +93,22 @@ The ingress panel (`/`) is the Climate screen: large temperatures, the schedule,
 
 Color (0.9.2). The screen stays black, with `#414141` cards and `#757575` for a selected control. Blue `#005aff` marks an active control and the target line. Green `#3ddc5a` is only the current indoor temperature. Heating, cooling, a temporary hold, and defrost are told by their words. There is no amber, gold, or colored left stripe. Each room shows its history graph with the temperature.
 
-Three different controls:
+The controls:
 
 - **Full Auto** is the global schedule (presence and time of day). Home, Sleep, and Away in that row are a manual profile for the whole house. They are not a room hold. The screen also shows the resolved profile and presence separately. If those disagree, both are shown and neither is cleared.
 - **Schedule preference** (`POST /api/zone/<name>/preference`, `{"profile":"home"|"sleep"|"away_heat"|"away_cool","temperature":70}`) saves that room’s target for the schedule. It does not start a hold. A room that is already held keeps the hold; the new preference is used when the hold ends.
-- **Temporary hold** (`POST /api/zone/<name>/override`, `temperature` plus required `hours`) writes the setpoint and holds it for that many hours. Resume one room with `POST /api/zone/<name>/resume`. Resume every room with `POST /api/resume-all`. The older `POST /api/zone/<name>/setpoint` still starts the default 2 hour hold so existing cards do not change.
+- **Override temperature** (`POST /api/zone/<name>/override-temp`, `{"temperature":70}`) remembers one number for that room. It does not start a hold and does not change the unit. There is no heat or cool choice. Until a number is saved, the stepper drafts from the live hold setpoint when a hold is on, otherwise from the current auto setpoint.
+- **Temporary hold** (`POST /api/zone/<name>/override`, `temperature` plus required `hours`) writes that setpoint, remembers it, and holds it for that many hours. Heat or cool is chosen from the temperature with the same Full Auto rules. Resume one room with `POST /api/zone/<name>/resume`. Resume every room with `POST /api/resume-all`. The older `POST /api/zone/<name>/setpoint` still starts the default 2 hour hold so existing cards do not change. The remembered number stays after resume, after the timer, and after a restart.
 
-Heat and Cool on the screen are sent to both mini splits, with the duration you picked, so they stay in the same mode. Fan Auto, when a unit has it, is only a fan speed.
+A room with no hold shows `Auto 71°F`. A hold shows `Manual override 70°F until 9:41 PM ET` (America/New_York). Off · both turns both mini splits off. The screen does not offer Hold both in Heat or Hold both in Cool. Fan Auto, when a unit has it, is only a fan speed.
+
+`/classic` and `/thermostat` still open. They are not linked from this screen. The thermostat page and the Lovelace card still have a Heat / Cool control; that is unchanged in this version.
 
 The graph uses recorder history already available to the add-on (indoor, target, outdoor, humidity when present, heating, cooling, defrost). Minutes in view are sums of those series. Gaps are marked and are not filled with a made-up temperature. There is no energy, cost, or efficiency estimate.
 
 `?mock=1` is a labeled synthetic example for screenshots. It does not talk to Home Assistant.
 
-Rollback: install the previous add-on version. 0.9.1 is colors only, so 0.9.0 keeps the same controls. A `prefs` object left in `/data/state.json` is ignored by 0.8.9. Holds and the Lovelace card keep working.
+Rollback: install the previous add-on version. 0.9.2 leaves an `override_temps` object in `/data/state.json` unused. It does not rewrite that file. A `prefs` object left in the same file is ignored by 0.8.9. Holds and the Lovelace card keep working. The options schema is the same as 0.9.2.
 
 ## Lovelace card (0.3.2)
 `custom:smart-hvac-card` shows the thermostat cards natively on any dashboard (Echo Show 1280x800 included),

@@ -1,5 +1,6 @@
-"""0.5.1: scripted defrost scenario. Its output with defrost_aware off (or absent) must be byte-identical to
-the 0.5.0 engine's; tests/fixtures/defrost_off_golden.json was generated from 0.5.0 main (95fbf356)."""
+"""0.5.1: scripted defrost scenario. With defrost_aware off (or absent) the steps match the 0.5.0
+engine. 0.9.3 also stores override_temps when the scenario's manual 75 F change starts a hold.
+tests/fixtures/defrost_off_golden.json is that output."""
 import json
 import os
 import sys

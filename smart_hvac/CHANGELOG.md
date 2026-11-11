@@ -1,3 +1,12 @@
+## 0.9.3 — 2026-11-11
+
+- Each room remembers one override temperature, stored in the add-on state file as `override_temps`. It is separate from the Full Auto schedule. Saving it does not start a hold and does not change the unit. A hold uses that temperature, then keeps the number after the hold ends and after a restart. Until a number is saved, the hold stepper still drafts the way 0.9.2 did.
+- While that hold is on, a mini split chooses heat or cool with the existing Full Auto rules (deadband, cool lockout, short cycle, and the shared outdoor unit). The override temperature is the target. Sun and humidity offsets are not applied to it. The radiant floor stays heat only. A person’s off, an open window, vacation, defrost, and a missing sensor still hold as before.
+- `POST /api/zone/<name>/override-temp` with `{"temperature": <number>}` saves that number. `GET /api/state` shows it per room (`source: "zone"`) or `temperature: null` and `source: "unset"`.
+- The Climate screen no longer offers Hold both in Heat or Hold both in Cool. Off · both remains. Heat and cool are chosen from the temperature. The header links Earlier layout and Thermostat cards are gone. `/classic` and `/thermostat` still open.
+- Known leftover: the unlinked thermostat page and the Lovelace card still have a Heat / Cool control. This version does not change those.
+- The options schema is unchanged. A 0.9.2 rollback leaves `override_temps` unused in the state file. Schedule preferences are kept.
+
 ## 0.9.2 — 2026-11-10
 
 - Climate, classic, and thermostat screens use the same dark presentation as the Home trial: black page, `#414141` cards, `#757575` selected controls, `#005aff` for the active mark and the target line. Green `#3ddc5a` is only the current indoor temperature. Heating, cooling, holds, and defrost stay labeled in words. No amber, gold, or left stripe.
