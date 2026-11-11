@@ -26,8 +26,6 @@ h1{font-size:24px;line-height:29px;font-weight:500;letter-spacing:0;margin:0}
 .pill{font-size:16px;letter-spacing:.02em;border:1px solid var(--line);border-radius:999px;padding:6px 12px;color:var(--mut);background:var(--band)}
 .pill.auto,.pill.manual,.pill.hold{color:var(--fg);border-color:#6a6a6a}
 .sub{flex:1 1 100%;color:var(--mut);font-size:16px;min-height:1.2em}
-.links{margin-left:auto;display:flex;gap:12px;font-size:16px}
-.links a{color:var(--blue);text-decoration:none;min-height:48px;display:flex;align-items:center}
 .banner{margin:14px 0;padding:12px 14px;border:1px solid #3a3a3a;border-radius:8px;background:var(--band);color:var(--mut);font-size:16px}
 .banner strong{color:var(--fg);font-weight:500}
 .sched{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
@@ -87,7 +85,6 @@ details summary{min-height:48px;display:flex;align-items:center;cursor:pointer}
 <header>
   <h1>Climate</h1>
   <div class="pills" id="pills"></div>
-  <div class="links"><a href="classic">Earlier layout</a><a href="thermostat">Thermostat cards</a></div>
   <div class="sub" id="sub"></div>
 </header>
 <div id="banner"></div>
@@ -131,8 +128,20 @@ function sourceLabel(src){
 }
 function fmtClock(ts){
   if (ts == null) return "";
-  return new Date(ts * 1000).toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
+  const s = new Date(ts * 1000).toLocaleTimeString("en-US", {hour:"numeric", minute:"2-digit", timeZone:"America/New_York"});
+  return s + " ET";
 }
+function fmtF(n){
+  if (n == null || Number.isNaN(Number(n))) return null;
+  const v = Math.round(Number(n) * 2) / 2;
+  return Math.abs(v - Math.round(v)) < 0.01 ? String(Math.round(v)) : v.toFixed(1);
+}
+function rememberedTemp(z){
+  const o = z && z.override_temps;
+  if (!o || o.source !== "zone" || o.temperature == null) return null;
+  return Number(o.temperature);
+}
+function tempHi(z){ return z && z.heat_only ? Number(S.radiant_setpoint_max || 85) : 84; }
 function fmtDur(sec){
   sec = Math.max(0, Math.round(sec));
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
@@ -198,7 +207,6 @@ function zoneCard(z){
   const target = held ? live.setpoint : (r.setpoint != null ? r.setpoint : pref.temperature);
   const why = REASONS[r.reason] || (r.reason ? String(r.reason) : "Waiting for a cycle");
   const next = r.next && r.next.setpoint != null ? "Next schedule " + r.next.setpoint + "° " + (r.next.profile || "") + " at " + fmtClock(r.next.ts) : "";
-  const src = held ? "Temporary hold" : (prefLabel(key) + " preference · " + sourceLabel(pref.source));
   const dfr = r.defrosting || r.defrost;
   const status = dfr ? (r.defrost === "preheating" ? "Pre-heating" : "Defrosting") : (live.hvac_action || live.mode || "—");
   const act = String(live.hvac_action || "");
@@ -206,12 +214,18 @@ function zoneCard(z){
   let slot = 0;
   for (let i = 0; i < z.name.length; i++) slot = (slot + z.name.charCodeAt(i)) % 3;
   const pt = pref.temperature != null ? pref.temperature : target;
-  const draft = held && live.setpoint != null ? live.setpoint : (pt != null ? pt : 70);
+  const savedOv = rememberedTemp(z);
+  const draft = savedOv != null ? savedOv : (held && live.setpoint != null ? live.setpoint : (pt != null ? pt : 70));
+  const autoF = r.setpoint != null ? r.setpoint : (pref.temperature != null ? pref.temperature : null);
+  const holdF = savedOv != null ? savedOv : (live.setpoint != null ? live.setpoint : autoF);
+  const line = held
+    ? "Manual override " + (fmtF(holdF) || "—") + "°F until " + fmtClock(z.override_until)
+    : "Auto " + (fmtF(autoF) != null ? fmtF(autoF) + "°F" : "—");
   let html = '<article class="card rm' + slot + (held ? " held" : "") + '" data-zone="' + esc(z.name) + '"><div class="zh"><h2>' + esc(z.label) + '</h2><span class="st ' + tone + '">' +
     (z.heat_only ? "Radiant" : "Mini split") + " · " + esc(status) + "</span></div>";
   const hum = live.humidity != null ? '<span class="hum">' + Math.round(live.humidity) + "%</span>" : "";
   html += '<div class="now">' + (indoor != null ? Math.round(indoor) : "—") + "<small>°</small>" + hum + "</div>";
-  html += '<p class="target">' + (target != null ? esc(String(target)) + "° target" : "No target") + " · " + esc(src) + "</p>";
+  html += '<p class="target">' + esc(line) + "</p>";
   html += '<p class="why">' + esc(why) + (next ? " · " + esc(next) : "") + "</p>";
   const tileGraph = hist.by && hist.by[z.name];
   html += '<div class="zone-graph">' + (histErr[z.name] ? '<p class="hint">History unavailable. Nothing is filled in.</p>' : graphSvg(tileGraph, 160)) + "</div>";
@@ -221,13 +235,14 @@ function zoneCard(z){
   html += '<p class="hint">Saves the ' + esc(prefLabel(key)) + " temperature for this room. Does not start a hold.</p>";
   html += '<div class="rowlabel holdlab">Temporary hold</div>';
   if (held) {
-    html += '<p class="count">Held ' + (live.setpoint != null ? live.setpoint + "°" : "") + " · " + fmtDur(holdLeft(z)) + " left · ends " + fmtClock(z.override_until) + "</p>";
+    html += '<p class="count">' + fmtDur(holdLeft(z)) + " left</p>";
     html += '<div class="actions"><button data-resume="1">Resume automatic</button></div>';
   }
+  html += '<div class="stepper"><button data-hold="-0.5" aria-label="Lower override temperature">−</button><b data-draft="' + draft + '">' +
+    fmtF(draft) + '°</b><button data-hold="0.5" aria-label="Raise override temperature">+</button></div>';
+  html += '<p class="hint">Saves this override temperature. Does not start a hold. Heat and cool follow the temperature.</p>';
   html += '<div class="durs">' + HOURS.map(([h, l]) => '<button data-hours="' + h + '"' + (hours === h ? ' class="on"' : "") + ">" + l + "</button>").join("") + "</div>";
-  html += '<div class="stepper"><button data-hold="-0.5" aria-label="Lower hold">−</button><b data-draft="' + draft + '">' + draft +
-    '°</b><button data-hold="0.5" aria-label="Raise hold">+</button></div>';
-  html += '<div class="actions"><button class="go" data-override="1"' + (ro() ? " disabled" : "") + ">Hold " + draft + "° for " +
+  html += '<div class="actions"><button class="go" data-override="1"' + (ro() ? " disabled" : "") + ">Hold " + fmtF(draft) + "° for " +
     (HOURS.find((x) => x[0] === hours) || HOURS[2])[1] + "</button></div>";
   html += '<p class="hint">A hold keeps this temperature until the timer ends or you resume. It is not the schedule.</p>';
   html += "<details><summary>Other schedule temperatures</summary>";
@@ -245,12 +260,9 @@ function sharedMode(){
   if (!splits.length) return "";
   const modes = splits.map((z) => (zoneResult(z.name).live || {}).mode);
   const same = modes.every((m) => m === modes[0]) ? modes[0] : "mixed";
-  const label = {0.5:"30 minutes",1:"1 hour",2:"2 hours",4:"4 hours"}[hours] || "2 hours";
   return '<article class="card wide"><div class="zh"><h2>Both mini splits</h2><span>' + (same === "mixed" ? "Modes differ" : esc(same || "—")) + "</span></div>" +
-    '<p class="hint">Heat and Cool always apply to both. The length you pick is a temporary mode hold, shown before it is sent. Off is per room only when you use a room’s own control; here Off turns both off.</p>' +
-    '<div class="modes"><button class="heat' + (same === "heat" ? " on" : "") + '" data-mode="heat"' + (ro() ? " disabled" : "") + ">Hold both in Heat · " + label + "</button>" +
-    '<button class="cool' + (same === "cool" ? " on" : "") + '" data-mode="cool"' + (ro() ? " disabled" : "") + ">Hold both in Cool · " + label + "</button>" +
-    '<button' + (same === "off" ? ' class="on"' : "") + ' data-mode="off"' + (ro() ? " disabled" : "") + ">Off · both</button></div></article>";
+    '<p class="hint">Heat and cool are chosen automatically from the temperature. Off turns both mini splits off.</p>' +
+    '<div class="modes"><button' + (same === "off" ? ' class="on"' : "") + ' data-mode="off"' + (ro() ? " disabled" : "") + ">Off · both</button></div></article>";
 }
 
 function seriesMinutes(pts, end){
@@ -385,11 +397,10 @@ document.body.addEventListener("click", async (ev) => {
         msg = "Saved the schedule preference. No hold was started.";
       } else if (b.dataset.hold) {
         const el = card.querySelector("[data-draft]");
-        const t = Math.round((Number(el.dataset.draft) + Number(b.dataset.hold)) * 2) / 2;
-        el.dataset.draft = t; el.textContent = t + "°";
-        const go = card.querySelector("[data-override]");
-        if (go) go.textContent = "Hold " + t + "° for " + (HOURS.find((x) => x[0] === hours) || HOURS[2])[1];
-        return;
+        const zone = S.zones.find((x) => x.name === name);
+        const t = Math.min(tempHi(zone), Math.max(55, Math.round((Number(el.dataset.draft) + Number(b.dataset.hold)) * 2) / 2));
+        S = await api("api/zone/" + name + "/override-temp", {temperature:t});
+        msg = "Saved the override temperature. No hold was started.";
       } else if (b.dataset.override) {
         const t = Number(card.querySelector("[data-draft]").dataset.draft);
         S = await api("api/zone/" + name + "/override", {temperature:t, hours});
@@ -427,10 +438,17 @@ function mockApi(path, body){
     z.preferences[body.profile] = {temperature: body.temperature, source: "zone"};
     return S;
   }
+  if (body && path.endsWith("/override-temp")) {
+    const name = path.split("/")[2];
+    const z = S.zones.find((x) => x.name === name);
+    z.override_temps = {temperature: body.temperature, source: "zone"};
+    return S;
+  }
   if (body && path.endsWith("/override")) {
     const name = path.split("/")[2];
     const z = S.zones.find((x) => x.name === name);
     z.override_until = now + body.hours * 3600;
+    if (body.temperature != null) z.override_temps = {temperature: body.temperature, source: "zone"};
     return S;
   }
   if (path.endsWith("/resume-all") || path.endsWith("/resume")) {
@@ -446,7 +464,7 @@ function mockState(now){
   const pref = (n) => ({home:{temperature:n, source:"zone"}, sleep:{temperature:n - 3, source:"schedule"},
     away_heat:{temperature:65, source:"schedule"}, away_cool:{temperature:78, source:"schedule"}});
   const live = (sp, indoor) => ({mode:"heat", setpoint:sp, indoor, humidity:41, hvac_action:"heating", fan_mode:"auto"});
-  return {enabled:true, dry_run:false, profile:"auto", override_hours:2, vacation:false,
+  return {enabled:true, dry_run:false, profile:"auto", override_hours:2, radiant_setpoint_max:85, vacation:false,
     last:{ts:now - 180, presence_home:true, outdoor:34, zones:{
       room_a:{profile:"away", reason:"manual_override", setpoint:70, action:"hold", next:null, live:live(70, 68.4), defrosting:false},
       room_b:{profile:"away", reason:"manual_override", setpoint:70, action:"hold", next:null, live:live(70, 69.1), defrosting:false},
@@ -454,9 +472,9 @@ function mockState(now){
     }},
     preferences:{room_a:pref(71), room_b:pref(71), bath_floor:pref(72)},
     zones:[
-      {name:"room_a", label:"Room A", heat_only:false, override_until:holdA, preferences:pref(71)},
-      {name:"room_b", label:"Room B", heat_only:false, override_until:holdB, preferences:pref(71)},
-      {name:"bath_floor", label:"Bath floor", heat_only:true, override_until:null, preferences:pref(72)}
+      {name:"room_a", label:"Room A", heat_only:false, override_until:holdA, override_temps:{temperature:70, source:"zone"}, preferences:pref(71)},
+      {name:"room_b", label:"Room B", heat_only:false, override_until:holdB, override_temps:{temperature:null, source:"unset"}, preferences:pref(71)},
+      {name:"bath_floor", label:"Bath floor", heat_only:true, override_until:null, override_temps:{temperature:null, source:"unset"}, preferences:pref(72)}
     ]};
 }
 boot();

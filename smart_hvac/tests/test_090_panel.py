@@ -40,7 +40,9 @@ def test_screen_copy_separates_preference_hold_and_auto():
     assert "http://" not in html and "https://" not in html
     # Boot reads state. It does not post.
     assert 'api("api/state")' in html
-    assert "classic" in html and "thermostat" in html
+    assert "Earlier layout" not in html and "Thermostat cards" not in html
+    assert "Hold both in Heat" not in html and "Hold both in Cool" not in html
+    assert "Off · both" in html
 
 
 async def test_opening_the_screen_changes_nothing(mk):
@@ -54,6 +56,7 @@ async def test_opening_the_screen_changes_nothing(mk):
     assert ha.calls == []
     assert e.st["override_until"]["lr"] == until
     assert (await c.get("/classic")).status == 200
+    assert (await c.get("/thermostat")).status == 200
 
 
 async def test_preference_does_not_create_a_hold(mk):
@@ -167,7 +170,7 @@ async def test_history_unavailable_is_502(mk):
 
 def test_version_and_slug_notes():
     raw = open(os.path.join(os.path.dirname(__file__), "..", "config.yaml")).read()
-    assert 'version: "0.9.2"' in raw
+    assert 'version: "0.9.3"' in raw
     html = open(INDEX).read()
     assert "--card:#414141" in html and "--selected:#757575" in html and "--blue:#005aff" in html
     assert "#e8a05a" not in html and "#e2c07a" not in html and "#5ec8c5" not in html
