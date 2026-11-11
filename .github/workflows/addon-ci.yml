@@ -96,7 +96,10 @@ jobs:
 
   smart-hvac:
     name: Smart HVAC lint + tests
-    runs-on: ubuntu-latest
+    # ubuntu-latest is moving to 26.04. Playwright's install-deps there apt-gets a
+    # large WebKit stack and retries a failing mirror until the step is killed.
+    # 24.04 already has those libraries, which is the ~1 minute main run.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
@@ -118,13 +121,11 @@ jobs:
         run: |
           # The spec requires @playwright/test. NODE_PATH points it at this
           # prefix so the runner and the spec load the same 1.65.0 install.
-          # Browsers come from that install. A second npx copy plus apt with
-          # a prompt is what left this step running with no bound.
+          # Browsers come from that install. Do not apt-install deps here:
+          # on Ubuntu 26 that download retries a dead mirror with no bound.
           set -euo pipefail
-          export DEBIAN_FRONTEND=noninteractive
           npm install --no-fund --no-audit --no-save --prefix /tmp/smart-hvac-pw @playwright/test@1.65.0
           PW=/tmp/smart-hvac-pw/node_modules/.bin/playwright
-          sudo DEBIAN_FRONTEND=noninteractive "$PW" install-deps webkit chromium
           "$PW" install webkit chromium
           NODE_PATH=/tmp/smart-hvac-pw/node_modules "$PW" test tests/ui
       - name: Safe defaults (master off, dry run)
