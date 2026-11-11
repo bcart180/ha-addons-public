@@ -1,7 +1,10 @@
 """Social Pulse ingress server (stdlib only). Serves the panel and /api/snapshot."""
+import base64
+import hashlib
 import json
 import logging
 import os
+import re
 import threading
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -15,6 +18,24 @@ PORT = int(os.environ.get("SP_PORT", "8099"))
 ALLOW = {a.strip() for a in os.environ.get("SP_ALLOW", "172.30.32.2").split(",") if a.strip()}
 log = logging.getLogger("social_pulse")
 _state = {"snap": {"generated_at": None, "x": [], "sites": [], "errors": ["first refresh pending"]}}
+# Production documents keep this policy. The trial document adds the base-script hash.
+_PROD_CSP = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'self'"
+
+
+def _trial_document():
+    """Return (html bytes, CSP) for the UI-4 trial. Hash matches the inline base script."""
+    path = os.path.join(STATIC, "ui-trial", "index.html")
+    with open(path, "rb") as handle:
+        body = handle.read()
+    match = re.search(br"<script>(.*?)</script>", body, re.S)
+    if not match:
+        raise RuntimeError("trial base script missing")
+    digest = base64.b64encode(hashlib.sha256(match.group(1)).digest()).decode("ascii")
+    csp = (
+        "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+        "script-src 'self' 'sha256-%s'; frame-ancestors 'self'; base-uri 'self'" % digest
+    )
+    return body, csp
 
 
 def load_options():
@@ -52,7 +73,7 @@ class Handler(SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'self'")
+        self.send_header("Content-Security-Policy", getattr(self, "_csp", _PROD_CSP))
         super().end_headers()
 
     def _allowed(self):
@@ -69,6 +90,24 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _redirect_trial(self):
+        # Relative Location stays inside the ingress prefix. /ui-trial itself is 200, so this does not loop.
+        self.send_response(302)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", "0")
+        self.send_header("Location", "../ui-trial")
+        self.end_headers()
+
+    def _serve_trial(self, send_body):
+        body, csp = _trial_document()
+        self._csp = csp
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if send_body:
+            self.wfile.write(body)
+
     def do_GET(self):
         if not self._allowed():
             return
@@ -77,11 +116,21 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json({"ok": True})
         if path == "/api/snapshot":
             return self._json(_state["snap"])
+        if path in ("/ui-trial/", "/ui-trial/index.html"):
+            return self._redirect_trial()
+        if path == "/ui-trial":
+            return self._serve_trial(True)
         return super().do_GET()
 
     def do_HEAD(self):
-        if self._allowed():
-            super().do_HEAD()
+        if not self._allowed():
+            return
+        path = self.path.split("?", 1)[0]
+        if path in ("/ui-trial/", "/ui-trial/index.html"):
+            return self._redirect_trial()
+        if path == "/ui-trial":
+            return self._serve_trial(False)
+        super().do_HEAD()
 
     def _deny(self):
         if self._allowed():
