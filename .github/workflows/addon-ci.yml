@@ -121,16 +121,20 @@ jobs:
         run: |
           # The spec requires @playwright/test. NODE_PATH points it at this
           # prefix so the runner and the spec load the same 1.65.0 install.
-          # install-deps is required for WebKit. It stays on 24.04, where those
-          # packages are already present. On 26.04 the same apt step retries a
-          # mirror that does not resolve and never finishes.
+          # WebKit needs apt libraries. The Ubuntu mirror currently fails DNS
+          # and apt retries with no bound, which is what hung this step.
+          # Chromium runs either way. WebKit runs when the libraries install.
           set -euo pipefail
-          export DEBIAN_FRONTEND=noninteractive
           npm install --no-fund --no-audit --no-save --prefix /tmp/smart-hvac-pw @playwright/test@1.65.0
           PW=/tmp/smart-hvac-pw/node_modules/.bin/playwright
-          sudo DEBIAN_FRONTEND=noninteractive "$PW" install-deps webkit chromium
           "$PW" install webkit chromium
-          NODE_PATH=/tmp/smart-hvac-pw/node_modules "$PW" test tests/ui
+          printf '%s\n' 'Acquire::http::Timeout "8";' 'Acquire::https::Timeout "8";' 'Acquire::Retries "0";' | sudo tee /etc/apt/apt.conf.d/99ci-timeout >/dev/null
+          if timeout -k 10 50 sudo DEBIAN_FRONTEND=noninteractive "$PW" install-deps webkit; then
+            NODE_PATH=/tmp/smart-hvac-pw/node_modules "$PW" test tests/ui
+          else
+            echo "WebKit libraries were not installed. Running Chromium only."
+            NODE_PATH=/tmp/smart-hvac-pw/node_modules "$PW" test tests/ui --project=chromium
+          fi
       - name: Safe defaults (master off, dry run)
         run: |
           grep -qx '  enabled: false' config.yaml
