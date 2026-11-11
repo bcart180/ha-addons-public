@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.5 — 2026-11-11
+
+- Schwab tab prices a static holdings file at `/share/trading_desk/schwab_holdings.json` from Alpaca live trades (GET snapshots and clock only). The desk feed stays the fallback when that file is missing.
+- Detail no longer rebuilds its tables on every price tick, so iOS WebKit does not jump to the bottom.
+- Options and schema are unchanged. Still GET and EventSource only.
+
 ## 0.3.4 — 2026-11-10
 
 - UI-4 is the production page at `/`. `/ui-trial` serves the same page. `/ui-trial/` redirects with a relative `Location: ../` to the ingress root.
