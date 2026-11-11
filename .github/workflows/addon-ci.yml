@@ -89,6 +89,10 @@ jobs:
         run: python trading_desk/tests/test_readonly.py
       - name: test_ui_trial.py
         run: python trading_desk/tests/test_ui_trial.py
+      - name: test_schwab.py
+        run: python trading_desk/tests/test_schwab.py
+      - name: Schwab sign formatting
+        run: node --test trading_desk/tests/test_assets_signs.mjs
 
   smart-hvac:
     name: Smart HVAC lint + tests

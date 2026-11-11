@@ -18,7 +18,10 @@
   }
   function signed(v) {
     if (!ok(v)) return "—";
-    return (v > 0 ? "+" : v < 0 ? "−" : "") + money(v);
+    var body = "$" + Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (v > 0) return "+" + body;
+    if (v < 0) return "−" + body;
+    return body;
   }
   function pct(v) {
     if (!ok(v)) return "";
