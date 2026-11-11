@@ -121,11 +121,14 @@ jobs:
         run: |
           # The spec requires @playwright/test. NODE_PATH points it at this
           # prefix so the runner and the spec load the same 1.65.0 install.
-          # Browsers come from that install. Do not apt-install deps here:
-          # on Ubuntu 26 that download retries a dead mirror with no bound.
+          # install-deps is required for WebKit. It stays on 24.04, where those
+          # packages are already present. On 26.04 the same apt step retries a
+          # mirror that does not resolve and never finishes.
           set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
           npm install --no-fund --no-audit --no-save --prefix /tmp/smart-hvac-pw @playwright/test@1.65.0
           PW=/tmp/smart-hvac-pw/node_modules/.bin/playwright
+          sudo DEBIAN_FRONTEND=noninteractive "$PW" install-deps webkit chromium
           "$PW" install webkit chromium
           NODE_PATH=/tmp/smart-hvac-pw/node_modules "$PW" test tests/ui
       - name: Safe defaults (master off, dry run)
