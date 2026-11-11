@@ -269,6 +269,7 @@ export function statusOf(stateObj, zone, vacation, zr) {
     : dlab ? dlab : act === "heating" ? "Heating" : act === "cooling" ? "Cooling" : act === "fan" ? "Fan" : "Idle";
   let why = "";
   if (vacation) why = zone.heat_only ? "Vacation — radiant floor stays off" : "Vacation — set back";
+  else if (zr && zr.reason === "window_slope_pause") why = "Paused, window open?";
   else if (off) why = "Off";
   else if (dlab) why = `${dlab} — not a manual change; the app waits`;
   return { mode, off, status, why };
@@ -283,7 +284,8 @@ export function fmtClock(ts, tz) {
 }
 
 const REASON = { manual_override: "Manual hold", vacation_setback: "Vacation setback", vacation_at_setback: "Vacation setback",
-  vacation_radiant_off: "Vacation — radiant off", window_open: "Window open — off", unit_off: "Off at the unit — app won't turn it on",
+  vacation_radiant_off: "Vacation — radiant off", window_open: "Window open — off",
+  window_slope_pause: "Paused, window open?", unit_off: "Off at the unit — app won't turn it on",
   overtemp_shutoff: "Bath over air shutoff — off", short_cycle_guard: "Waiting (anti short-cycle)",
   defrosting: "Defrosting — app waits", preheating: "Pre-heating — app waits", disabled: "App off" };
 
@@ -370,6 +372,9 @@ const CSS = `
 .pill.heat{border-color:#d9902b}.pill.cool{border-color:#3fa7e0}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}.chip{font-size:12px;padding:3px 9px;border-radius:12px;border:1px solid #2c3a47;color:#b9c5d0}
 .chip.vac{border-color:#d9902b;color:#f0c27a}.why{font-size:13px;color:#b9c5d0;min-height:18px}
+/* slope-pause-start */
+.why.slope{color:#3e6ae1}
+/* slope-pause-end */
 .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.btn{font-size:12px;padding:5px 10px;border-radius:10px;border:1px solid #2c3a47;background:#0f161d;color:#e8eef4;cursor:pointer}
 .btn.sel{border-color:#2fb3a0;color:#7fe0d0}.btn:disabled{opacity:.35}
 .g{margin-top:8px}.g svg{width:100%;height:120px;display:block}
@@ -485,7 +490,7 @@ class SmartHvacCard extends Base {
       <div class="sp"><button class="step" data-i="${i}" data-d="-1" ${s.off || ro ? "disabled" : ""}>−</button>
       <div class="pill ${s.off ? "" : esc(s.mode)}">${s.off ? "Off" : sp != null ? sp : "--"}</div>
       <button class="step" data-i="${i}" data-d="1" ${s.off || ro ? "disabled" : ""}>+</button></div></div>
-      <div class="chips">${chips}</div><div class="why">${esc(s.why)}</div><div class="next">${esc(nl)}</div>
+      <div class="chips">${chips}</div><div class="why${zr && zr.reason === "window_slope_pause" ? " slope" : ""}">${esc(s.why)}</div><div class="next">${esc(nl)}</div>
       <div class="row">${modes.map((m) => `<button class="btn ${m === s.mode ? "sel" : ""}" data-i="${i}" data-mode="${m}" ${ro || (z.heat_only && vac && m !== "off") ? "disabled" : ""}>${modeLabel(m, z.heat_only)}</button>`).join("")}
       ${fans.map((f) => `<button class="btn ${f === a.fan_mode ? "sel" : ""}" data-i="${i}" data-fan="${esc(f)}" ${ro ? "disabled" : ""}>${esc(f)}</button>`).join("")}</div>
       <div class="g">${g ? graphSvg(g, tz) : '<div class="dim">Loading history…</div>'}</div>

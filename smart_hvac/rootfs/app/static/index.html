@@ -42,6 +42,9 @@ h1{font-size:24px;line-height:29px;font-weight:500;letter-spacing:0;margin:0}
 .hum{font-size:16px;line-height:1.4;color:var(--mut);font-weight:400}
 .target{font-size:16px;margin:0 0 4px}
 .why{color:var(--mut);font-size:16px;min-height:1.3em;margin:0 0 8px}
+/* slope-pause-start */
+.slope-pause{color:#3e6ae1}
+/* slope-pause-end */
 .zone-graph{min-width:0;margin:0 0 8px}
 .zone-graph svg{height:160px}
 .rowlabel{font-size:16px;letter-spacing:.04em;text-transform:uppercase;color:var(--dim);margin:14px 0 6px}
@@ -97,7 +100,7 @@ const REASONS = {ok:"Schedule target",no_change:"At the schedule target",manual_
   defrosting:"Defrosting — the schedule waits",preheating:"Pre-heating — the schedule waits",
   short_cycle_guard:"Waiting out the compressor minimum cycle",
   vacation_setback:"Vacation setback",vacation_at_setback:"Vacation setback",vacation_radiant_off:"Vacation — radiant stays off",
-  unit_off:"Off at the unit",window_open:"Window open",missing_indoor_temp:"Indoor temperature missing",
+  unit_off:"Off at the unit",window_open:"Window open",window_slope_pause:"Paused, window open?",missing_indoor_temp:"Indoor temperature missing",
   "missing:indoor_temp":"Indoor temperature missing","missing:outdoor_temp":"Outdoor temperature missing",
   "missing:presence":"Presence unknown — holding the last target",mode_lock:"Matched to the other mini split"};
 const HOURS = [[0.5,"30m"],[1,"1h"],[2,"2h"],[4,"4h"]];
@@ -206,6 +209,7 @@ function zoneCard(z){
   const indoor = live.indoor, held = holdLeft(z) > 0;
   const target = held ? live.setpoint : (r.setpoint != null ? r.setpoint : pref.temperature);
   const why = REASONS[r.reason] || (r.reason ? String(r.reason) : "Waiting for a cycle");
+  const whyHtml = r.reason === "window_slope_pause" ? '<span class="slope-pause">' + esc(why) + "</span>" : esc(why);
   const next = r.next && r.next.setpoint != null ? "Next schedule " + r.next.setpoint + "° " + (r.next.profile || "") + " at " + fmtClock(r.next.ts) : "";
   const dfr = r.defrosting || r.defrost;
   const status = dfr ? (r.defrost === "preheating" ? "Pre-heating" : "Defrosting") : (live.hvac_action || live.mode || "—");
@@ -226,7 +230,7 @@ function zoneCard(z){
   const hum = live.humidity != null ? '<span class="hum">' + Math.round(live.humidity) + "%</span>" : "";
   html += '<div class="now">' + (indoor != null ? Math.round(indoor) : "—") + "<small>°</small>" + hum + "</div>";
   html += '<p class="target">' + esc(line) + "</p>";
-  html += '<p class="why">' + esc(why) + (next ? " · " + esc(next) : "") + "</p>";
+  html += '<p class="why">' + whyHtml + (next ? " · " + esc(next) : "") + "</p>";
   const tileGraph = hist.by && hist.by[z.name];
   html += '<div class="zone-graph">' + (histErr[z.name] ? '<p class="hint">History unavailable. Nothing is filled in.</p>' : graphSvg(tileGraph, 160)) + "</div>";
   html += '<div class="rowlabel">Schedule preference · ' + esc(prefLabel(key)) + "</div>";
@@ -510,13 +514,16 @@ function mockApi(path, body){
 }
 function mockState(now){
   const holdA = now + 2 * 3600, holdB = now + 2 * 3600 + 30;
+  const pause = new URLSearchParams(location.search).has("pause");
   const pref = (n) => ({home:{temperature:n, source:"zone"}, sleep:{temperature:n - 3, source:"schedule"},
     away_heat:{temperature:65, source:"schedule"}, away_cool:{temperature:78, source:"schedule"}});
-  const live = (sp, indoor) => ({mode:"heat", setpoint:sp, indoor, humidity:41, hvac_action:"heating", fan_mode:"auto"});
+  const live = (sp, indoor) => ({mode: pause ? "off" : "heat", setpoint:sp, indoor, humidity:41,
+    hvac_action: pause ? "off" : "heating", fan_mode:"auto"});
+  const why = pause ? "window_slope_pause" : "manual_override";
   return {enabled:true, dry_run:false, profile:"auto", override_hours:2, radiant_setpoint_max:85, vacation:false,
     last:{ts:now - 180, presence_home:true, outdoor:34, zones:{
-      room_a:{profile:"away", reason:"manual_override", setpoint:70, action:"hold", next:null, live:live(70, 68.4), defrosting:false},
-      room_b:{profile:"away", reason:"manual_override", setpoint:70, action:"hold", next:null, live:live(70, 69.1), defrosting:false},
+      room_a:{profile:"away", reason:why, setpoint:70, action:"hold", next:null, live:live(70, 68.4), defrosting:false},
+      room_b:{profile:"away", reason:why, setpoint:70, action:"hold", next:null, live:live(70, 69.1), defrosting:false},
       bath_floor:{profile:"home", reason:"no_change", setpoint:72, action:"hold", next:{ts:now + 6 * 3600, setpoint:66, profile:"sleep"}, live:{mode:"heat", setpoint:72, indoor:71.2, hvac_action:"idle"}}
     }},
     preferences:{room_a:pref(71), room_b:pref(71), bath_floor:pref(72)},
