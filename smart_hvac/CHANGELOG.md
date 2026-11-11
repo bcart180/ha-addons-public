@@ -1,3 +1,7 @@
+## 0.9.4 — 2026-11-11
+
+- Climate keeps its scroll place in Safari after a tap or refresh.
+
 ## 0.9.3 — 2026-11-11
 
 - Each room remembers one override temperature, stored in the add-on state file as `override_temps`. It is separate from the Full Auto schedule. Saving it does not start a hold and does not change the unit. A hold uses that temperature, then keeps the number after the hold ends and after a restart. Until a number is saved, the hold stepper still drafts the way 0.9.2 did.

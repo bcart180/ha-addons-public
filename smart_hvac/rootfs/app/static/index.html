@@ -19,7 +19,7 @@ button:disabled{opacity:.35;cursor:default}
 button.on{background:var(--selected);border-color:var(--selected);color:#ffffff}
 button.heat.on,button.cool.on{background:var(--selected);color:#ffffff;border-color:var(--blue)}
 :focus-visible{outline:2px solid var(--blue);outline-offset:2px}
-.wrap{max-width:1200px;margin:0 auto;padding:16px 16px 48px;container-type:inline-size}
+.wrap{max-width:1200px;margin:0 auto;padding:16px 16px 48px}
 header{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px 16px;padding-bottom:14px;border-bottom:1px solid #3a3a3a;position:sticky;top:0;background:var(--bg);z-index:2}
 h1{font-size:24px;line-height:29px;font-weight:500;letter-spacing:0;margin:0}
 .pills{display:flex;flex-wrap:wrap;gap:8px}
@@ -72,7 +72,7 @@ details{margin-top:8px;color:var(--mut);font-size:16px}
 details summary{min-height:48px;display:flex;align-items:center;cursor:pointer}
 .prefrow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-top:1px solid #6a6a6a;font-size:16px}
 .synth{border-color:#6a6a6a;color:var(--fg)}
-@container (min-width: 900px){
+@media (min-width:932px){
   .grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
   .wide{grid-column:1 / -1}
   .metrics{grid-template-columns:repeat(4,minmax(0,1fr))}
@@ -342,11 +342,55 @@ function graphCard(){
 }
 
 function render(){
+  // Keep the tapped control at the same screen position. If that control is gone
+  // (Resume, hold ended), keep its room card. A refresh with no tap keeps scrollY.
+  function placed(p) {
+    if (!p || !Object.keys(p.attrs).length) return null;
+    const keys = Object.keys(p.attrs);
+    const buttons = document.querySelectorAll("button");
+    for (let i = 0; i < buttons.length; i++) {
+      const el = buttons[i];
+      const names = el.getAttributeNames().filter((n) => n.startsWith("data-"));
+      if (names.length !== keys.length || names.some((n) => p.attrs[n] !== el.getAttribute(n))) continue;
+      const host = el.closest("[data-zone]");
+      if ((host ? host.getAttribute("data-zone") : null) === p.zone) return el;
+    }
+    return null;
+  }
+  function zoneEl(zone) {
+    if (!zone) return null;
+    const cards = document.querySelectorAll("[data-zone]");
+    for (let i = 0; i < cards.length; i++) if (cards[i].getAttribute("data-zone") === zone) return cards[i];
+    return null;
+  }
+  const savedY = window.scrollY || window.pageYOffset || 0;
+  let mark = null;
+  if (anchor) {
+    const el = placed(anchor);
+    if (el) {
+      const card = zoneEl(anchor.zone);
+      mark = { place: anchor, top: el.getBoundingClientRect().top, cardTop: card ? card.getBoundingClientRect().top : null };
+    }
+    anchor = null;
+  }
   $("pills").innerHTML = pills();
   $("sub").textContent = subline();
   $("banner").innerHTML = banner();
   $("sched").innerHTML = S ? schedButtons() : "";
   $("zones").innerHTML = S ? ((S.zones || []).map(zoneCard).join("") + sharedMode() + graphCard()) : "";
+  const nudge = (el, top) => {
+    if (!el || top == null) return false;
+    const dy = el.getBoundingClientRect().top - top;
+    if (dy) window.scrollBy(0, dy);
+    return true;
+  };
+  let held = false;
+  if (mark) held = nudge(placed(mark.place), mark.top);
+  if (mark && !held) held = nudge(zoneEl(mark.place.zone), mark.cardTop);
+  if (!held) {
+    const now = window.scrollY || window.pageYOffset || 0;
+    if (now !== savedY) window.scrollBy(0, savedY - now);
+  }
 }
 
 async function fetchHist(name){
@@ -372,9 +416,14 @@ async function boot(){
   render();
   if (S.zones && S.zones[0]) loadHist(S.zones[0].name, "24h");
 }
+let anchor = null;
 document.body.addEventListener("click", async (ev) => {
   const b = ev.target.closest("button");
   if (!b || !S) return;
+  const attrs = {};
+  for (const name of b.getAttributeNames()) if (name.startsWith("data-")) attrs[name] = b.getAttribute(name);
+  const host = b.closest("[data-zone]");
+  anchor = { attrs, zone: host ? host.getAttribute("data-zone") : null };
   try {
     if (b.dataset.profile) { S = await api("api/profile", {profile:b.dataset.profile}); msg = ""; }
     else if (b.dataset.resumeAll) { S = await api("api/resume-all", {}); msg = ""; }
