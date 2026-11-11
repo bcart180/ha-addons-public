@@ -163,6 +163,8 @@ SLOPE_LOOKBACK_MIN = 20
 SLOPE_GUARD_S = 45 * 60
 SLOPE_OUTDOOR_GAP_F = 5.0
 SLOPE_MAX_PAUSES_PER_HOUR = 2
+# Stored next to zone names in the slope state. Not zones, so startup pruning must leave them.
+SLOPE_SHARED_KEYS = frozenset({"pair"})
 SLOPE_SAMPLE_MARGIN_S = 10 * 60
 
 

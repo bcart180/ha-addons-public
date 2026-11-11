@@ -109,8 +109,11 @@ def put(ha, clk, entity, value, stamp=None):
     ha.changed[entity] = iso(clk.t if stamp is None else stamp)
 
 
-def drive(e, ha, clk, rate, hours, start=70.0, cycle=CYCLE, entity="sensor.lr_t"):
-    """1 F steps of a constant slope. Returns the clock time of the first slope pause, or None."""
+def drive(e, ha, clk, rate, hours, start=70.0, cycle=CYCLE, entity="sensor.lr_t", record=None):
+    """1 F steps of a constant slope. Returns the clock time of the first slope pause, or None.
+
+    record, when a list, receives every service call from the whole ramp, not only the last cycle.
+    """
     t0, reported, hit = clk.t, float(start), None
     while clk.t < t0 + hours * 3600 - 1e-6:
         clk.t += cycle
@@ -123,6 +126,8 @@ def drive(e, ha, clk, rate, hours, start=70.0, cycle=CYCLE, entity="sensor.lr_t"
             put(ha, clk, entity, reported)
         ha.calls.clear()
         r = e.evaluate()
+        if record is not None:
+            record.extend(ha.calls)
         if r["lr"]["reason"] == "window_slope_pause" or r["br"]["reason"] == "window_slope_pause":
             hit = clk.t
             break
@@ -456,13 +461,16 @@ def test_partner_without_room_sensor_pauses_and_resumes_together():
 def test_person_off_partner_stays_off():
     e, ha, clk = world()
     ha.s["climate.br"] = ("off", {"temperature": 71, "current_temperature": 70, "hvac_modes": _modes()})
+    calls = []
     settle(e)
-    assert drive(e, ha, clk, -20, hours=0.5) is not None
+    calls.extend(ha.calls)
+    assert drive(e, ha, clk, -20, hours=0.5, record=calls) is not None
     r = e.st["last_result"]["zones"]
     assert r["lr"]["reason"] == "window_slope_pause"
     assert r["br"]["reason"] == "unit_off"
     assert ha.s["climate.br"][0] == "off"
-    assert not any(c[1].get("entity_id") == "climate.br" and c[1].get("hvac_mode") == "heat" for c in ha.calls)
+    assert calls, "the run recorded no service calls to check"
+    assert not any(c[1].get("entity_id") == "climate.br" and c[1].get("hvac_mode") == "heat" for c in calls)
 
 
 def test_manual_change_during_pause_is_kept():
@@ -531,6 +539,22 @@ def test_restart_mid_pause_and_max_duration(tmp_path):
     put(ha, clk, "sensor.lr_t", 60)
     clk.t += CYCLE
     assert e2.evaluate()["lr"]["reason"] != "window_slope_pause"
+
+
+def test_pair_pause_cap_survives_restart(tmp_path, caplog):
+    import logging
+    caplog.set_level(logging.INFO, logger="smart_hvac")
+    path = str(tmp_path / "state.json")
+    e, ha, clk = world(path=path)
+    settle(e)
+    t = clk.t
+    e.st["window_slope"]["pause_starts"] = {"pair": [t - 600, t - 300]}
+    e.save()
+    caplog.clear()
+    e2 = Engine(e.opts, ha, path, clock=clk, localtime=lt14)
+    assert e2.st["window_slope"]["pause_starts"]["pair"] == [t - 600, t - 300]
+    assert "pruned state of removed zones: pair" not in caplog.text
+    assert drive(e2, ha, clk, -20, hours=0.5) is None
 
 
 def test_malformed_slope_state_resets(tmp_path):

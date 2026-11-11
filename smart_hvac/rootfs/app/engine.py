@@ -762,11 +762,14 @@ class Engine:
                 dropped.add(n)
         slope = self.st.get("window_slope")
         if isinstance(slope, dict):
+            # "pair" is the shared pause-count key, not a zone. Dropping it on startup
+            # would reset the 2-per-hour cap after every restart.
+            keep = set(names) | getattr(core, "SLOPE_SHARED_KEYS", frozenset())
             for key in ("samples", "saved", "below_since", "guard_until", "pause_starts", "seen_mode", "seen_setpoint"):
                 bucket = slope.get(key)
                 if not isinstance(bucket, dict):
                     continue
-                for n in [n for n in bucket if n not in names]:
+                for n in [n for n in bucket if n not in keep]:
                     bucket.pop(n, None)
                     dropped.add(n)
             if slope.get("trigger_zone") not in names and slope.get("trigger_zone") is not None:
