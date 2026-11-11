@@ -20,10 +20,10 @@ sys.path.insert(0, str(sys_path))
 import server  # noqa: E402
 
 # Previous production shell, locked so /legacy stays a byte rollback.
+# Previous production shell, except app.js and assets.js. Those two are shared
+# with the UI-4 page and carry the 0.3.5 Schwab renderer and Detail scroll fix.
 LEGACY = {
     "index.html": ("521205e5b5d2b41152632a10fb8b17de8d2091f9b0f131e49afaa0ce4bf5b80a", 5089),
-    "app.js": ("7f0b1a6fec2a20e6adf536b1e4d092f34696803ddec69b3c0c72fd729275eec4", 31283),
-    "assets.js": ("bff8b346aeb5015d34b58568a200d67e9619e799d356818a88e7368642a6b65e", 4215),
     "assets.css": ("6bdcfcaa9fb719cec0ae6c24b3b90be308679ef343c666cf3c7d1a09e182467e", 3519),
     "main.js": ("e8e71d9f88edd1bb6e3a6f76fff27abff5bdc2ac92c0887f277fc7ed02beb0b0", 12891),
     "main.css": ("c03c50d03169e2d44e4821cd75524b2c03d33bbd76b637e973826b70408e9043", 4811),
@@ -86,9 +86,9 @@ def test_legacy_shell_is_the_previous_page():
 
 def test_version_bump_and_schema():
     cfg = _read(ROOT / "config.yaml")
-    assert 'version: "0.3.4"' in cfg
-    assert 'version: "0.3.3"' not in cfg
-    assert server.VERSION == "0.3.4"
+    assert 'version: "0.3.5"' in cfg
+    assert 'version: "0.3.4"' not in cfg
+    assert server.VERSION == "0.3.5"
     for key in SCHEMA_KEYS:
         assert re.search(r"^  %s:" % re.escape(key), cfg, re.M), key
     schema = cfg.split("schema:", 1)[1]
@@ -138,11 +138,15 @@ def test_trial_keeps_controls_and_reads():
         assert 'data-r="' in main
     assert "disabled" in main and " na" in main and "limited" in main
     assert 'addEventListener("click"' in app and 'tr[data-s]' in app
-    assert "api/state" in main and "15000" in main and "document.hidden" in main
+    assert "api/state" in main and "1000" in main and "document.hidden" in main
+    assert "15000" not in main
     assert "api/events" in app and "45000" in app
     assert "api/bars?symbol=" in app
     assert "api/history?range=" in main
-    assert "api/assets" in assets and "60000" in assets
+    assert "api/assets" in assets and "60000" not in assets
+    assert 'data-l="' in app
+    assert "table.stack" in _read(TRIAL / "trial.css")
+    assert ":has(td[data-l])" not in _read(TRIAL / "trial.css")
     assert "TDAssets" in main and "TDAssets" in assets
     assert "#detail" in main and "#assets" in main and '"desk"' in main
     assert "Read-only view. This add-on cannot place, change or cancel orders." in html

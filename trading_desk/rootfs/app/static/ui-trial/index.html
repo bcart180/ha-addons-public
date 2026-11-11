@@ -43,7 +43,7 @@
   <section class="card portfolio">
     <h2>Whole portfolio <span class="muted" id="pfhint"></span></h2>
     <div class="kv" id="pftot"></div>
-    <div class="tablewrap"><table id="pf"><thead><tr><th>Sym</th><th>Qty</th><th>Price</th><th>Value</th><th>Wt</th><th>Day $</th><th>Day %</th><th>Lifetime $</th><th>Lifetime %</th></tr></thead><tbody></tbody></table></div>
+    <div class="tablewrap"><table id="pf" class="stack"><thead><tr><th>Sym</th><th>Qty</th><th>Price</th><th>Value</th><th>Wt</th><th>Day $</th><th>Day %</th><th>Lifetime $</th><th>Lifetime %</th></tr></thead><tbody></tbody></table></div>
   </section>
   <section class="card equity">
     <h2>Account</h2>
@@ -62,7 +62,7 @@
   <section class="card positions">
     <h2>Positions <span class="muted" id="poscount"></span></h2>
     <p class="note">Tap a row to chart that symbol. This does not send an order.</p>
-    <div class="tablewrap"><table id="positions"><thead><tr>
+    <div class="tablewrap"><table id="positions" class="stack"><thead><tr>
       <th>Sym</th><th>Qty</th><th>Avg cost</th><th>Price</th><th>Day</th><th>Unrl $ (vs cost)</th><th>Unrl %</th><th>Wt</th>
     </tr></thead><tbody></tbody></table></div>
   </section>
@@ -71,7 +71,7 @@
     <div class="kv" id="holdtot"></div>
     <h3 class="muted">Since day one</h3>
     <div class="kv" id="alltime"></div>
-    <div class="tablewrap"><table id="holdings"><thead><tr><th>Acct</th><th>Sym</th><th>Shares</th><th>Cost/sh</th><th>Price</th><th>Value</th><th>Day</th><th>Unrl vs cost</th></tr></thead><tbody></tbody></table></div>
+    <div class="tablewrap"><table id="holdings" class="stack"><thead><tr><th>Acct</th><th>Sym</th><th>Shares</th><th>Cost/sh</th><th>Price</th><th>Value</th><th>Day</th><th>Unrl vs cost</th></tr></thead><tbody></tbody></table></div>
   </section>
   <section class="card bots">
     <h2>Desk bots <span id="deskex" class="badge ex hidden">EXAMPLE DATA</span><span id="feedst" class="badge dim"></span> <span class="muted" id="desksrc"></span></h2>
@@ -83,7 +83,7 @@
   </section>
   <section class="card fills">
     <h2>Today's fills <span class="muted" id="fillcount"></span></h2>
-    <div class="tablewrap"><table id="fills"><thead><tr><th>Time</th><th>Sym</th><th>Side</th><th>Qty</th><th>Price</th></tr></thead><tbody></tbody></table></div>
+    <div class="tablewrap"><table id="fills" class="stack"><thead><tr><th>Time</th><th>Sym</th><th>Side</th><th>Qty</th><th>Price</th></tr></thead><tbody></tbody></table></div>
   </section>
   <section class="card proposals">
     <h2>Rotation proposals <span id="propex" class="badge ex hidden">EXAMPLE</span></h2>
@@ -91,7 +91,7 @@
   </section>
   <section class="card orders">
     <h2>Open orders &amp; stops <span class="muted" id="ordcount"></span></h2>
-    <div class="tablewrap"><table id="orders"><thead><tr><th>Sym</th><th>Side</th><th>Type</th><th>Qty</th><th>Stop</th><th>Limit</th><th>Status</th></tr></thead><tbody></tbody></table></div>
+    <div class="tablewrap"><table id="orders" class="stack"><thead><tr><th>Sym</th><th>Side</th><th>Type</th><th>Qty</th><th>Stop</th><th>Limit</th><th>Status</th></tr></thead><tbody></tbody></table></div>
   </section>
   <section class="card price">
     <h2>Price <span class="muted" id="pricesym">tap a position</span> <span class="muted" id="pricelegend"></span></h2>

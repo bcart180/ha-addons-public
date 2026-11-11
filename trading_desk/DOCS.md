@@ -12,11 +12,31 @@ Total assets strip (0.1.13+): combined Schwab+Alpaca at the top of Desk, with Da
 A read-only, live control room for an Alpaca equity desk, in the Home Assistant
 sidebar (Ingress, behind the HA login, no ports exposed).
 
-## UI-4 page (0.3.4)
+## Schwab holdings file (0.3.5)
+
+Share counts live in `/share/trading_desk/schwab_holdings.json` (read through the `share:ro` map; the add-on never writes it). That path is a constant, not an option. A local preview can point `TD_SCHWAB_FILE` at another file. Schema `trading_desk.schwab_holdings/v1`. Symbols with `"quote": "alpaca"` are priced from Alpaca; a mutual fund can use `"quote": "static"` with `static_price`. The Schwab tab and the Main Schwab total use those live prices. If the file is missing or invalid, Main keeps the desk-feed holdings numbers.
+
+Example (placeholder names and round amounts only):
+
+```json
+{"schema":"trading_desk.schwab_holdings/v1","as_of":"2026-01-02T09:00:00-05:00","source":"example",
+ "accounts":[
+  {"id":"individual","name":"Brokerage","mask":"0000","cash":100.00,"positions":[
+    {"symbol":"AAA","name":"Example A Corp","type":"equity","qty":10,"cost_basis":1000.00,"quote":"alpaca"},
+    {"symbol":"BBB","name":"Example B Inc","type":"equity","qty":5.5,"cost_basis":null,"quote":"alpaca"}]},
+  {"id":"roth","name":"Retirement","cash":25.00,"positions":[
+    {"symbol":"AAA","name":"Example A Corp","type":"equity","qty":2,"cost_basis":150.00,"quote":"alpaca"},
+    {"symbol":"FUNDX","name":"Example Index Fund","type":"mutual_fund","qty":3,"cost_basis":null,"quote":"static",
+     "static_price":50.00,"static_price_as_of":"2026-01-02T09:00:00-05:00"}]}]}
+```
+
+`GET api/schwab` returns the same object as `schwab` on `api/state` and the event stream.
+
+## UI-4 page (0.3.5)
 
 `/` is the UI-4 page. `/ui-trial` serves the same document. `/ui-trial/` redirects with relative `Location: ../` (the ingress root).
 `/legacy` is the previous page, kept for rollback. `/legacy/` redirects to `../legacy`.
-Same GET endpoints (`api/state`, `api/events`, `api/bars`, `api/history`, `api/assets`).
+Same GET endpoints (`api/state`, `api/events`, `api/bars`, `api/history`, `api/assets`, `api/schwab`).
 The page cannot place, change, or cancel orders. Options and the schema are unchanged.
 
 ## Configuration

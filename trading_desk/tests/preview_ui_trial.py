@@ -8,12 +8,15 @@ Numbers are invented sample names (ALPHA, BRAVO, …), not an account.
 """
 import datetime as dt
 import json
+import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "rootfs" / "app" / "static"
+sys.path.insert(0, str(ROOT / "rootfs" / "app"))
+import schwab  # noqa: E402
 HOST, PORT = "127.0.0.1", 8765
 
 NOW = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
@@ -33,10 +36,34 @@ def _series(step, n, base, end):
     return t, e
 
 
-def state():
+def schwab_payload(tick=0):
+    """Placeholder holdings priced with a one-cent wobble so the tab can be screenshotted."""
+    doc, why = schwab.clean(schwab.MOCK_DOC)
+    if doc is None:
+        raise RuntimeError(why)
+    now_ms = NOW_MS + tick * 500
+    px = round(110 + (tick % 5) * 0.01, 2)
+    trades = {
+        "AAA": {"stream": (px, now_ms - 1000)},
+        "BBB": {"stream": (20.0, now_ms - 1000)},
+    }
+    bars = {
+        "AAA": {"daily": (px, "2026-01-02T15:00:00Z"), "prev": (100.0, "2026-01-01T15:00:00Z")},
+        "BBB": {"daily": (20.0, "2026-01-02T15:00:00Z"), "prev": (18.0, "2026-01-01T15:00:00Z")},
+    }
+    clock = {
+        "is_open": True,
+        "timestamp": NOW.isoformat(),
+        "next_open": (NOW + dt.timedelta(days=1)).isoformat(),
+        "next_close": (NOW + dt.timedelta(hours=2)).isoformat(),
+    }
+    return schwab.build_view(doc, trades, {}, bars, clock, now_ms, "iex", "", True)
+
+
+def state(tick=0):
     curve_t, curve_e = _series(300, 24, 14100, 14390)
-    return {
-        "v": "0.3.3", "ts_ms": NOW_MS, "mock": True, "env": "paper",
+    data = {
+        "v": "0.3.5", "ts_ms": NOW_MS + tick * 500, "mock": True, "env": "paper",
         "keys_configured": True,
         "health": {
             "trade_stream": {"state": "streaming", "last_msg_ms": NOW_MS, "error": None},
@@ -166,6 +193,30 @@ def state():
             {"name": "Day P&L", "value": 2.06, "limit": None, "unit": "%", "source": "sample account", "info": True},
         ],
     }
+    sw = schwab_payload(tick)
+    data["schwab"] = sw
+    combo = sw["combined"]
+    data["totals"]["schwab_total"] = combo["total"]
+    data["totals"]["schwab_source"] = "holdings file + Alpaca live"
+    data["totals"]["schwab_as_of"] = sw["as_of"]
+    data["totals"]["schwab_price_as_of"] = sw.get("price_as_of")
+    data["totals"]["day"]["schwab_pl"] = combo["day_pl"]
+    data["totals"]["day"]["schwab_plpc"] = combo["day_plpc"]
+    data["totals"]["unrealized"]["schwab_pl"] = combo["unrealized_pl"]
+    alpaca = data["totals"].get("alpaca_equity")
+    if combo["total"] is not None and alpaca is not None:
+        data["totals"]["combined_total"] = combo["total"] + alpaca
+    if combo["day_pl"] is not None and data["totals"]["day"].get("alpaca_pl") is not None:
+        data["totals"]["day"]["combined_pl"] = combo["day_pl"] + data["totals"]["day"]["alpaca_pl"]
+    if combo["unrealized_pl"] is not None and data["totals"]["unrealized"].get("alpaca_pl") is not None:
+        data["totals"]["unrealized"]["combined_pl"] = combo["unrealized_pl"] + data["totals"]["unrealized"]["alpaca_pl"]
+    alpha = round(162 + (tick % 5) * 0.01, 2)
+    for row in data["positions"]:
+        if row["symbol"] == "ALPHA":
+            row["price"] = alpha
+            row["market_value"] = round(row["qty"] * alpha, 2)
+            row["unrealized_pl"] = round(row["market_value"] - row["qty"] * row["avg_entry"], 2)
+    return data
 
 
 def history(key):
@@ -239,6 +290,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, kind, target.read_bytes(), "no-cache")
         if path == "/api/state":
             return self._json(state())
+        if path == "/api/schwab":
+            return self._json(state()["schwab"])
+        if path == "/iframe-harness":
+            page = (
+                "<!doctype html><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+                "<style>html,body{margin:0;height:100%;background:#000}iframe{border:0;width:100%;height:100%}</style>"
+                "<iframe src=\"/#detail\" title=\"Trading Desk\"></iframe>"
+            )
+            return self._send(200, "text/html; charset=utf-8", page.encode(), "no-store")
         if path == "/api/history":
             return self._json(history((qs.get("range") or ["1D"])[0].upper()))
         if path == "/api/bars":
@@ -252,9 +312,17 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
-            self.wfile.write(("event: state\ndata: %s\n\n" % json.dumps(state())).encode())
-            self.wfile.flush()
-            time.sleep(40)
+            # Two updates a second. Identical mode keeps one payload so a scroll test
+            # can also drive the page itself through TDApplyState.
+            identical = (qs.get("identical") or ["0"])[0] == "1"
+            try:
+                for n in range(40 if identical else 180):
+                    payload = state(0 if identical else n)
+                    self.wfile.write(("event: state\ndata: %s\n\n" % json.dumps(payload)).encode())
+                    self.wfile.flush()
+                    time.sleep(0.5)
+            except (BrokenPipeError, ConnectionResetError):
+                return
             return
         if path == "/api/health":
             return self._json({"ok": True})
@@ -274,9 +342,36 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
+def screenshots(port):
+    """Write Schwab-tab shots at 390, 768, and 1280 and refuse horizontal scroll."""
+    from playwright.sync_api import sync_playwright
+    out = Path("/tmp/td-schwab-shots")
+    out.mkdir(exist_ok=True)
+    with sync_playwright() as p:
+        browser = p.webkit.launch()
+        try:
+            for width in (390, 768, 1280):
+                page = browser.new_page(viewport={"width": width, "height": 900})
+                page.goto("http://%s:%d/#assets" % (HOST, port), wait_until="domcontentloaded")
+                page.wait_for_selector(".sw-total", timeout=10000)
+                page.screenshot(path=str(out / ("schwab-%d.png" % width)), full_page=True)
+                box = page.evaluate("""() => ({sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth})""")
+                if box["sw"] > box["cw"] + 1:
+                    raise SystemExit("horizontal scroll at %d: %s" % (width, box))
+                print("shot", width, box)
+        finally:
+            browser.close()
+    print("screenshots in", out)
+
+
 def main():
+    import threading
     httpd = ThreadingHTTPServer((HOST, PORT), Handler)
     print("synthetic UI-4 preview http://%s:%d/  legacy at /legacy" % (HOST, PORT))
+    if "--shots" in sys.argv:
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        screenshots(PORT)
+        return
     httpd.serve_forever()
 
 

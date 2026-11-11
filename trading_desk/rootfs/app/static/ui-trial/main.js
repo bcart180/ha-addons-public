@@ -5,7 +5,7 @@
 (function () {
   var mv = document.getElementById("mainview"), desk = document.getElementById("deskview"),
       av = document.getElementById("assetsview"), tabs = document.querySelectorAll("#tabs button");
-  var S = null, RANGE = "1D", timer = null, chart = null, seriesCache = {};
+  var S = null, RANGE = "1D", chart = null, seriesCache = {};
   var LABEL = { "1D": "Day", "1W": "Week", "1M": "Month", "1A": "Year", "5A": "5Y" };
   var SPAN_DAYS = { "1W": 7, "1M": 30, "1A": 365, "5A": 1826 };
   function esc(t) { return String(t == null ? "" : t).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
@@ -50,7 +50,7 @@
   }
 
   function holdings() {
-    var rows = {}, h = (S.desk || {}).holdings || {};
+    var rows = {}, sw = S.schwab, h = (S.desk || {}).holdings || {}, live = {};
     function add(sym, name, qty, px, dpc, val, cost) {
       var r = rows[sym] || (rows[sym] = { sym: sym, name: name, qty: 0, px: px, dpc: dpc, val: 0, cost: 0, noBasis: false });
       if (name && !r.name) r.name = name;
@@ -60,13 +60,19 @@
       else if (ok(cost) && cost > 0) r.cost += cost; else r.noBasis = true;   // never invent a basis
       if (ok(px)) r.px = px; if (ok(dpc)) r.dpc = dpc;
     }
-    (h.accounts || []).forEach(function (a) { (a.positions || []).forEach(function (p) {
-      var dpc = ok(p.prev_close) && p.prev_close ? (p.price / p.prev_close - 1) * 100 : null;
-      add(p.symbol, p.name, p.qty, p.price, dpc, p.value, p.cost_basis); }); });
+    if (sw && sw.ok) {
+      (sw.accounts || []).forEach(function (a) { (a.positions || []).forEach(function (p) {
+        live[p.symbol] = 1;
+        add(p.symbol, p.name, p.qty, p.price, p.day_plpc, p.value, p.cost_basis); }); });
+    } else {
+      (h.accounts || []).forEach(function (a) { (a.positions || []).forEach(function (p) {
+        var dpc = ok(p.prev_close) && p.prev_close ? (p.price / p.prev_close - 1) * 100 : null;
+        add(p.symbol, p.name, p.qty, p.price, dpc, p.value, p.cost_basis); }); });
+    }
     (S.positions || []).forEach(function (p) { add(p.symbol, null, p.qty, p.price, p.day_change_pct, p.market_value,
       ok(p.avg_entry) && p.avg_entry > 0 ? Math.abs(p.qty * p.avg_entry) : null); });
-    var hp = S.ha_prices || {};   // HA keyless price sensors win when present
-    Object.keys(rows).forEach(function (k) { var x = hp[k], r = rows[k];
+    var hp = S.ha_prices || {};   // HA keyless price sensors win when present, except live Schwab rows
+    Object.keys(rows).forEach(function (k) { if (live[k]) return; var x = hp[k], r = rows[k];
       if (x && ok(x.price)) { if (r.qty) r.val = r.qty * x.price; r.px = x.price; if (ok(x.prev_close) && x.prev_close) r.dpc = (x.price / x.prev_close - 1) * 100; } });
     Object.keys(rows).forEach(function (k) { var r = rows[k];
       if (!r.noBasis && r.cost > 0) { r.unrl = r.val - r.cost; r.unrlPct = r.unrl / r.cost * 100; } });
@@ -85,49 +91,88 @@
     return n ? { pl: pl, pct: cost ? pl / cost * 100 : null, ex: ex } : { na: true, ex: ex };
   }
 
+  var lastStamp = "", lastMainHtml = "";
   function render() {
     if (!S) { mv.innerHTML = '<div class="mv-card mv-empty">Loading…</div>'; return; }
     var p = parts(), g = gain(RANGE), c = S.crypto || {}, h = "", rows = holdings(), u = unrealized(rows);
+    var stamp = RANGE + "|" + rows.map(function (r) { return r.sym; }).join(",") + "|" + (g.na ? "na" : "y");
     h += '<div class="mv-card"><h2>Gain or loss on what you hold now (not yet sold)</h2>' +
-      (u.na ? '<div class="mv-gain flat">Not available</div>' :
-        '<div class="mv-gain ' + tone(u.pl) + '">' + word(u.pl) + " " + smoney(u.pl).replace(/^[+−]/, "") + " <small>" + spct(u.pct) + "</small></div>") +
-      '<div class="mv-asof">Schwab + Alpaca, current value vs. what you paid.' +
+      (u.na ? '<div class="mv-gain flat" data-k="held">Not available</div>' :
+        '<div class="mv-gain ' + tone(u.pl) + '" data-k="held">' + word(u.pl) + " " + smoney(u.pl).replace(/^[+−]/, "") + " <small>" + spct(u.pct) + "</small></div>") +
+      '<div class="mv-asof" data-k="heldnote">Schwab + Alpaca, current value vs. what you paid.' +
       (u.ex.length ? " Left out because the purchase price isn't known (basis n/a): " + esc(u.ex.join(", ")) + "." : "") + "</div></div>";
-    h += '<div class="mv-card"><h2>Everything you own</h2><div class="mv-total">' + money(p.total) + "</div>" +
-      '<div class="mv-asof">Schwab + Alpaca + Bitcoin on your Trezor · updated ' + esc(etStamp(S.ts_ms)) + "</div>";
+    h += '<div class="mv-card"><h2>Everything you own</h2><div class="mv-total" data-k="total">' + money(p.total) + "</div>" +
+      '<div class="mv-asof" data-k="asof">Schwab + Alpaca + Bitcoin on your Trezor · updated ' + esc(etStamp(S.ts_ms)) + "</div>";
     var tot = p.total || 1, seg = [["Schwab", p.schwab, "schwab"], ["Alpaca", p.alpaca, "alpaca"], ["Bitcoin", p.btc, "bitcoin"]];
-    h += '<div class="mv-bar" role="img" aria-label="Allocation: Schwab, Alpaca, and Bitcoin">' + seg.map(function (s) { return ok(s[1]) ? '<i class="seg ' + s[2] + '" style="width:' + (s[1] / tot * 100).toFixed(2) + '%"></i>' : ""; }).join("") + "</div>";
+    h += '<div class="mv-bar" role="img" aria-label="Allocation: Schwab, Alpaca, and Bitcoin">' + seg.map(function (s) { return ok(s[1]) ? '<i class="seg ' + s[2] + '" data-k="seg-' + s[2] + '" style="width:' + (s[1] / tot * 100).toFixed(2) + '%"></i>' : ""; }).join("") + "</div>";
     h += '<div class="mv-split">' + seg.map(function (s) {
-      return '<div><span><i class="sw ' + s[2] + '" aria-hidden="true"></i>' + s[0] + "</span><b>" + money(s[1]) + "</b></div>"; }).join("") + "</div>";
+      return '<div><span><i class="sw ' + s[2] + '" aria-hidden="true"></i>' + s[0] + '</span><b data-k="part-' + s[2] + '">' + money(s[1]) + "</b></div>"; }).join("") + "</div>";
     if (!ok(c.value)) h += '<div class="mv-note">Bitcoin isn\'t counted yet: ' + esc(c.qty_error || c.price_error || "waiting for the BTC price") + ".</div>";
     h += "</div>";
 
     h += '<div class="mv-card"><h2>How much you\'ve gained or lost</h2><div class="mv-ranges" role="group" aria-label="Gain or loss range">' +
       Object.keys(LABEL).map(function (k) { var gk = gain(k);
-        return '<button type="button" data-r="' + k + '" class="' + (k === RANGE ? "on" : "") + (gk.limited ? " limited" : "") + (gk.disabled ? " na" : "") + '" aria-pressed="' + (k === RANGE ? "true" : "false") + '"' + (gk.disabled ? ' disabled aria-disabled="true" title="' + esc(gk.na) + '"' : "") + ">" + LABEL[k] + "</button>"; }).join("") + "</div>";
-    if (g.na) h += '<div class="mv-gain flat">Not available</div><div class="mv-note">' + esc(g.na) + "</div>";
-    else h += '<div class="mv-gain ' + tone(g.pl) + '">' + word(g.pl) + " " + smoney(g.pl).replace(/^[+−]/, "") + " <small>" + spct(g.pct) + "</small></div>" +
-      '<div class="mv-note">' + esc(g.note) + "</div>";
+        return '<button type="button" data-k="rng-' + k + '" data-r="' + k + '" class="' + (k === RANGE ? "on" : "") + (gk.limited ? " limited" : "") + (gk.disabled ? " na" : "") + '" aria-pressed="' + (k === RANGE ? "true" : "false") + '"' + (gk.disabled ? ' disabled aria-disabled="true" title="' + esc(gk.na) + '"' : "") + ">" + LABEL[k] + "</button>"; }).join("") + "</div>";
+    if (g.na) h += '<div class="mv-gain flat" data-k="gain">Not available</div><div class="mv-note" data-k="gnote">' + esc(g.na) + "</div>";
+    else h += '<div class="mv-gain ' + tone(g.pl) + '" data-k="gain">' + word(g.pl) + " " + smoney(g.pl).replace(/^[+−]/, "") + " <small>" + spct(g.pct) + "</small></div>" +
+      '<div class="mv-note" data-k="gnote">' + esc(g.note) + "</div>";
     h += '<h2 style="margin-top:16px">' + (RANGE === "1D" ? "Alpaca account today" : "Alpaca account value, " + LABEL[RANGE].toLowerCase()) + '</h2><div id="mvchart" class="mv-chart"></div><div class="mv-key"><i class="sw alpaca" aria-hidden="true"></i> Blue line: Alpaca equity</div></div>';
 
     h += '<div class="mv-card"><h2>Your stocks and Bitcoin</h2>';
     if (!rows.length) h += '<div class="mv-empty">No holdings reported yet.</div>';
     else h += "<table><thead><tr><th>Name</th><th>Price</th><th>Today</th><th class=\"hide-sm\">Shares</th><th>Value</th><th>Gain/loss</th></tr></thead><tbody>" +
-      rows.map(function (r) { return "<tr><td><b>" + esc(r.sym) + '</b><span class="nm">' + esc(r.name || "") + "</span></td><td>" + money(r.px) +
-        '</td><td class="' + tone(r.dpc) + '">' + (ok(r.dpc) ? spct(r.dpc) : "—") + '</td><td class="hide-sm">' +
-        (ok(r.qty) ? Number(r.qty).toLocaleString("en-US", { maximumFractionDigits: r.btc ? 5 : 3 }) : "—") + "</td><td>" + money(r.val, 0) + '</td><td class="' + (ok(r.unrl) ? tone(r.unrl) : "flat") + '">' +
+      rows.map(function (r) { return "<tr><td><b>" + esc(r.sym) + '</b><span class="nm">' + esc(r.name || "") + "</span></td><td data-k=\"px-" + esc(r.sym) + "\">" + money(r.px) +
+        '</td><td data-k="day-' + esc(r.sym) + '" class="' + tone(r.dpc) + '">' + (ok(r.dpc) ? spct(r.dpc) : "—") + '</td><td class="hide-sm">' +
+        (ok(r.qty) ? Number(r.qty).toLocaleString("en-US", { maximumFractionDigits: r.btc ? 5 : 3 }) : "—") + '</td><td data-k="val-' + esc(r.sym) + '">' + money(r.val, 0) + '</td><td data-k="un-' + esc(r.sym) + '" class="' + (ok(r.unrl) ? tone(r.unrl) : "flat") + '">' +
         (ok(r.unrl) ? smoney(r.unrl).replace(/\.\d\d$/, "") + '<span class="nm">' + spct(r.unrlPct) + "</span>" : '<span class="nm" style="display:inline">basis n/a</span>') + "</td></tr>"; }).join("") + "</tbody></table>";
-    h += '<div class="mv-asof" style="margin-top:10px">Stock prices: Alpaca live quotes (IEX). Funds without a live quote use the morning Schwab snapshot. Bitcoin: ' +
+    var priceNote = (S.schwab && S.schwab.ok)
+      ? "Stock prices: Alpaca live trades. Funds without an Alpaca quote use their snapshot price. "
+      : "Stock prices: Alpaca live quotes (IEX). Funds without a live quote use the morning Schwab snapshot. ";
+    h += '<div class="mv-asof" data-k="src" style="margin-top:10px">' + priceNote + "Bitcoin: " +
       esc(c.price_source || "—") + (c.price_as_of_ms ? " at " + esc(etStamp(c.price_as_of_ms)) : "") + ". Change the Trezor amount in Home Assistant: <b>Trezor Bitcoin</b> helper.</div></div>";
-    mv.innerHTML = h;
+    if (h === lastMainHtml) { drawChart(false); return; }
+    if (stamp === lastStamp && mv.querySelector("#mvchart") && patchMain(h)) {
+      lastMainHtml = h;
+      drawChart(false);
+      return;
+    }
+    lastStamp = stamp;
+    lastMainHtml = h;
+    if (chart) { try { chart.destroy(); } catch (x) { /* ignore */ } chart = null; }
+    var apply = function () { mv.innerHTML = h; };
+    if (window.TDGuard) window.TDGuard(apply); else apply();
     mv.querySelectorAll(".mv-ranges button").forEach(function (b) { b.onclick = function () { RANGE = b.dataset.r; render(); }; });
-    drawChart();
+    drawChart(false);
+  }
+  function patchMain(html) {
+    var box = document.createElement("div");
+    box.innerHTML = html;
+    var cur = mv.querySelectorAll("[data-k]"), nxt = box.querySelectorAll("[data-k]");
+    if (cur.length !== nxt.length) return false;
+    var i;
+    for (i = 0; i < cur.length; i++) if (cur[i].getAttribute("data-k") !== nxt[i].getAttribute("data-k")) return false;
+    for (i = 0; i < cur.length; i++) {
+      if (cur[i].className !== nxt[i].className) cur[i].className = nxt[i].className;
+      if (cur[i].getAttribute("style") !== nxt[i].getAttribute("style")) {
+        if (nxt[i].getAttribute("style")) cur[i].setAttribute("style", nxt[i].getAttribute("style"));
+      }
+      if (cur[i].innerHTML !== nxt[i].innerHTML) cur[i].innerHTML = nxt[i].innerHTML;
+    }
+    return true;
   }
 
-  function drawChart() {
+  function drawChart(fromResize) {
     var el = document.getElementById("mvchart"); if (!el || !window.uPlot) return;
     function paint(t, e) {
-      if (!t || t.length < 2) { el.innerHTML = '<div class="mv-empty">No chart data for this range yet.</div>'; return; }
+      if (!t || t.length < 2) {
+        if (!el.querySelector(".mv-empty")) el.textContent = "No chart data for this range yet.";
+        return;
+      }
+      if (chart && chart._range === RANGE) {
+        chart.setData([t, e]);
+        if (fromResize) chart.setSize({ width: el.clientWidth || 600, height: 240 });
+        return;
+      }
       if (chart) { try { chart.destroy(); } catch (x) { /* ignore */ } chart = null; }
       el.innerHTML = "";
       var w = el.clientWidth || 600;
@@ -136,21 +181,61 @@
         axes: [{ stroke: "#b4b6bb", grid: { stroke: "#2e2e32" }, ticks: { stroke: "#2e2e32" } },
                { stroke: "#b4b6bb", grid: { stroke: "#2e2e32" }, ticks: { stroke: "#2e2e32" }, size: 70, values: function (u, v) { return v.map(function (x) { return "$" + Math.round(x).toLocaleString(); }); } }],
         series: [{}, { stroke: "#3e6ae1", width: 2.5, fill: "rgba(62,106,225,.16)" }] }, [t, e], el);
+      chart._range = RANGE;
     }
     if (RANGE === "1D") { var cv = S.curve || {}; paint(cv.t, cv.equity); return; }
     var cached = seriesCache[RANGE];
     if (cached && Date.now() - cached.at < 120000) { paint(cached.d.t, cached.d.equity); return; }
     fetch("api/history?range=" + RANGE, { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
       seriesCache[RANGE] = { at: Date.now(), d: d }; if (document.getElementById("mvchart") === el) paint(d.t, d.equity);
-    }).catch(function () { el.innerHTML = '<div class="mv-empty">Chart unavailable.</div>'; });
+    }).catch(function () { if (!el.querySelector(".mv-empty")) el.textContent = "Chart unavailable."; });
   }
 
-  function refresh() {
-    fetch("api/state", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) { S = d; render(); })
-      .catch(function () { mv.innerHTML = '<div class="mv-card mv-empty">Can\'t reach the Trading Desk right now.</div>'; });
+  var lastMain = 0, mainTimer = null, mainPending = false;
+  function mainVisible() { return !mv.classList.contains("hidden"); }
+  function runMain() {
+    if (!mainVisible() || !S) return;
+    lastMain = Date.now();
+    if (window.TDRenderCounts) window.TDRenderCounts.main++;
+    render();
   }
+  window.TDRenderMain = function (force) {
+    if (window.TDShared) S = window.TDShared;
+    if (!S || !mainVisible()) return;
+    if (document.hidden && !force) return;
+    if (force) {
+      if (mainTimer) { clearTimeout(mainTimer); mainTimer = null; }
+      mainPending = false;
+      runMain();
+      return;
+    }
+    if (mainPending) return;
+    var wait = Math.max(0, 1000 - (Date.now() - lastMain));
+    mainPending = true;
+    mainTimer = setTimeout(function () {
+      mainTimer = null;
+      mainPending = false;
+      requestAnimationFrame(function () { if (window.TDShared) S = window.TDShared; runMain(); });
+    }, wait);
+  };
 
-  function show(tab) {
+  var current = null;
+  var savedY = { main: 0, desk: 0, assets: 0 };
+  var seenTab = {};
+  var pinScroll = 0;
+  function writeHash(tab) {
+    var hash = tab === "desk" ? "#detail" : (tab === "assets" ? "#assets" : "#");
+    try { history.replaceState(null, "", (location.pathname || "/") + (location.search || "") + hash); }
+    catch (e) { /* ignore */ }
+  }
+  function show(tab, fromClick) {
+    // A click focuses the tab button and WebKit scrolls that button to the top
+    // before the click event. pointerdown already stored the real scrollY.
+    if (current && tab !== current && (Date.now() - pinScroll > 700))
+      savedY[current] = window.scrollY || window.pageYOffset || 0;
+    var first = !seenTab[tab];
+    seenTab[tab] = true;
+    current = tab;
     document.body.classList.toggle("slate", tab === "main");
     mv.classList.toggle("hidden", tab !== "main");
     desk.classList.toggle("hidden", tab !== "desk");
@@ -160,17 +245,36 @@
       b.classList.toggle("on", on);
       b.setAttribute("aria-selected", on ? "true" : "false");
     });
-    if (timer) { clearInterval(timer); timer = null; }
-    if (window.TDAssets) { if (tab === "assets") window.TDAssets.start(); else window.TDAssets.stop(); }
-    if (tab === "main") { refresh(); timer = setInterval(function () { if (!document.hidden) refresh(); }, 15000); }
-    try {
-      var hash = tab === "main" ? "#" : (tab === "desk" ? "#detail" : "#assets");
-      history.replaceState(null, "", location.origin + location.pathname + location.search + hash);
-    } catch (e) { /* ignore */ }
+    if (window.TDAssets) {
+      if (tab === "assets") window.TDAssets.start();
+      else if (window.TDAssets.stop) window.TDAssets.stop();
+    }
+    if (tab === "desk" && window.TDRenderDetail) window.TDRenderDetail();
+    if (tab === "main" && window.TDRenderMain) window.TDRenderMain(true);
+    var y = first ? 0 : (savedY[tab] || 0);
+    // Focus can scroll the tab button into view after the click. Put the saved
+    // position back once the focus scroll has happened.
+    function put() { if (window.TDRestoreScroll) window.TDRestoreScroll(y); }
+    requestAnimationFrame(put);
+    setTimeout(put, 60);
+    setTimeout(put, 180);
+    if (fromClick) writeHash(tab);
     setTimeout(function () { window.dispatchEvent(new Event("resize")); }, 0);
   }
-  tabs.forEach(function (b) { b.addEventListener("click", function () { show(b.dataset.tab); }); });
-  window.addEventListener("resize", function () { if (!mv.classList.contains("hidden")) drawChart(); });
+  tabs.forEach(function (b) {
+    b.addEventListener("pointerdown", function () {
+      if (!current) return;
+      savedY[current] = window.scrollY || window.pageYOffset || 0;
+      pinScroll = Date.now();
+    });
+    b.addEventListener("click", function () { show(b.dataset.tab, true); });
+  });
+  window.addEventListener("resize", function () { if (!mv.classList.contains("hidden") && chart) chart.setSize({ width: (document.getElementById("mvchart") || {}).clientWidth || 600, height: 240 }); });
+  if (!window.TDShared) {
+    fetch("api/state", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!window.TDShared && window.TDApplyState) window.TDApplyState(d);
+    }).catch(function () { if (mainVisible()) mv.innerHTML = '<div class="mv-card mv-empty">Can\'t reach the Trading Desk right now.</div>'; });
+  }
   var hsh = location.hash.replace("#", "");
-  show(hsh === "assets" ? "assets" : (hsh === "detail" || hsh === "desk") ? "desk" : "main");
+  show(hsh === "assets" ? "assets" : (hsh === "detail" || hsh === "desk") ? "desk" : "main", false);
 })();
