@@ -1,5 +1,7 @@
 """Run: python3 social_pulse/tests/test_social_pulse.py  (stdlib only, no network)."""
+import base64
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -404,12 +406,240 @@ class SiteDashboardTests(unittest.TestCase):
         self.assertNotIn("disabled", docs.lower())
         self.assertNotIn("rotat", docs.lower())
         cfg = open(os.path.join(ADDON, "config.yaml"), encoding="utf-8").read()
-        self.assertIn('version: "0.3.1"', cfg)
+        self.assertIn('version: "0.3.2"', cfg)
+        self.assertNotIn('version: "0.3.1"', cfg)
         self.assertNotIn("Soft Slate", docs)
         readme = open(os.path.join(ADDON, "README.md"), encoding="utf-8").read()
         self.assertNotIn("Soft Slate", readme)
         self.assertIn("#000000", docs)
         self.assertRegex(cfg, r"zones:\s*\[\]")
+
+
+PROD_SHA = {
+    "index.html": (1513, "6995d19f7be1185c9aef4c8db109ea631523eff331419d3ef346520e77b670ae"),
+    "app.css": (6954, "4b123b3d3f93047b55d343598e2002754ba5708d6cd35e17d909a32f38e58e99"),
+    "app.js": (13653, "1a04928dc1054a5d98c929437d9aafc41a3ed7fd7813ddcb4fb1ff91aea1f5b3"),
+    "soft-slate.css": (3674, "019fb22224e06b0598ceefd4e7cc1f0b2498c5f70edf3d21e9c3e15ed10a0f2b"),
+}
+COLLECTOR_SHA = (22865, "9e8d4b211abc66ac6fea788bad2e9900f02ea2500a7e11712cafc4541c98b0b8")
+PROD_CSP = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'self'"
+SCHEMA = """schema:
+  # Secrets: password fields only, entered at install time. Never in the repo.
+  x_bearer_token: password?
+  cloudflare_api_token: password?
+  x_accounts:
+    - match(^[A-Za-z0-9_]{1,15}$)
+  cloudflare_account_id: match(^[a-f0-9]{32}$)?
+  zones:
+    - name: str
+      zone_id: match(^[a-f0-9]{32}$)
+      rum_site_tag: match(^[a-f0-9]{32}$)?
+  refresh_minutes: int(15,1440)
+  snapshot_file: str?
+  log_level: list(debug|info|warning|error)
+"""
+
+
+def trial_ingress_root(pathname):
+    """Mirror the trial head script: strip the trial document, then keep a trailing slash."""
+    text = open(os.path.join(APP, "static", "ui-trial", "index.html"), encoding="utf-8").read()
+    listed = re.search(r"var suffixes = \[(.*?)\];", text, re.S)
+    if listed is None:
+        raise AssertionError("trial head script is missing the suffix list")
+    suffixes = re.findall(r'"([^"]+)"', listed.group(1))
+    path = pathname
+    for suffix in suffixes:
+        if len(path) >= len(suffix) and path.endswith(suffix):
+            path = path[: len(path) - len(suffix)]
+            break
+    if not path or not path.endswith("/"):
+        path += "/"
+    return path
+
+
+def _hue_sat(hex_color):
+    value = hex_color[1:]
+    channels = [int(value[index:index + 2], 16) / 255 for index in (0, 2, 4)]
+    high = max(channels)
+    low = min(channels)
+    if high == 0 or high == low:
+        return None, 0.0
+    sat = (high - low) / high
+    delta = high - low
+    red, green, blue = channels
+    if high == red:
+        hue = ((green - blue) / delta) % 6
+    elif high == green:
+        hue = (blue - red) / delta + 2
+    else:
+        hue = (red - green) / delta + 4
+    return hue * 60, sat
+
+
+class TrialTests(unittest.TestCase):
+    def test_version_schema_and_docs(self):
+        cfg = open(os.path.join(ADDON, "config.yaml"), encoding="utf-8").read()
+        self.assertIn('version: "0.3.2"', cfg)
+        self.assertIn(SCHEMA, cfg)
+        self.assertIn("ingress_port: 8099", cfg)
+        self.assertIn("panel_admin: true", cfg)
+        self.assertIn("homeassistant_api: false", cfg)
+        self.assertNotIn("auth_api", cfg)
+        self.assertNotIn("homeassistant_api: true", cfg)
+        changelog = open(os.path.join(ADDON, "CHANGELOG.md"), encoding="utf-8").read()
+        self.assertIn("## 0.3.2", changelog)
+        for name in ("README.md", "DOCS.md"):
+            text = open(os.path.join(ADDON, name), encoding="utf-8").read()
+            self.assertIn("/ui-trial", text)
+            self.assertIn("0.3.1", text)
+        collector = open(os.path.join(APP, "collectors.py"), "rb").read()
+        self.assertEqual((len(collector), hashlib.sha256(collector).hexdigest()), COLLECTOR_SHA)
+
+    def test_production_bytes_and_trial_source(self):
+        static = os.path.join(APP, "static")
+        for name, (size, digest) in PROD_SHA.items():
+            raw = open(os.path.join(static, name), "rb").read()
+            self.assertEqual(len(raw), size, name)
+            self.assertEqual(hashlib.sha256(raw).hexdigest(), digest, name)
+        trial = os.path.join(static, "ui-trial")
+        banned = ("orange", "amber", "#ff9e4a", "#ffe566", "gold", "winchester", "hideaway", "nabu.casa", "/legacy")
+        blob = []
+        for name in ("index.html", "app.css", "app.js"):
+            text = open(os.path.join(trial, name), encoding="utf-8").read()
+            blob.append(text)
+            lowered = text.lower()
+            for token in banned:
+                self.assertNotIn(token, lowered, name + " " + token)
+            self.assertNotIn("scrollIntoView", text, name)
+            self.assertNotIn("autofocus", lowered, name)
+            for match in re.finditer(r"#[0-9a-f]{6}\b", lowered):
+                hue, sat = _hue_sat(match.group(0))
+                if hue is not None and 18 <= hue <= 62 and sat >= 0.18:
+                    self.fail("%s warm hue %s h=%.1f s=%.2f" % (name, match.group(0), hue, sat))
+        html, css, js = blob
+        self.assertIn('data-ui="bryson-ui-4"', html)
+        self.assertIn('href="ui-trial/app.css"', html)
+        self.assertIn('src="ui-trial/app.js"', html)
+        self.assertNotIn('href="/', html)
+        self.assertNotIn('src="/', html)
+        self.assertIn('aria-label="Range"', html)
+        self.assertIn('data-range="7d"', html)
+        self.assertIn('data-range="30d"', html)
+        self.assertIn("min-height: 48px", css)
+        self.assertIn("#005aff", css)
+        self.assertIn("#000000", css)
+        self.assertIn("#414141", css)
+        self.assertIn("@media (min-width: 768px)", css)
+        self.assertIn("@media (min-width: 1280px)", css)
+        self.assertIn("overflow-anchor: none", css)
+        self.assertIn('fetch("api/snapshot", { cache: "no-store" })', js)
+        self.assertEqual(js.count("fetch("), 1)
+        self.assertNotIn('fetch("/', js)
+        self.assertNotIn("post_impressions_30d", js)
+        self.assertIn("post_impressions_7d", js)
+        self.assertIn("setInterval(load, 5 * 60 * 1000)", js)
+        self.assertIn("function scrollRoot()", js)
+        self.assertIn("function writeTop(", js)
+        self.assertNotIn(".focus(", js)
+        self.assertIn("No X accounts in this snapshot.", js)
+        self.assertIn("No websites in this snapshot.", js)
+        self.assertIn("No original posts yet", js)
+        self.assertIn("Not available", js)
+        self.assertIn("WordPress/PHP probe hits are hidden from Top pages.", js)
+        on_range = re.search(r"function onRange\(b\) \{(.*?)\n  \}", js, re.S)
+        self.assertIsNotNone(on_range)
+        self.assertNotIn("fetch", on_range.group(1))
+        self.assertEqual(trial_ingress_root("/ui-trial"), "/")
+        self.assertEqual(trial_ingress_root("/ui-trial/"), "/")
+        self.assertEqual(trial_ingress_root("/ui-trial/index.html"), "/")
+        prefix = "/hassio/ingress/example"
+        for suffix in ("/ui-trial", "/ui-trial/", "/ui-trial/index.html"):
+            self.assertEqual(trial_ingress_root(prefix + suffix), prefix + "/")
+        server_text = open(os.path.join(APP, "server.py"), encoding="utf-8").read()
+        self.assertIn('Location", "../ui-trial"', server_text)
+        self.assertNotIn("/legacy", server_text)
+        self.assertNotIn('version: "0.3.1"', server_text)
+
+    def test_routes_keep_production_and_serve_trial(self):
+        import importlib
+        server = importlib.import_module("server")
+        server.ALLOW = {"127.0.0.1"}
+        server._state["snap"] = fx("snapshot.json")
+        httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        self.addCleanup(httpd.shutdown)
+        base = "http://127.0.0.1:%d" % httpd.server_address[1]
+
+        def get(path):
+            with urllib.request.urlopen(base + path) as response:
+                return response.status, response.headers, response.read(), response.geturl()
+
+        root_status, root_headers, root_body, root_url = get("/")
+        self.assertEqual(root_status, 200)
+        self.assertTrue(root_url.endswith("/"))
+        index_body = get("/index.html")[2]
+        self.assertEqual(root_body, index_body)
+        static = os.path.join(APP, "static")
+        for name in PROD_SHA:
+            served = root_body if name == "index.html" else get("/" + name)[2]
+            self.assertEqual(served, open(os.path.join(static, name), "rb").read(), name)
+            self.assertEqual(hashlib.sha256(served).hexdigest(), PROD_SHA[name][1], name)
+        self.assertEqual(root_headers["Content-Security-Policy"], PROD_CSP)
+        self.assertNotIn("sha256-", root_headers["Content-Security-Policy"])
+        self.assertNotIn("base-uri", root_headers["Content-Security-Policy"])
+        self.assertEqual(get("/app.css")[1]["Content-Security-Policy"], PROD_CSP)
+        self.assertEqual(get("/api/health")[1]["Content-Security-Policy"], PROD_CSP)
+        self.assertEqual(json.loads(get("/api/health")[2]), {"ok": True})
+        self.assertNotIn(b"bryson-ui-4", root_body)
+        self.assertNotIn(b"/ui-trial/", root_body)
+
+        status, headers, trial, final = get("/ui-trial")
+        self.assertEqual(status, 200)
+        self.assertTrue(final.endswith("/ui-trial"))
+        self.assertNotEqual(trial, root_body)
+        self.assertEqual(get("/ui-trial/")[2], trial)
+        self.assertEqual(get("/ui-trial/index.html")[2], trial)
+        self.assertTrue(get("/ui-trial/")[3].endswith("/ui-trial"))
+        self.assertIn(b'data-ui="bryson-ui-4"', trial)
+        self.assertIn(b'href="ui-trial/app.css"', trial)
+        self.assertIn(b'src="ui-trial/app.js"', trial)
+        self.assertNotIn(b'href="/ui-trial/', trial)
+        self.assertNotIn(b'src="/', trial)
+        csp = headers["Content-Security-Policy"]
+        self.assertIn("base-uri 'self'", csp)
+        self.assertNotIn("base-uri 'none'", csp)
+        script = re.search(br"<script>(.*?)</script>", trial, re.S).group(1)
+        script_hash = base64.b64encode(hashlib.sha256(script).digest()).decode()
+        self.assertIn("'sha256-%s'" % script_hash, csp)
+        css_headers = get("/ui-trial/app.css")[1]
+        self.assertEqual(css_headers["Content-Security-Policy"], PROD_CSP)
+        trial_js = get("/ui-trial/app.js")[2]
+        self.assertIn(b'fetch("api/snapshot", { cache: "no-store" })', trial_js)
+        self.assertNotIn(b'fetch("/', trial_js)
+        for suffix in ("/ui-trial/", "/ui-trial/index.html"):
+
+            class StopRedirect(urllib.request.HTTPRedirectHandler):
+                def redirect_request(self, req, fp, code, msg, hdrs, newurl):
+                    raise urllib.error.HTTPError(req.full_url, code, msg, hdrs, fp)
+
+            stopped = urllib.request.build_opener(StopRedirect)
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                stopped.open(urllib.request.Request(base + suffix, method="GET"))
+            self.assertEqual(caught.exception.code, 302)
+            self.assertEqual(caught.exception.headers["Location"], "../ui-trial")
+        with self.assertRaises(urllib.error.HTTPError) as missing:
+            get("/legacy")
+        self.assertEqual(missing.exception.code, 404)
+        req = urllib.request.Request(base + "/ui-trial", data=b"{}", method="POST")
+        with self.assertRaises(urllib.error.HTTPError) as denied:
+            urllib.request.urlopen(req)
+        self.assertEqual(denied.exception.code, 405)
+        self.assertIn(b"read-only", denied.exception.read())
+        for method in ("PUT", "PATCH", "DELETE"):
+            write = urllib.request.Request(base + "/api/snapshot", data=b"{}", method=method)
+            with self.assertRaises(urllib.error.HTTPError) as denied:
+                urllib.request.urlopen(write)
+            self.assertEqual(denied.exception.code, 405, method)
 
 
 if __name__ == "__main__":

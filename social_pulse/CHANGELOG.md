@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2 — 2026-11-11
+
+- Trial path `/ui-trial` serves a BRYSON-UI-4 presentation of the same snapshot page. Production `/`, `/index.html`, `/app.css`, `/app.js`, and `/soft-slate.css` are unchanged from 0.3.1.
+- The trial keeps the 7-day / 30-day range on the snapshot already loaded, and the five-minute re-read. Scroll position stays put through that re-read and through a range change. Collector, options, schema, and the ingress allow list are unchanged.
+
 ## 0.3.1 — 2026-11-08
 
 - Presentation only. Page background is pure black `#000000`. Cards, type, and the range control keep the Trading Desk reading size: 16px radius, light figures, thin borders, 44px controls. Category colors are purple, orange, yellow, red, pink, green, and cyan, each with a written label. The edge chart uses orange for requests and purple for page views, and the legend still names both. Collector, options, ingress allowlist, and read-only behavior are unchanged. The stylesheet file name is still `soft-slate.css`.
