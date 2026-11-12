@@ -93,6 +93,8 @@ jobs:
         run: python trading_desk/tests/test_schwab.py
       - name: Schwab sign formatting
         run: node --test trading_desk/tests/test_assets_signs.mjs
+      - name: Bubble charts
+        run: node --test trading_desk/tests/test_bubbles.mjs
 
   smart-hvac:
     name: Smart HVAC lint + tests

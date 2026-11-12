@@ -58,7 +58,7 @@ def _view(trades=None, quotes=None, bars=None, clock=None, doc=None, reason="", 
 
 def test_options_and_schema_bytes_unchanged():
     text = (ROOT / "config.yaml").read_text(encoding="utf-8")
-    assert 'version: "0.3.5"' in text
+    assert 'version: "0.3.6"' in text
     options, schema = text.split("options:\n", 1)[1].split("schema:\n", 1)
     assert options == (
         "  trading_env: live\n"

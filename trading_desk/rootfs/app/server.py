@@ -36,7 +36,7 @@ APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC = APP_DIR / "static"
 EXAMPLE_STATUS = APP_DIR / "example_status.json"
 ET = ZoneInfo("America/New_York")
-VERSION = "0.3.5"
+VERSION = "0.3.6"
 BOTS = ["Desk Lead", "Strategist", "Risk Manager", "Research Analyst",
         "Execution Trader", "Trade Reviewer", "Trading Floor"]
 DEFAULT_STATUS_PATHS = [   # spec order: HA config custom_templates first, then /share

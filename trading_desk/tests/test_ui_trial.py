@@ -86,9 +86,9 @@ def test_legacy_shell_is_the_previous_page():
 
 def test_version_bump_and_schema():
     cfg = _read(ROOT / "config.yaml")
-    assert 'version: "0.3.5"' in cfg
-    assert 'version: "0.3.4"' not in cfg
-    assert server.VERSION == "0.3.5"
+    assert 'version: "0.3.6"' in cfg
+    assert 'version: "0.3.5"' not in cfg
+    assert server.VERSION == "0.3.6"
     for key in SCHEMA_KEYS:
         assert re.search(r"^  %s:" % re.escape(key), cfg, re.M), key
     schema = cfg.split("schema:", 1)[1]
@@ -193,11 +193,12 @@ def test_no_orange_and_no_write_verbs():
     html = _read(TRIAL / "index.html")
     assert "style.css" not in html and "main.css" not in html and "assets.css" not in html
     assert "static/ui-trial/main.js" in html
+    assert "static/ui-trial/bubbles.js" in html
     assert "static/app.js" in html and "static/assets.js" in html
     assert "body.slate #readonly" not in _read(TRIAL / "trial.css")
     assert "#readonly" not in _read(TRIAL / "trial.css")
-    files = [TRIAL / "index.html", TRIAL / "trial.css", TRIAL / "main.js", TRIAL / "enhance.js",
-             STATIC / "app.js", STATIC / "assets.js", STATIC / "vendor" / "uPlot.min.css"]
+    files = [TRIAL / "index.html", TRIAL / "trial.css", TRIAL / "main.js", TRIAL / "bubbles.js",
+             TRIAL / "enhance.js", STATIC / "app.js", STATIC / "assets.js", STATIC / "vendor" / "uPlot.min.css"]
     bad = []
     for path in files:
         text = _read(path)
