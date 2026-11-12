@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.6 — 2026-11-12
+
+- Main tab bubble charts. Gain/Loss plots unrealized dollars against percent of cost. Positions plots today's dollar change against percent price change. One bubble per open Schwab account row, Alpaca position, and Trezor Bitcoin when that helper has a value. The same symbol in two books stays two bubbles. Bubble area follows market value. Green and red stay on gain and loss.
+- The toggle is remembered in the browser session only. The Updated time is America/New_York. Info names the axes, the size, and the symbols left out.
+- Options, keys, schema, and the holdings-file path are unchanged. The add-on still only reads `/share/trading_desk/schwab_holdings.json` through `share:ro`. Still GET and EventSource only.
+
 ## 0.3.5 — 2026-11-11
 
 - Schwab tab prices a static holdings file at `/share/trading_desk/schwab_holdings.json` from Alpaca live trades (GET snapshots and clock only). The desk feed stays the fallback when that file is missing.

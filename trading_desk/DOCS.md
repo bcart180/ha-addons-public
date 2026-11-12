@@ -32,7 +32,15 @@ Example (placeholder names and round amounts only):
 
 `GET api/schwab` returns the same object as `schwab` on `api/state` and the event stream.
 
-## UI-4 page (0.3.5)
+## Bubble charts (0.3.6)
+
+The Main tab draws two charts above the holdings table. Gain/Loss uses unrealized dollars (X) and percent of cost (Y). Positions uses today's change in market value (X) and today's percent price change (Y). Bubble area follows market value. Green is a gain and red is a loss. Zero is neutral, on the origin.
+
+Each open row is its own bubble: every Schwab account position, every Alpaca position, and Trezor Bitcoin when the helper has a value. AAA in a Schwab account and AAA at Alpaca stay two bubbles. Cash is not a bubble. The Gain/Loss header sums unrealized dollars for rows with a known cost and divides by the sum of those costs. Rows without a cost, including Trezor and shorts, are left out and named in Info. The Positions header sums today's dollar change for rows that have one. Its percent divides that sum by the prior value of those rows. When the account reports cash, that cash is included in the prior value, the same way the Schwab total includes cash, and Info says so. A static fund such as FUNDX with no day change is left off the Positions chart and can still appear on Gain/Loss when its cost is known.
+
+The choice of chart is stored in the browser session only. There is no new option. Updated is an America/New_York clock labeled ET. The charts do not place, change, or cancel orders. Options, keys, and `/share/trading_desk/schwab_holdings.json` are unchanged. If that file is missing, Schwab rows still fall back to the desk feed, and Alpaca rows still render.
+
+## UI-4 page (0.3.6)
 
 `/` is the UI-4 page. `/ui-trial` serves the same document. `/ui-trial/` redirects with relative `Location: ../` (the ingress root).
 `/legacy` is the previous page, kept for rollback. `/legacy/` redirects to `../legacy`.

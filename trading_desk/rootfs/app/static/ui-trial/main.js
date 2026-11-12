@@ -6,6 +6,11 @@
   var mv = document.getElementById("mainview"), desk = document.getElementById("deskview"),
       av = document.getElementById("assetsview"), tabs = document.querySelectorAll("#tabs button");
   var S = null, RANGE = "1D", chart = null, seriesCache = {};
+  var bbMode = "gain", bbInfo = false, bbTip = "", bbUsedWidth = 0, bbFrame = 0;
+  try {
+    var bbSaved = sessionStorage.getItem("td-bubble-mode");
+    if (bbSaved === "day" || bbSaved === "gain") bbMode = bbSaved;
+  } catch (err) { /* session storage can be blocked */ }
   var LABEL = { "1D": "Day", "1W": "Week", "1M": "Month", "1A": "Year", "5A": "5Y" };
   var SPAN_DAYS = { "1W": 7, "1M": 30, "1A": 365, "5A": 1826 };
   function esc(t) { return String(t == null ? "" : t).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
@@ -82,6 +87,66 @@
     return out;
   }
 
+  function bubbleBoxWidth() {
+    var plot = document.getElementById("bbplot");
+    if (plot && plot.clientWidth >= 260) return plot.clientWidth;
+    var inner = mv.clientWidth || 0;
+    if (inner < 80) return 320;
+    var padL = 0, padR = 0;
+    try {
+      var cs = getComputedStyle(mv);
+      padL = parseFloat(cs.paddingLeft) || 0;
+      padR = parseFloat(cs.paddingRight) || 0;
+    } catch (err) { /* layout not ready */ }
+    return Math.max(260, inner - padL - padR - 38);
+  }
+  function bubbleCard() {
+    if (!window.TDBubbles) return "";
+    bbUsedWidth = bubbleBoxWidth();
+    return window.TDBubbles.cardHtml(S, bbUsedWidth, 320, bbMode, bbInfo, bbTip);
+  }
+  function syncBubbleChrome() {
+    var buttons = mv.querySelectorAll("[data-bb='mode']"), i, on, info;
+    for (i = 0; i < buttons.length; i++) {
+      on = buttons[i].getAttribute("data-mode") === bbMode;
+      buttons[i].setAttribute("aria-pressed", on ? "true" : "false");
+    }
+    info = mv.querySelector("[data-bb='info']");
+    if (info) info.setAttribute("aria-expanded", bbInfo ? "true" : "false");
+  }
+  function scheduleBubbleFit() {
+    if (bbFrame || !window.requestAnimationFrame) return;
+    bbFrame = requestAnimationFrame(function () {
+      bbFrame = 0;
+      var plot = document.getElementById("bbplot");
+      if (!plot || !S || mv.classList.contains("hidden")) return;
+      if (plot.clientWidth >= 260 && Math.abs(plot.clientWidth - bbUsedWidth) > 2) render();
+    });
+  }
+  /* Bubble clicks only change the chart on this page. They do not call the network. */
+  function onBubbleClick(ev) {
+    var t = ev.target;
+    var el = t && t.closest ? t.closest("[data-bb]") : null;
+    if (!el || !mv.contains(el)) return;
+    var kind = el.getAttribute("data-bb");
+    if (kind === "mode") {
+      var next = el.getAttribute("data-mode") === "day" ? "day" : "gain";
+      if (next === bbMode) return;
+      bbMode = next;
+      bbTip = "";
+      try { sessionStorage.setItem("td-bubble-mode", bbMode); } catch (err) { /* session storage can be blocked */ }
+      render();
+      return;
+    }
+    if (kind === "info") { bbInfo = !bbInfo; render(); return; }
+    if (kind === "close") { bbInfo = false; render(); return; }
+    if (kind === "bubble") {
+      var id = el.getAttribute("data-id") || "";
+      bbTip = (bbTip === id) ? "" : id;
+      render();
+    }
+  }
+
   function unrealized(rows) {
     var pl = 0, cost = 0, n = 0, ex = [];
     rows.forEach(function (r) {
@@ -118,6 +183,7 @@
       '<div class="mv-note" data-k="gnote">' + esc(g.note) + "</div>";
     h += '<h2 style="margin-top:16px">' + (RANGE === "1D" ? "Alpaca account today" : "Alpaca account value, " + LABEL[RANGE].toLowerCase()) + '</h2><div id="mvchart" class="mv-chart"></div><div class="mv-key"><i class="sw alpaca" aria-hidden="true"></i> Blue line: Alpaca equity</div></div>';
 
+    h += bubbleCard();
     h += '<div class="mv-card"><h2>Your stocks and Bitcoin</h2>';
     if (!rows.length) h += '<div class="mv-empty">No holdings reported yet.</div>';
     else h += "<table><thead><tr><th>Name</th><th>Price</th><th>Today</th><th class=\"hide-sm\">Shares</th><th>Value</th><th>Gain/loss</th></tr></thead><tbody>" +
@@ -133,7 +199,9 @@
     if (h === lastMainHtml) { drawChart(false); return; }
     if (stamp === lastStamp && mv.querySelector("#mvchart") && patchMain(h)) {
       lastMainHtml = h;
+      syncBubbleChrome();
       drawChart(false);
+      scheduleBubbleFit();
       return;
     }
     lastStamp = stamp;
@@ -142,7 +210,9 @@
     var apply = function () { mv.innerHTML = h; };
     if (window.TDGuard) window.TDGuard(apply); else apply();
     mv.querySelectorAll(".mv-ranges button").forEach(function (b) { b.onclick = function () { RANGE = b.dataset.r; render(); }; });
+    syncBubbleChrome();
     drawChart(false);
+    scheduleBubbleFit();
   }
   function patchMain(html) {
     var box = document.createElement("div");
@@ -269,7 +339,17 @@
     });
     b.addEventListener("click", function () { show(b.dataset.tab, true); });
   });
-  window.addEventListener("resize", function () { if (!mv.classList.contains("hidden") && chart) chart.setSize({ width: (document.getElementById("mvchart") || {}).clientWidth || 600, height: 240 }); });
+  mv.addEventListener("click", onBubbleClick);
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Escape" || !bbInfo) return;
+    bbInfo = false;
+    render();
+  });
+  window.addEventListener("resize", function () {
+    if (mv.classList.contains("hidden")) return;
+    if (chart) chart.setSize({ width: (document.getElementById("mvchart") || {}).clientWidth || 600, height: 240 });
+    render();
+  });
   if (!window.TDShared) {
     fetch("api/state", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
       if (!window.TDShared && window.TDApplyState) window.TDApplyState(d);

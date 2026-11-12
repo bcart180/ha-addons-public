@@ -34,8 +34,8 @@ def test_static_guards():
     assert 'data-l="' in app
     assert "setAttribute" not in enh
     assert "min-height: 220px" in css and "min-height: 240px" in css
-    first_party = [STATIC / "app.js", STATIC / "assets.js", TRIAL / "main.js", TRIAL / "enhance.js",
-                   TRIAL / "trial.css", TRIAL / "index.html"]
+    first_party = [STATIC / "app.js", STATIC / "assets.js", TRIAL / "main.js", TRIAL / "bubbles.js",
+                   TRIAL / "enhance.js", TRIAL / "trial.css", TRIAL / "index.html"]
     for path in first_party:
         text = path.read_text(encoding="utf-8")
         for needle in ("scrollIntoView", "scroll-snap", ".focus(", "scrollTop ="):
