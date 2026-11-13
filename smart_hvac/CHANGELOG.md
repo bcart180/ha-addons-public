@@ -1,3 +1,9 @@
+## 0.9.6 — 2026-11-13
+
+- Spare bathroom heater: the no-rise lockout now clears itself when a temperature reading reported after the trip is at least 1°F above the temperature at the run's last checkpoint. That proves the heater warmed the room and the trip came from a slow-reporting sensor. Normal control resumes, so the heater only comes back on at setpoint − 1. An alert and a log line say when it cleared.
+- No-rise detection is unchanged (45 minutes, 1°F). So are the stale-sensor cutoff, the 2 h max run, the 20 min cooldown, the 8 h / 24 h lockout, the 80°F cap, min on / off, the relay-fault latch, and the watchdog. A lockout with no such reading, or a lockout or relay fault, still needs Off then Heat.
+- The trip time and checkpoint temperature are stored in `/data/heater.json` as `nr_trip`. A latch from before 0.9.6 has no `nr_trip` and still needs Off then Heat once. 0.9.5 ignores the new key. Options are unchanged.
+
 ## 0.9.5 — 2026-11-11
 
 - Mini splits can pause together when a room cools too fast while heating, using the room sensor's own report times over the last 20 minutes. The default trigger is a 5.4°F/hr fall held for 120 seconds. They resume when that slope is flat or rising, or after 30 minutes, whichever comes first. `window_slope` defaults to on. Set it to false for 0.9.4 behavior.

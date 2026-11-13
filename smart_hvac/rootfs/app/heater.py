@@ -11,6 +11,9 @@ Safety (all enforced here, every tick):
   * > 8 h on in the last 24 h: lockout + notify (cleared by turning the zone off and back to heat)
   * temp sensor unavailable / unknown / non-numeric / stale (spare_bathroom.stale_minutes, default 75): off now + notify
   * no further 1 F rise (or setpoint reached) within 45 min of the last checkpoint while on: off + notify (latched)
+    0.9.6: that latch clears itself once a sensor reading reported AFTER the trip is >= 1 F above the temperature
+    at the last checkpoint (the heater did warm the room; the trip came from a slow-reporting sensor) + notify.
+    Detection itself is unchanged; with no such reading it stays latched until mode off -> heat.
   * plug on while it should be off: forced off + notify; power draw while off: relay fault + notify
   * door / window open (optional sensor): paused (off)
   * off at startup, shutdown and on any exception
@@ -117,6 +120,8 @@ class SpareHeater:
         self.carry = None           # (run_start, off_ts): run interrupted by a restart, resumed if back on in 20 min
         self.cap_latched = False
         self.latched = None         # "lockout" | "no_rise" | "relay_fault": off until mode off -> heat
+        self.nr_trip = None         # 0.9.6: (wall ts, checkpoint temp) of the no_rise trip, for the auto-clear
+        self._seen_now = None       # 0.9.6: this tick's temp-sensor report time (wall), None = unknown
         self.runs = []              # [(start, end)] on-intervals, pruned to 24 h
         self.rise_ref = None        # (ts, temp) last progress checkpoint (run start, then each 1 F rise)
         self.commanded = False      # what we last asked for
@@ -135,7 +140,8 @@ class SpareHeater:
                 "cap_latched": self.cap_latched, "cooldown_until": self.cooldown_until,
                 "rise_ref": list(rr) if rr else None, "on_since": self.on_since, "off_since": self.off_since,
                 "runs": [list(x) for x in self.runs], "run_start": self.run_start,
-                "carry": list(self.carry) if self.carry else None}
+                "carry": list(self.carry) if self.carry else None,
+                "nr_trip": list(self.nr_trip) if self.nr_trip else None}
 
     def _load(self):
         """Restore persisted state. Missing file = first run (defaults). Unreadable / corrupt file = fail safe:
@@ -179,6 +185,10 @@ class SpareHeater:
         c = d.get("carry")
         if isinstance(c, list) and len(c) == 2 and ok(c[0]) is not None and ok(c[1]) is not None:
             self.carry = (ok(c[0]), ok(c[1]))
+        nt = d.get("nr_trip")
+        if self.latched == "no_rise" and isinstance(nt, list) and len(nt) == 2 and ok(nt[0]) is not None \
+                and _num(nt[1]) is not None and not isinstance(nt[1], bool):
+            self.nr_trip = (ok(nt[0]), _num(nt[1]))
         runs = d.get("runs")
         if isinstance(runs, list):
             self.runs = [(ok(x[0]), ok(x[1])) for x in runs if isinstance(x, list) and len(x) == 2
@@ -234,6 +244,7 @@ class SpareHeater:
             raise ValueError("bad mode")
         if mode == "off":
             self.latched = None  # off -> heat is the human reset for lockout / no-rise / relay fault
+            self.nr_trip = None
             self.notified.clear()
         self.st["mode"] = mode
         self._save()
@@ -356,6 +367,7 @@ class SpareHeater:
         temp = _num(ts.get("state")) if str(ts.get("state", "")).lower() not in BAD else None
         seen = self._seen(ts, states, wall)  # HA timestamps are wall clock
         stale = seen is None or wall - seen >= self.cfg["stale_minutes"] * 60
+        self._seen_now = seen
         sp = self.st["setpoint"]
 
         # observed-state bookkeeping
@@ -447,6 +459,8 @@ class SpareHeater:
                 self.notified.discard("cap")
             else:
                 return "hard_cap", False
+        if self.latched == "no_rise":
+            self._no_rise_autoclear(temp)
         if self.latched:
             return self.latched, False
         if self.st["mode"] != "heat":
@@ -475,6 +489,7 @@ class SpareHeater:
             if temp >= sp:  # SA: at / above setpoint a frozen reading is not a fault: plain off, no latch
                 return "holding", False
             self.latched = "no_rise"
+            self.nr_trip = (self.clock(), self.rise_ref[1]) if self.rise_ref[1] is not None else None
             self._notify("no_rise", "No 1 F rise after 45 min of heating. Heater off: check it is plugged in and on.")
             return "no_rise", False
         door = self.cfg["door_sensor"]
@@ -492,6 +507,24 @@ class SpareHeater:
                 return "min_off", False
             return "heating", True
         return "idle", False
+
+    def _no_rise_autoclear(self, temp):
+        """0.9.6: clear a no_rise latch when a reading reported after the trip shows the room rose >= 1 F over
+        the trip's checkpoint temperature. Only fresh (non-stale) readings get here. Never turns the plug on itself:
+        normal control resumes, so it heats again only at setpoint - 1 and every other safety still applies."""
+        t = self.nr_trip
+        if not t or temp is None or self._seen_now is None or self._seen_now <= t[0]:
+            return
+        if temp < t[1] + NO_RISE_F:
+            return
+        log.info("spare bathroom: no_rise latch auto-cleared: reading %.1f F reported after the trip is >= %.1f F "
+                 "above the %.1f F checkpoint", temp, NO_RISE_F, t[1])
+        self.latched = None
+        self.nr_trip = None
+        self.notified.discard("no_rise")
+        self._notify("no_rise_cleared", "No-rise lockout cleared automatically: the room reached %.1f F after the "
+                     "heater ran (was %.1f F), so the heater works. Normal control resumed." % (temp, t[1]))
+        self.notified.discard("no_rise_cleared")
 
     def publish(self):
         """Mirror state for the card + watchdog heartbeat (attribute 'heartbeat' changes every tick)."""
