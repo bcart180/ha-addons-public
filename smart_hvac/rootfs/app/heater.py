@@ -7,17 +7,22 @@ mirror state for climate.spare_bathroom.
 
 Safety (all enforced here, every tick):
   * hard cap: off at >= 80 F, latched until the room is below the setpoint
-  * 2 h max continuous run, then a 20 min cooldown
+  * 2 h max continuous run, then a 20 min cooldown (log only; it resumes on its own)
   * > 8 h on in the last 24 h: lockout + notify (cleared by turning the zone off and back to heat)
   * temp sensor unavailable / unknown / non-numeric / stale (spare_bathroom.stale_minutes, default 75): off now + notify
-  * no further 1 F rise (or setpoint reached) within 45 min of the last checkpoint while on: off + notify (latched)
+  * no further 1 F rise (or setpoint reached) within 45 min of the last checkpoint while on: off + latch (log only).
     0.9.6: that latch clears itself once a sensor reading reported AFTER the trip is >= 1 F above the temperature
-    at the last checkpoint (the heater did warm the room; the trip came from a slow-reporting sensor) + notify.
-    Detection itself is unchanged; with no such reading it stays latched until mode off -> heat.
+    at the last checkpoint (the heater did warm the room; the trip came from a slow-reporting sensor). Log only
+    when it clears. Detection itself is unchanged; with no such reading it stays latched until mode off -> heat.
+    0.9.7: notify only if it is still latched after a later post-trip reading that did not rise 1 F, or if the
+    latch has no trip info so it cannot auto-clear.
   * plug on while it should be off: forced off + notify; power draw while off: relay fault + notify
-  * door / window open (optional sensor): paused (off)
+  * door / window open (optional sensor): paused (off) + notify
   * off at startup, shutdown and on any exception
-Every safety item sends a phone alert (persistent notification + optional notify.* service).
+Only real problems send a persistent notification (plus an optional notify.* service): a no-rise latch that
+did not auto-clear, a stale or missing sensor, the 80 F cap, a plug on when it should be off, a relay fault,
+the 8 h / 24 h lockout, a clock jump, an unreadable state file, a door left open, or a low-temp warning.
+Routine events (a no-rise trip that later clears, the auto-clear itself, a 2 h cooldown) are logged only.
 Kitten room: holds the setpoint (68 F default) 24/7; no presence, eco or away logic. The optional motion sensor is
 display / logging only and never changes heating. Low-temp alerts: warning below 62 F for 10 min, critical below
 58 F repeating every 30 min until recovered; each alert names any active lockout / fail-off cause.
@@ -261,11 +266,14 @@ class SpareHeater:
         self.ha.heater_switch(self.cfg["heater_switch"], on)
         self.commanded = on
 
+    def _log(self, msg):
+        log.warning("spare bathroom: %s", msg)
+
     def _notify(self, key, msg):
         if key in self.notified:
             return
         self.notified.add(key)
-        log.warning("spare bathroom: %s", msg)
+        self._log(msg)
         try:
             self.ha.heater_notify("Spare bathroom heater", msg, self.cfg["notify_service"])
         except Exception as e:  # notify failure never blocks the off path
@@ -461,6 +469,8 @@ class SpareHeater:
                 return "hard_cap", False
         if self.latched == "no_rise":
             self._no_rise_autoclear(temp)
+            if self.latched == "no_rise":
+                self._no_rise_maybe_notify(temp)
         if self.latched:
             return self.latched, False
         if self.st["mode"] != "heat":
@@ -473,7 +483,7 @@ class SpareHeater:
         if is_on and rs is not None and now - min(rs, self.on_since or rs) >= MAX_RUN_S:
             self.cooldown_until = now + COOLDOWN_S
             self.notified.discard("cooldown")
-            self._notify("cooldown", "Heater ran 2 h straight. 20 min cooldown, then it resumes.")
+            self._log("Heater ran 2 h straight. 20 min cooldown, then it resumes.")
             return "cooldown", False
         if now < self.cooldown_until:
             return "cooldown", False
@@ -490,7 +500,7 @@ class SpareHeater:
                 return "holding", False
             self.latched = "no_rise"
             self.nr_trip = (self.clock(), self.rise_ref[1]) if self.rise_ref[1] is not None else None
-            self._notify("no_rise", "No 1 F rise after 45 min of heating. Heater off: check it is plugged in and on.")
+            self._log("No 1 F rise after 45 min of heating. Heater off: check it is plugged in and on.")
             return "no_rise", False
         door = self.cfg["door_sensor"]
         if door and (states.get(door) or {}).get("state") != "off":  # open, unknown or missing = paused
@@ -511,7 +521,8 @@ class SpareHeater:
     def _no_rise_autoclear(self, temp):
         """0.9.6: clear a no_rise latch when a reading reported after the trip shows the room rose >= 1 F over
         the trip's checkpoint temperature. Only fresh (non-stale) readings get here. Never turns the plug on itself:
-        normal control resumes, so it heats again only at setpoint - 1 and every other safety still applies."""
+        normal control resumes, so it heats again only at setpoint - 1 and every other safety still applies.
+        0.9.7: clearing is logged only; it does not create a notification."""
         t = self.nr_trip
         if not t or temp is None or self._seen_now is None or self._seen_now <= t[0]:
             return
@@ -522,9 +533,22 @@ class SpareHeater:
         self.latched = None
         self.nr_trip = None
         self.notified.discard("no_rise")
-        self._notify("no_rise_cleared", "No-rise lockout cleared automatically: the room reached %.1f F after the "
-                     "heater ran (was %.1f F), so the heater works. Normal control resumed." % (temp, t[1]))
-        self.notified.discard("no_rise_cleared")
+
+    def _no_rise_maybe_notify(self, temp):
+        """0.9.7: notify only when the no_rise latch is still a real problem. A fresh post-trip reading that
+        did not rise 1 F means the heater did not warm the room. A legacy latch with no trip info cannot
+        auto-clear, so it notifies now. A trip that is still waiting for the next reading stays quiet."""
+        if self.latched != "no_rise":
+            return
+        msg = "No 1 F rise after 45 min of heating. Heater off: check it is plugged in and on."
+        t = self.nr_trip
+        if not t:
+            self._notify("no_rise", msg)
+            return
+        if self._seen_now is None or self._seen_now <= t[0] or temp is None:
+            return
+        if temp < t[1] + NO_RISE_F:
+            self._notify("no_rise", msg)
 
     def publish(self):
         """Mirror state for the card + watchdog heartbeat (attribute 'heartbeat' changes every tick)."""

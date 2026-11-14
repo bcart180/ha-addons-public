@@ -1,3 +1,8 @@
+## 0.9.7 — 2026-11-14
+
+- Spare bathroom heater notifications now fire only for real problems. A no-rise trip that later auto-clears, the auto-clear itself, and the 2 h cooldown are logged only. A notification is still sent when a later post-trip reading shows the room did not rise 1°F (the heater did not warm the room), when a pre-0.9.6 latch has no trip info so it cannot auto-clear, or for a stale or missing sensor, the 80°F cap, a plug on when it should be off, a relay fault, the 8 h / 24 h lockout, a clock jump, an unreadable state file, a door left open, or a low-temp warning.
+- Safety logic and thresholds are unchanged: no-rise detection (45 minutes, 1°F), the 0.9.6 auto-clear, the stale-sensor cutoff, the 2 h max run, the 20 min cooldown, the 8 h / 24 h lockout, the 80°F cap, and the radiant limits. Options are unchanged.
+
 ## 0.9.6 — 2026-11-13
 
 - Spare bathroom heater: the no-rise lockout now clears itself when a temperature reading reported after the trip is at least 1°F above the temperature at the run's last checkpoint. That proves the heater warmed the room and the trip came from a slow-reporting sensor. Normal control resumes, so the heater only comes back on at setpoint − 1. An alert and a log line say when it cleared.
