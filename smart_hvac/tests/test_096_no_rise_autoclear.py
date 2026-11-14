@@ -25,7 +25,7 @@ def trip(h, ha, c, temp=65.0):
     return h.nr_trip
 
 
-def test_fresh_reading_1F_above_clears_and_notifies():
+def test_fresh_reading_1F_above_clears_without_notify():
     h, ha, c = B.mk(temp=65.0)
     t = trip(h, ha, c)
     assert t is not None and t[1] == 65.0
@@ -35,7 +35,7 @@ def test_fresh_reading_1F_above_clears_and_notifies():
     c.t += 30
     h.tick()
     assert h.latched is None and h.nr_trip is None and ha.sw == "off"
-    assert any("cleared automatically" in n for n in ha.notes)
+    assert not ha.notes
     assert h.last["reason"] == "idle"
     # normal hysteresis afterwards: on at setpoint - 1 (68 default -> 67)
     ha.temp = 67.0
@@ -49,6 +49,7 @@ def test_fresh_reading_without_1F_rise_stays_latched():
     ha.temp, ha.seen = 65.9, None
     B.run(h, c, 3 * 3600)
     assert h.latched == "no_rise" and ha.sw == "off"
+    assert any("rise" in n for n in ha.notes)   # post-trip reading did not prove a rise: real fault
     ha.temp = 60.0                             # dropped, but never proved a rise: still latched
     B.run(h, c, 600)
     assert h.latched == "no_rise" and ha.sw == "off"

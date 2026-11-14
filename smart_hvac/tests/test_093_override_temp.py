@@ -248,7 +248,7 @@ def test_screen_drops_heat_cool_and_header_links():
     draft = 'savedOv != null ? savedOv : (held && live.setpoint != null ? live.setpoint : (pt != null ? pt : 70))'
     assert draft in html
     assert "override-temp" in html
-    assert 'version: "0.9.6"' in open(CFG).read()
+    assert 'version: "0.9.7"' in open(CFG).read()
     raw = open(CFG).read()
     assert "override_temp" not in raw.split("schema:", 1)[0]
     assert "override_temp" not in raw.split("schema:", 1)[1]
