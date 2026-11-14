@@ -345,7 +345,9 @@ def test_no_1F_rise_in_45_min_off_and_latched():
     run(h, c, 44 * 60)
     assert ha.sw == "on"
     run(h, c, 60)
-    assert ha.sw == "off" and h.last["reason"] == "no_rise" and any("rise" in n for n in ha.notes)
+    assert ha.sw == "off" and h.last["reason"] == "no_rise" and not any("rise" in n for n in ha.notes)
+    run(h, c, 30)                  # next fresh reading still has not risen 1 F: now it is a real fault
+    assert any("rise" in n for n in ha.notes)
     run(h, c, 3600)
     assert ha.sw == "off"
     h.set_mode("off")
@@ -367,6 +369,8 @@ def test_rise_1F_then_stick_off_45_min_after_last_rise():
     run(h, c, 60)
     assert c.t - rise_t <= 45 * 60 + 30
     assert ha.sw == "off" and h.last["reason"] == "no_rise" and h.latched == "no_rise"
+    assert not any("rise" in n for n in ha.notes)  # trip itself is log-only until a later reading fails to clear it
+    run(h, c, 30)
     assert any("rise" in n for n in ha.notes)
 
 
@@ -573,4 +577,4 @@ def test_every_safety_item_alerts():
     h.on_since = c.t - 2 * 3600
     h.rise_ref = (c.t, 50)
     run(h, c, 30)
-    assert h.last["reason"] == "cooldown" and any("cooldown" in n for n in ha.notes)
+    assert h.last["reason"] == "cooldown" and not any("cooldown" in n for n in ha.notes)
