@@ -149,7 +149,7 @@ def test_slope_defaults_and_clamp():
     assert core.slope_zone_settings({"window_slope_max_min": 1})["max_min"] == 5
     assert core.slope_zone_settings({"window_slope_lookback_min": 90})["lookback_min"] == 60
     raw = open(os.path.join(ROOT, "config.yaml"), encoding="utf-8").read()
-    assert 'version: "0.9.6"' in raw
+    assert 'version: "0.9.7"' in raw
     assert "\n  window_slope: true\n" in raw
     assert "window_slope: bool?" in raw
     assert "window_slope_threshold_f_per_h: float(2,15)?" in raw
