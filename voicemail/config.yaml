@@ -1,5 +1,5 @@
 name: CallCatch
-version: "0.6.0"
+version: "0.7.0"
 slug: voicemail
 description: Your Personalized Voicemail. iPhone-style house inbox (list + detail) via Supervisor ingress
 url: https://github.com/bcart180/ha-addons-public/tree/main/voicemail
@@ -40,6 +40,21 @@ options:
   icloud_apple_id: ""
   icloud_app_password: ""
   contacts_sync_interval_min: 30
+  agent_token: ""
+  agent_inactivity_s: 180
+  hook_expected: false
+  hook_grace_s: 120
+  freebusy_calendars: "calendar.home,calendar.shared"
+  freebusy_window: "08:00-18:00"
+  mail_backend: "off"
+  mail_to: ""
+  agentmail_inbox: ""
+  agentmail_api_key: ""
+  email_full_number: false
+  panel_base_url: ""
+  push_service: ""
+  late_update_push: true
+  timeout_notify_per_day: 20
 schema:
   sensor_entity: str
   media_player: str?
@@ -61,3 +76,18 @@ schema:
   icloud_apple_id: str?
   icloud_app_password: password?
   contacts_sync_interval_min: int(15,1440)
+  agent_token: password?
+  agent_inactivity_s: int(60,1800)
+  hook_expected: bool
+  hook_grace_s: int(0,900)
+  freebusy_calendars: str
+  freebusy_window: match(^\d{1,2}:\d{2}-\d{1,2}:\d{2}$)
+  mail_backend: list(off|agentmail)
+  mail_to: match(^[A-Za-z0-9._+\-]{1,64}@(proton\.me|protonmail\.com)$)?
+  agentmail_inbox: match(^callcatch[a-z0-9._\-]{0,55}@agentmail\.to$)?
+  agentmail_api_key: password?
+  email_full_number: bool
+  panel_base_url: match(^https?://[A-Za-z0-9.\-]{1,253}(:\d{1,5})?/?$)?
+  push_service: str?
+  late_update_push: bool
+  timeout_notify_per_day: int(1,200)

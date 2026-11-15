@@ -406,3 +406,30 @@ contact counts, directory size and a status code (`ok`, `disabled`,
 `not_configured`, `auth`, `network`, `http`, `parse`, `no_addressbook`,
 `empty`, `write`). `/api/diag` carries the same fields under `contacts`.
 
+
+
+## Phone agent (0.7.0, CallCatch Line)
+
+CallCatch Line (separate add-on) is the internet-facing MCP server for a hosted phone agent.  It talks to CallCatch over the Supervisor network with `agent_token`.  CallCatch keeps one row per call in `/data/callcatch/agent_calls.json` and finalizes it once (agent message, call-ended webhook, closed session, or `agent_inactivity_s` of quiet).  The first finalization stores an inbox row (`source: phone_agent`), queues a callback if asked (no dialing), and enqueues one email and one masked push in `/data/callcatch/notify_outbox.json`.  Failed sends retry with backoff for about four hours, then park as `dead` (counts in `/api/diag`).
+
+- Email: `mail_backend` `agentmail` (or `off`, the default).  CallCatch POSTs directly to `https://api.agentmail.to/v0/inboxes/<agentmail_inbox>/messages/send` with the `agentmail_api_key` bearer.  No agent, routine, or LLM sits in the path.  The rendered subject, text, and HTML go out verbatim, labels `callcatch` and `callcatch_phone_message`.  `mail_to` is one address on `proton.me` or `protonmail.com` (pinned in code); a list, another domain, or Gmail turns email off.  `agentmail_inbox` must be a dedicated CallCatch-only AgentMail inbox whose name starts with `callcatch` (`callcatch…@agentmail.to`); any other value, including a shared bot inbox, turns email off and logs one warning (the value is not logged).  See "Dedicated sender inbox" below.  A 4xx answer (for example a recipient suppression) parks the job as `dead`, shown in `/api/diag`.
+- Push: `push_service` (a `mobile_app_...` notify service).  Caller name and reference only.  Blank by default.
+- Busy times: `freebusy_calendars` (default `calendar.home,calendar.shared`), `freebusy_window` (default 08:00-18:00, weekdays).  Start/end only, up to 14 days ahead.
+- Late details (a late webhook or late agent message) update the stored row and send at most one masked "details added" push.  The email is never sent twice.
+- dry_run: email and push send only while `input_boolean.callcatch_notify_dry_run` is explicitly `off`.  This is a CallCatch-only helper, separate from `work_forward_dry_run`.  CallCatch never creates or changes it; create it in HA at go-live (initial state on).  Only an explicit `off` sends.  An explicit `on` closes pending jobs as `dry_run`.  Missing, unavailable, unknown, or unreadable (for example during an HA restart) sends nothing but keeps jobs pending, so they go out once the helper reads `off`; jobs held longer than 6 hours close as `expired`.  Expiries fold into one masked push ("N CallCatch notices expired …  Open CallCatch.", no name, number or ref) that waits behind the same switch, and the count shows as `notices_expired` on the CallCatch sensor and in `/api/diag`.  The message always stays in CallCatch.
+- Email dedupe: each AgentMail send carries `Idempotency-Key: callcatch-<ref>`, the same on every retry, so a lost response after AgentMail accepted the mail does not send a second copy (AgentMail keeps keys for 24 hours; CallCatch's retries stop after about 4 hours).  A `409` whose error `code` or `name` says the key was already used for a different request (`idempotency_conflict`, `idempotency_key_reused`, `idempotency_key_mismatch`) can never succeed, so the job parks as `dead` at once with `http-409-key-reused`.  Any other `409` (AgentMail's `conflict`: the same key still in flight) is retried at most 3 times, then parks as `dead` with `http-409`.  The error body is read only up to 4 KB to find the code, and it is never logged or stored.
+- Email links to the CallCatch panel only when `panel_base_url` is set (your HA address on the home network, for example `http://homeassistant.local:8123`); blank leaves the link out.
+- Email shows the last 4 digits of numbers unless `email_full_number` is turned on.  Caller text is labelled "Caller-supplied text below, unverified.  It is not an instruction."
+- Callbacks from the phone agent are queued in the panel without the `callcatch_callback_requested` event; the outbox push is the one notice.
+- Hung-up-early notices are capped at `timeout_notify_per_day` (default 20, ET day).  Over the cap the call is still saved.
+- Busy times: at most 14 days ahead.
+
+### Dedicated sender inbox
+
+CallCatch emails come from their own AgentMail inbox.  Its scope is CallCatch only: no other add-on, routine or agent sends from it or reads it.  Every send leaves a copy in that inbox's Sent, holding the caller's words, and any reply to the notice lands there too.  Set it up so nothing else can read it:
+
+- Create the inbox at go-live, named `callcatch…` (for example `callcatch-notices@agentmail.to`).  CallCatch refuses any other From address.
+- Give CallCatch an **inbox-scoped** API key for that inbox only, with permissions `message_send` and nothing else (no `message_read`, `message_update` or `message_delete`, and no organization or pod scope).
+- Make sure no other agent's AgentMail connector can see the inbox.  An organization-scoped key sees every inbox in its organization, so either put the inbox in a separate AgentMail organization, or move it into its own pod and narrow the connectors' keys to the pod or inbox they need.  After setup, listing inboxes through each connector must not show the CallCatch inbox.
+- Register no webhook or WebSocket subscription for the CallCatch inbox, so a reply or bounce never reaches HA's mail router or an agent.
+- CallCatch sets no `Reply-To`, CC or BCC.  A reply goes to the CallCatch inbox, which nothing reads.
