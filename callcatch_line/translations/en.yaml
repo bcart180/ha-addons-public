@@ -1,0 +1,64 @@
+configuration:
+  mcp_token:
+    name: MCP bearer token
+    description: >-
+      The secret the phone agent sends as "Authorization: Bearer ...". At least
+      32 characters, and different from the other two tokens. Password field.
+      Never logged.
+  callcatch_agent_token:
+    name: CallCatch agent token
+    description: The same value as agent_token in CallCatch. Password field. Never logged.
+  callcatch_url:
+    name: CallCatch address
+    description: Internal Supervisor address of CallCatch, for example http://a1d3bd4b-voicemail:8099.
+  call_id_header:
+    name: Per-call id header
+    description: >-
+      Header the phone agent fills with a per-call variable (conversation or
+      call id). Ties every tool call and the call-ended webhook to one call.
+  caller_header:
+    name: Caller number header
+    description: Header the phone agent fills with the caller's number. Unverified; shown as caller ID.
+  delete_ends_call:
+    name: Session close ends the call
+    description: >-
+      On treats the agent closing its MCP session as "call ended" and
+      finalizes right away. Leave off until a live test shows the platform
+      closes the session only at hangup.
+  hook_token:
+    name: Call-ended webhook bearer
+    description: Bearer for POST /hooks/call-ended. Blank with no signing secret turns the webhook off.
+  hook_signing_secret:
+    name: Call-ended webhook signing secret
+    description: Standard Webhooks secret (whsec_...), if the platform signs its webhooks. Never logged.
+  rate_per_min:
+    name: Requests per minute
+    description: All authenticated requests together. Default 60.
+  tool_calls_per_min:
+    name: Tool calls per minute
+    description: Default 30.
+  finals_per_call:
+    name: Messages per call
+    description: take_message / request_callback per call. Default 6.
+  finals_per_number_hour:
+    name: Messages per number per hour
+    description: Default 6.
+  finals_per_day:
+    name: Messages per day
+    description: All callers together. Default 40.
+  finals_no_caller_id_hour:
+    name: Messages per hour with no caller ID
+    description: >-
+      Calls with no caller ID are limited per call, plus this shared hourly
+      ceiling. Default 20.
+  allowed_peers:
+    name: Allowed peers
+    description: >-
+      Source networks that may connect at all (comma-separated CIDRs).
+      Default is the Supervisor network plus loopback.  Anything else gets 403.
+  trusted_proxies:
+    name: Trusted tunnel peers
+    description: >-
+      Peers whose CF-Connecting-IP header is believed for the lockout key.
+      Blank means the header is ignored and the TCP peer is the key.  Set only
+      to the tunnel connector's address.
