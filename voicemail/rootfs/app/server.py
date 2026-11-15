@@ -21,21 +21,28 @@ import pathlib
 import re
 import sys
 import tempfile
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from aiohttp import ClientError, ClientSession, ClientTimeout, WSMsgType, web
 
+import agent_calls
 import call_summary
 import contacts_sync
 import drive_backend
+import freebusy
 import inbox_store
 import legacy_import
+import notify_outbox
+import notify_render
+import notify_send
 import share_import
 
 APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC = APP_DIR / "static"
 EXAMPLE = APP_DIR / "example_voicemails.json"
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 AUDIO_LIMIT = 25 * 1024 * 1024
 SENSOR_RE = re.compile(r"sensor\.[a-z0-9_]+")
 RT = web.AppKey("rt", dict)
@@ -75,10 +82,54 @@ for _secret_key in (
     "voice_trust_token",
     "icloud_app_password",
     "icloud_apple_id",
+    "agent_token",
+    "agentmail_api_key",
 ):
     remember_secret(OPTS.get(_secret_key))
 
 INGEST_TOKEN = str(OPTS.get("ingest_token") or "")
+
+
+def _int_opt(name: str, default: int, lo: int, hi: int) -> int:
+    try:
+        val = int(OPTS.get(name, default))
+    except (TypeError, ValueError):
+        return default
+    return max(lo, min(hi, val))
+
+
+# 0.7.0 phone agent (CallCatch Line).  Its own bearer, never the ingest token:
+# a token equal to ingest_token (or shorter than 32 chars) disables the routes.
+_raw_agent_token = str(OPTS.get("agent_token") or "")
+AGENT_TOKEN = (
+    _raw_agent_token
+    if len(_raw_agent_token) >= 32 and _raw_agent_token != INGEST_TOKEN
+    else ""
+)
+AGENT_INACTIVITY_S = _int_opt("agent_inactivity_s", 180, 60, 1800)
+HOOK_EXPECTED = bool(OPTS.get("hook_expected", False))
+HOOK_GRACE_S = _int_opt("hook_grace_s", 120, 0, 900)
+FREEBUSY_CALENDARS = freebusy.parse_calendars(OPTS.get("freebusy_calendars", "calendar.home,calendar.shared"))
+FREEBUSY_WINDOW = freebusy.parse_window(OPTS.get("freebusy_window", "08:00-18:00"))
+# G1: one deterministic mail route (AgentMail REST), no LLM drain.
+MAIL_BACKEND = str(OPTS.get("mail_backend") or "off").strip()
+if MAIL_BACKEND not in ("off", "agentmail"):
+    MAIL_BACKEND = "off"
+MAIL_TO = notify_send.parse_recipient(OPTS.get("mail_to", ""))  # one Proton address, or ""
+_inbox = str(OPTS.get("agentmail_inbox") or "").strip().lower()
+AGENTMAIL_INBOX = _inbox if notify_send.sender_allowed(_inbox) else ""
+if _inbox and not AGENTMAIL_INBOX:
+    # Value not echoed.  Only a dedicated callcatch…@agentmail.to inbox may send.
+    logging.getLogger("voicemail").warning("agentmail_inbox refused: must be a dedicated callcatch…@agentmail.to inbox; email off")
+MAIL_FROM = AGENTMAIL_INBOX
+AGENTMAIL_API_KEY = str(OPTS.get("agentmail_api_key") or "")
+PANEL_BASE_URL = str(OPTS.get("panel_base_url") or "").strip()  # blank: email names the sidebar, no link
+EMAIL_FULL_NUMBER = bool(OPTS.get("email_full_number", False))  # off: last 4 only (opt-in at install)
+PUSH_SERVICE = str(OPTS.get("push_service") or "").strip()
+if PUSH_SERVICE.startswith("notify."):
+    PUSH_SERVICE = PUSH_SERVICE[len("notify."):]
+LATE_UPDATE_PUSH = bool(OPTS.get("late_update_push", True))
+TIMEOUT_NOTIFY_PER_DAY = _int_opt("timeout_notify_per_day", 20, 1, 200)
 # CallCatch Voice owns the allow / block lists in its /data. The inbox edits
 # them through its own ingress-gated routes, which forward with this bearer
 # to Voice on the Supervisor network. Blank = lists not editable here.
@@ -709,6 +760,10 @@ async def publish_now(app: web.Application) -> bool:
     if session is None or store is None:
         return False
     payload = inbox_store.sensor_state(store.list_items())
+    if AGENT_TOKEN:
+        # R3-L1: phone-agent notices closed unsent after a long hold (count only).
+        _calls, outbox = ensure_agent(app)
+        payload.setdefault("attributes", {})["notices_expired"] = outbox.counts()["expired"]
     status, _body = await ha_set_state(session, SENSOR, payload)
     if 200 <= status < 300:
         return True
@@ -828,6 +883,9 @@ async def api_health(_request: web.Request) -> web.Response:
 
 DRY_RUN_ENTITY = "input_boolean.work_forward_dry_run"
 PIPELINE_ENTITY = "sensor.voicemail_pipeline"
+# Phone-agent email + push have their own switch, separate from work_forward,
+# so making these notices live never makes the work-forward pipeline live.
+NOTIFY_DRY_RUN_ENTITY = "input_boolean.callcatch_notify_dry_run"
 
 
 async def dry_run_status(app: web.Application) -> dict:
@@ -893,6 +951,7 @@ async def api_diag(request: web.Request) -> web.Response:
             "import_from_share": SHARE_IMPORT.get("status") or "not_run",
             "import_marker": (data_dir() / share_import.MARKER_NAME).exists(),
             "dry_run": await dry_run_status(request.app),
+            "agent": agent_diag(request.app),
         }
     )
 
@@ -1628,6 +1687,396 @@ async def api_trust_remove(request: web.Request) -> web.Response:
     return await _voice_trust(request.app, "POST", "/api/trust/remove", payload)
 
 
+# ---------------------------------------------------------------------------
+# 0.7.0 phone agent routes (CallCatch Line on the Supervisor network only)
+# ---------------------------------------------------------------------------
+AGENT_BODY_MAX = 96 * 1024
+_KEY_RE = re.compile(r"^[a-f0-9]{32,64}$")
+
+
+def ensure_agent(app: web.Application) -> tuple[agent_calls.AgentCalls, notify_outbox.Outbox]:
+    box = _box(app)
+    calls = box.get("agent_calls")
+    outbox = box.get("outbox")
+    if calls is None:
+        calls = agent_calls.AgentCalls(data_dir() / "agent_calls.json")
+        box["agent_calls"] = calls
+    if outbox is None:
+        outbox = notify_outbox.Outbox(data_dir() / "notify_outbox.json")
+        box["outbox"] = outbox
+    return calls, outbox
+
+
+def agent_diag(app: web.Application) -> dict:
+    calls, outbox = ensure_agent(app)
+    states: dict[str, int] = {}
+    for row in calls.all():
+        st = str(row.get("state") or "")
+        states[st] = states.get(st, 0) + 1
+    return {
+        "configured": bool(AGENT_TOKEN),
+        "calls": states,
+        "outbox": outbox.counts(),
+        "notices_expired": outbox.counts()["expired"],
+        "mail_backend": MAIL_BACKEND,
+        "mail_ready": mail_ready(),
+        "push_ready": bool(notify_send.NOTIFY_RE.fullmatch(PUSH_SERVICE or "")),
+        "hook_expected": HOOK_EXPECTED,
+        "inactivity_s": AGENT_INACTIVITY_S,
+        "timeout_notify_per_day": TIMEOUT_NOTIFY_PER_DAY,
+        "notify_dry_run_entity": NOTIFY_DRY_RUN_ENTITY,
+        "email_full_number": EMAIL_FULL_NUMBER,
+        "freebusy_calendars": len(FREEBUSY_CALENDARS),
+    }
+
+
+def mail_ready() -> bool:
+    return MAIL_BACKEND == "agentmail" and bool(MAIL_TO and AGENTMAIL_INBOX and AGENTMAIL_API_KEY)
+
+
+def build_senders(app: web.Application) -> dict:
+    def session():
+        return _box(app).get("session")
+
+    senders: dict = {}
+    if mail_ready():
+        senders["email"] = notify_send.agentmail_sender(session, AGENTMAIL_INBOX, AGENTMAIL_API_KEY, MAIL_TO)
+    if notify_send.NOTIFY_RE.fullmatch(PUSH_SERVICE or ""):
+        async def call_service(domain, service, data):
+            sess = session()
+            if sess is None:
+                return 0, None
+            return await ha_call_service(sess, domain, service, data)
+
+        senders["push"] = notify_send.push_sender(call_service, PUSH_SERVICE)
+    return senders
+
+
+def deny_agent(request: web.Request) -> web.Response | None:
+    """Supervisor-network peer + the agent bearer.  Ingress sessions and the
+    ingest token are not accepted here."""
+    denied = deny_client(request)
+    if denied:
+        return denied
+    if not AGENT_TOKEN:
+        return web.json_response({"ok": False, "error": "agent-disabled"}, status=503)
+    if not token_ok(bearer_header(request), AGENT_TOKEN):
+        log.warning("agent unauthorized")
+        return web.json_response({"ok": False, "error": "unauthorized"}, status=401)
+    return None
+
+
+async def _agent_json(request: web.Request) -> dict | None:
+    if request.content_length is not None and request.content_length > AGENT_BODY_MAX:
+        return None
+    buf = bytearray()
+    try:
+        while True:  # loop: one read() returns only what is buffered (chunked bodies)
+            chunk = await request.content.read(AGENT_BODY_MAX + 1 - len(buf))
+            if not chunk:
+                break
+            buf += chunk
+            if len(buf) > AGENT_BODY_MAX:
+                return None
+    except Exception:  # noqa: BLE001
+        return None
+    raw = bytes(buf)
+    try:
+        body = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return None
+    return body if isinstance(body, dict) else None
+
+
+def agent_item(row: dict) -> dict:
+    """CallCatch inbox row for a phone-agent call.  Fields were cleaned already."""
+    f = row.get("fields") or {}
+    ref = str(row.get("ref") or "")
+    notes = list(row.get("notes") or [])
+    transcript = str(row.get("transcript") or "")
+    if not transcript:
+        parts = []
+        if f.get("reason"):
+            parts.append(f"Reason: {f['reason']}")
+        parts += [f"Note: {n}" for n in notes]
+        transcript = "\n".join(parts)
+    caller = f.get("caller_id") or f.get("callback_number") or ""
+    item = inbox_store.item_from_payload(
+        {
+            "voicemail_id": "pa-" + ref.lower(),
+            "call_id": "pa-" + ref.lower(),
+            "from": caller,
+            "caller_title": f.get("caller_name") or "",
+            "transcript_text": transcript,
+            "date": agent_calls.iso(float(row.get("created_at") or 0)),
+            "summary": {
+                "name": f.get("caller_name") or "",
+                "reason": f.get("reason") or "",
+                "callback": f.get("callback_number") or "",
+                "urgency": f.get("urgency") or "normal",
+            },
+        }
+    )
+    item["source"] = "phone_agent"
+    item["agent_ref"] = ref
+    item["hung_up_early"] = bool(row.get("hung_up_early"))
+    item["agent_notes"] = notes
+    return item
+
+
+def _timeout_quota(app: web.Application) -> bool:
+    """L7: at most TIMEOUT_NOTIFY_PER_DAY hung-up-early notices per ET day."""
+    box = _box(app)
+    day = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+    used = box.get("timeout_notices")
+    if not used or used[0] != day:
+        used = (day, 0)
+    if used[1] >= TIMEOUT_NOTIFY_PER_DAY:
+        box["timeout_notices"] = used
+        return False
+    box["timeout_notices"] = (day, used[1] + 1)
+    return True
+
+
+async def read_entity_state(app: web.Application, entity_id: str) -> str | None:
+    """One HA state read through the Supervisor.  None when unavailable."""
+    session = _box(app).get("session")
+    if not _in_ha() or session is None:
+        return None
+    hdr = {"Authorization": f"Bearer {_supervisor_token()}"}
+    try:
+        async with session.get(f"http://supervisor/core/api/states/{entity_id}", headers=hdr,
+                               timeout=ClientTimeout(total=5)) as resp:
+            if resp.status != 200:
+                return None
+            body = await resp.json()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("state %s error: %s", entity_id, type(exc).__name__)
+        return None
+    return str((body or {}).get("state", "")).lower() if isinstance(body, dict) else None
+
+
+NOTIFY_HOLD_MAX_S = 6 * 3600
+
+
+async def notify_gate(app: web.Application) -> str:
+    """M5 / N2: input_boolean.callcatch_notify_dry_run gates email + push.
+
+    "send" only on an explicit "off".  "dry_run" only on an explicit "on"
+    (pending jobs close without sending).  Anything else (missing, unavailable,
+    unknown, unreadable, an HA restart) is "hold": nothing is sent and jobs stay
+    pending, so a call during an HA blip still notifies once the switch reads off.
+    Held jobs older than NOTIFY_HOLD_MAX_S close as "expired" (no stale backlog)."""
+    state = await read_entity_state(app, NOTIFY_DRY_RUN_ENTITY)
+    if state == "off":
+        return "send"
+    if state == "on":
+        return "dry_run"
+    return "hold"
+
+
+async def notify_dry_run(app: web.Application) -> bool:
+    """True unless email + push would actually send now (gate is "send")."""
+    return (await notify_gate(app)) != "send"
+
+
+async def deliver_final(app: web.Application, row: dict) -> None:
+    """First finalization of a call: store, queue callback, enqueue email + push once."""
+    store = ensure_runtime(app)
+    _calls, outbox = ensure_agent(app)
+    ref = str(row.get("ref") or "")
+    f = row.get("fields") or {}
+    if not (row.get("transcript") or row.get("notes") or any(
+        f.get(k) for k in ("caller_name", "reason", "caller_id", "callback_number")
+    )):
+        # Nothing at all was captured (no caller id either): not a real call.
+        _log_safe(f"agent final ref={ref} empty, not notified")
+        return
+    item = agent_item(row)
+    saved = store.upsert(item, preserve_heard=True)
+    if (row.get("fields") or {}).get("callback_requested"):
+        # Queued in the panel.  No callcatch_callback_requested event here:
+        # the outbox push below is the one owner of the phone-agent notice (L3).
+        store.request_callback(saved["voicemail_id"], actor="agent")
+    if row.get("final_source") == "timeout" and not _timeout_quota(app):
+        await _after_change(app)
+        _log_safe(f"agent final ref={ref} timeout cap reached, saved without notice")
+        return
+    created_at = agent_calls.iso(float(row.get("created_at") or 0))
+    mail = notify_render.email(row, [MAIL_TO] if MAIL_TO else [], MAIL_FROM, include_number=EMAIL_FULL_NUMBER,
+                                panel_base_url=PANEL_BASE_URL)
+    mail["created_at"] = created_at
+    outbox.enqueue("email", ref, mail)
+    outbox.enqueue("push", ref, notify_render.push(row))
+    await _after_change(app)
+    _log_safe(
+        f"agent final ref={ref} source={row.get('final_source')} early={'yes' if row.get('hung_up_early') else 'no'} "
+        f"from={call_summary.mask_number((row.get('fields') or {}).get('caller_id') or '') or 'none'}"
+    )
+
+
+async def deliver_late(app: web.Application, row: dict) -> None:
+    """Content after the email went out: update the stored row only, plus at
+    most one masked "details added" push.  The email is never sent twice."""
+    store = ensure_runtime(app)
+    _calls, outbox = ensure_agent(app)
+    store.upsert(agent_item(row), preserve_heard=True)
+    if LATE_UPDATE_PUSH:
+        outbox.enqueue("push_update", str(row.get("ref") or ""), notify_render.push(row, update=True))
+    await _after_change(app)
+    _log_safe(f"agent late update ref={row.get('ref')}")
+
+
+async def api_agent_call(request: web.Request) -> web.Response:
+    denied = deny_agent(request)
+    if denied:
+        return denied
+    body = await _agent_json(request)
+    if body is None:
+        return web.json_response({"ok": False, "error": "bad-request"}, status=400)
+    op = str(body.get("op") or "")
+    key = str(body.get("call_key") or "")
+    if op not in ("touch", "final", "ended") or not _KEY_RE.fullmatch(key):
+        return web.json_response({"ok": False, "error": "bad-request"}, status=400)
+    calls, _outbox = ensure_agent(request.app)
+    hint = str(body.get("caller_hint") or "")
+    try:
+        if op == "touch":
+            res = calls.touch(key, body.get("fields"), hint)
+            if res["late"] and res["changed"]:
+                await deliver_late(request.app, res["row"])
+        elif op == "final":
+            res = calls.agent_final(
+                key, str(body.get("kind") or ""), body.get("fields"), hint,
+                hook_expected=HOOK_EXPECTED, hook_grace_s=HOOK_GRACE_S,
+            )
+            if res["notify"]:
+                await deliver_final(request.app, res["row"])
+            elif res["late"] and res["changed"]:
+                await deliver_late(request.app, res["row"])
+        else:
+            res = calls.ended(key, hook_expected=HOOK_EXPECTED, hook_grace_s=HOOK_GRACE_S)
+            if res.get("row") is None:
+                return web.json_response({"ok": True, "state": "unknown"})
+            if res["notify"]:
+                await deliver_final(request.app, res["row"])
+    except ValueError:
+        return web.json_response({"ok": False, "error": "bad-request"}, status=400)
+    row = res["row"]
+    return web.json_response({"ok": True, "ref": row["ref"], "state": row["state"]})
+
+
+async def api_agent_hook(request: web.Request) -> web.Response:
+    denied = deny_agent(request)
+    if denied:
+        return denied
+    body = await _agent_json(request)
+    if body is None:
+        return web.json_response({"ok": False, "error": "bad-request"}, status=400)
+    calls, _outbox = ensure_agent(request.app)
+    key = str(body.get("call_key") or "")
+    hint = str(body.get("caller_hint") or "")
+    if not _KEY_RE.fullmatch(key):
+        # No per-call key on the hook: match the newest open call from that number.
+        key = calls.find_open_by_caller(hint) or str(body.get("fallback_key") or "")
+    if not _KEY_RE.fullmatch(key):
+        return web.json_response({"ok": False, "error": "bad-request"}, status=400)
+    try:
+        res = calls.hook(key, str(body.get("hook_id") or ""), body.get("transcript"), hint)
+    except ValueError:
+        return web.json_response({"ok": False, "error": "bad-request"}, status=400)
+    if res["notify"]:
+        await deliver_final(request.app, res["row"])
+    elif res["late"] and res["changed"] and not res["duplicate"]:
+        await deliver_late(request.app, res["row"])
+    row = res["row"]
+    return web.json_response({"ok": True, "ref": row["ref"], "state": row["state"], "duplicate": res["duplicate"]})
+
+
+async def ha_calendar_events(session: ClientSession | None, entity: str, start_iso: str, end_iso: str) -> list | None:
+    if not _in_ha() or session is None or not freebusy.CAL_RE.fullmatch(entity):
+        return None
+    url = f"http://supervisor/core/api/calendars/{entity}"
+    hdr = {"Authorization": f"Bearer {_supervisor_token()}"}
+    try:
+        async with session.get(url, headers=hdr, params={"start": start_iso, "end": end_iso},
+                               timeout=ClientTimeout(total=15)) as resp:
+            if resp.status != 200:
+                log.warning("calendar read HTTP %s", resp.status)
+                return None
+            data = await resp.json(content_type=None)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("calendar read %s", type(exc).__name__)
+        return None
+    return data if isinstance(data, list) else None
+
+
+async def api_agent_freebusy(request: web.Request) -> web.Response:
+    denied = deny_agent(request)
+    if denied:
+        return denied
+    from datetime import datetime as _dt, timedelta as _td
+
+    today = _dt.now(freebusy.TZ).date()
+    checked = freebusy.validate_range(request.query.get("start_date"), request.query.get("days"), today)
+    if isinstance(checked, str):
+        return web.json_response({"ok": False, "error": checked}, status=400)
+    start, days = checked
+    cache = _box(request.app).setdefault("fb_cache", {})
+    ckey = f"{start.isoformat()}:{days}"
+    hit = cache.get(ckey)
+    loop_now = asyncio.get_running_loop().time()
+    if hit and loop_now - hit[0] < 60:
+        return web.json_response({"ok": True, **hit[1]})
+    lo = _dt.combine(start, _dt.min.time(), freebusy.TZ)
+    hi = lo + _td(days=days)
+    events: list = []
+    session = _box(request.app).get("session")
+    for entity in FREEBUSY_CALENDARS:
+        got = await ha_calendar_events(session, entity, lo.isoformat(), hi.isoformat())
+        if got is None:
+            return web.json_response({"ok": False, "error": "calendar-unavailable"}, status=503)
+        events.extend(got)
+    blocks = freebusy.busy_blocks(events, start, days, FREEBUSY_WINDOW)
+    out = freebusy.response(blocks, start, days, FREEBUSY_WINDOW)
+    cache.clear()
+    cache[ckey] = (loop_now, out)
+    return web.json_response({"ok": True, **out})
+
+
+async def agent_tick(app: web.Application) -> None:
+    calls, outbox = ensure_agent(app)
+    for row in calls.sweep(AGENT_INACTIVITY_S, HOOK_EXPECTED, HOOK_GRACE_S):
+        await deliver_final(app, row)
+    box = _box(app)
+    senders = box.get("senders")
+    if senders is None:
+        senders = build_senders(app)
+        box["senders"] = senders
+    gate = await notify_gate(app)
+    if box.get("notify_gate") != gate:
+        log.info("notify gate %s (%s)", gate, NOTIFY_DRY_RUN_ENTITY)  # once per change
+        box["notify_gate"] = gate
+    if gate == "dry_run":
+        for jid in outbox.suppress_pending():
+            log.info("dry_run on: would send %s (not sent)", jid)
+        return
+    if gate == "hold":
+        expired = outbox.suppress_pending(status="expired",
+                                          created_before=notify_outbox.now_ts() - NOTIFY_HOLD_MAX_S)
+        for jid in expired:
+            log.info("held too long, not sent: %s", jid)
+        if expired:
+            # R3-L1: one masked push waits behind the same gate, and the sensor shows the count.
+            outbox.note_expired(len(expired))
+            box["sensor_dirty"] = True
+        return
+    for rec in await outbox.pump_once(senders):
+        if rec.get("status") != "sent":
+            log.warning("notify %s attempt=%s code=%s status=%s", rec.get("kind"), rec.get("attempts"),
+                        rec.get("last_code"), rec.get("status"))
+
+
 async def index(_request: web.Request) -> web.Response:
     return web.FileResponse(STATIC / "index.html")
 
@@ -1648,6 +2097,10 @@ async def background(app: web.Application) -> None:
                 queue = box.get("drive_queue")
                 if queue is not None:
                     await queue.pump_once()
+                loop_now = asyncio.get_running_loop().time()
+                if AGENT_TOKEN and loop_now - float(box.get("agent_tick_at") or 0) >= 10:
+                    box["agent_tick_at"] = loop_now
+                    await agent_tick(app)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001
@@ -1850,6 +2303,9 @@ def make_app() -> web.Application:
     app.router.add_get("/api/trust", api_trust_get)
     app.router.add_post("/api/trust/add", api_trust_add)
     app.router.add_post("/api/trust/remove", api_trust_remove)
+    app.router.add_post("/api/agent/call", api_agent_call)
+    app.router.add_post("/api/agent/hook", api_agent_hook)
+    app.router.add_get("/api/agent/freebusy", api_agent_freebusy)
     app.router.add_get("/api/contacts/status", api_contacts_status)
     app.router.add_post("/api/contacts/sync", api_contacts_sync)
     app.router.add_post("/api/contacts/upload", api_contacts_upload)
