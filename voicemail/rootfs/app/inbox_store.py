@@ -796,7 +796,7 @@ class VoicemailStore:
         except OSError:
             pass
 
-    def request_callback(self, voicemail_id: str) -> dict | None:
+    def request_callback(self, voicemail_id: str, actor: str = "bryson") -> dict | None:
         """Record a pending callback request. Does not dial.
 
         None when the id is missing. ``created`` is false when a request is
@@ -820,8 +820,9 @@ class VoicemailStore:
             item["callback_note"] = ""
             item["followup_state"] = "queued"
             item["followup_due"] = ""
-            item["last_actor"] = "bryson"
-            _append_history(item, previous, "queued", "bryson")
+            who = actor if actor in FOLLOWUP_ACTORS else "bryson"
+            item["last_actor"] = who
+            _append_history(item, previous, "queued", who)
             data["items"][voicemail_id] = item
             self._write(data)
             return {"item": copy.deepcopy(item), "created": True}
