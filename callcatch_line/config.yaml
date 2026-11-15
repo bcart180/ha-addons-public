@@ -1,0 +1,60 @@
+name: CallCatch Line
+version: "0.1.0"
+slug: callcatch_line
+description: MCP server for the CallCatch phone agent. Messages, callbacks, and busy times only.
+url: https://github.com/bcart180/ha-addons-public/tree/main/callcatch_line
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: application
+boot: manual
+# The only internet-facing CallCatch piece (through the Cloudflare tunnel).
+# No Supervisor API, no Core API, no folder maps, no ingress, no host network.
+# Its one upstream is CallCatch on the Supervisor network.
+hassio_api: false
+homeassistant_api: false
+auth_api: false
+ingress: false
+host_network: false
+# No host port by default (M4): the tunnel reaches this add-on on the
+# Supervisor network at http://a1d3bd4b-callcatch-line:8791.  Setting a host
+# port publishes it on every host interface (LAN), so that needs its own GO.
+ports:
+  "8791/tcp": null
+ports_description:
+  "8791/tcp": "Leave blank. Not needed when the tunnel connector is on the Supervisor network."
+options:
+  mcp_token: ""
+  callcatch_agent_token: ""
+  callcatch_url: "http://a1d3bd4b-voicemail:8099"
+  call_id_header: "X-CallCatch-Call"
+  caller_header: "X-CallCatch-From"
+  delete_ends_call: false
+  hook_token: ""
+  hook_signing_secret: ""
+  allowed_peers: "172.30.32.0/23,127.0.0.1/32,::1/128"
+  trusted_proxies: ""
+  rate_per_min: 60
+  tool_calls_per_min: 30
+  finals_per_call: 6
+  finals_per_number_hour: 6
+  finals_per_day: 40
+  finals_no_caller_id_hour: 20
+schema:
+  mcp_token: password
+  callcatch_agent_token: password
+  callcatch_url: match(^http://[a-z0-9][a-z0-9\-]{0,62}:\d{2,5}/?$)
+  call_id_header: match(^X-[A-Za-z0-9\-]{1,40}$)
+  caller_header: match(^X-[A-Za-z0-9\-]{1,40}$)
+  delete_ends_call: bool
+  hook_token: password?
+  hook_signing_secret: password?
+  allowed_peers: match(^[0-9a-fA-F:.,/ ]{0,300}$)
+  trusted_proxies: match(^[0-9a-fA-F:.,/ ]{0,300}$)?
+  rate_per_min: int(5,600)
+  tool_calls_per_min: int(5,300)
+  finals_per_call: int(1,50)
+  finals_per_number_hour: int(1,100)
+  finals_per_day: int(1,1000)
+  finals_no_caller_id_hour: int(1,200)
