@@ -1,0 +1,5 @@
+#!/command/with-contenv bash
+if [[ "${1}" -ne 0 ]] && [[ "${1}" -ne 256 ]]; then
+  exit 1
+fi
+exit 0

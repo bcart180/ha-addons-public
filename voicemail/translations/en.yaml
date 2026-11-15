@@ -97,3 +97,81 @@ configuration:
   contacts_sync_interval_min:
     name: Contacts sync interval (minutes)
     description: How often to re-read iCloud contacts. Default 30, minimum 15.
+  agent_token:
+    name: Phone agent token (CallCatch Line)
+    description: >-
+      Bearer secret CallCatch Line uses on the add-on network for the phone
+      agent routes. At least 32 characters and different from the ingest
+      token, or the routes stay off. Password field. Never logged.
+  agent_inactivity_s:
+    name: Finalize after quiet seconds
+    description: >-
+      A phone-agent call with no activity for this long is finalized and
+      Bryson is notified with whatever was captured, marked as an early
+      hangup. Default 180.
+  hook_expected:
+    name: Wait for a call-ended webhook
+    description: >-
+      On when a call-ended webhook is wired to CallCatch Line. A finished call
+      then waits up to the grace period for it, so the full transcript rides
+      along in the one email.
+  hook_grace_s:
+    name: Webhook grace (seconds)
+    description: How long to wait for the call-ended webhook before sending anyway. Default 120.
+  freebusy_calendars:
+    name: Busy-time calendars
+    description: >-
+      Comma-separated calendar entities. Only start and end times are read.
+      Titles, places and notes never leave CallCatch.
+  freebusy_window:
+    name: Busy-time window
+    description: Weekday hours reported to the phone agent, America/New_York. Default 08:00-18:00.
+  mail_backend:
+    name: Email route
+    description: >-
+      off, or agentmail (direct HTTPS to the AgentMail API, no agent or
+      routine in between).  Gmail is never used.
+  mail_to:
+    name: Email to
+    description: >-
+      One address on proton.me or protonmail.com (pinned in code).  Anything
+      else, a list, or Gmail turns email off.
+  agentmail_inbox:
+    name: AgentMail sending inbox
+    description: >-
+      A dedicated CallCatch-only AgentMail inbox (callcatch…@agentmail.to) that
+      the API key can send from.  Its scope is CallCatch only: never a shared
+      bot inbox.  Use an inbox-scoped, send-only key, and keep the inbox out of
+      reach of other agents' AgentMail connectors (see Documentation).
+  agentmail_api_key:
+    name: AgentMail API key
+    description: Password field.  Never logged.
+  email_full_number:
+    name: Full callback number in email
+    description: >-
+      Off (default) shows the last 4 digits only.  On puts the full callback
+      number in the email so it can be dialed.  The email leaves the house
+      through the mail route, so turn this on only by explicit choice.
+  panel_base_url:
+    name: Panel link base URL
+    description: >-
+      Optional.  Your Home Assistant address on the home network, for example
+      http://homeassistant.local:8123.  When set, the email links to the
+      CallCatch panel there.  Blank (default) leaves the link out and says to
+      open CallCatch from the sidebar.
+  push_service:
+    name: iPhone push service
+    description: >-
+      Companion notify service, for example mobile_app_your_phone. The push
+      shows the caller name and reference only. Blank turns the push off.
+  late_update_push:
+    name: Push when details arrive late
+    description: >-
+      One masked push if more details reach a call after its email went out.
+      The email is never sent twice.
+  timeout_notify_per_day:
+    name: Hung-up-early notices per day
+    description: >-
+      Cap on email + push for calls finalized by the quiet-time finalizer,
+      per day (ET).  Over the cap the call is still saved in CallCatch.
+      Default 20.
