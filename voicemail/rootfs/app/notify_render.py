@@ -25,6 +25,7 @@ SOURCE_LABEL = {
     "hook": "Call ended",
     "ended": "Call ended",
     "timeout": "Call went quiet",
+    "recording": "Call ended",
 }
 
 
@@ -61,9 +62,58 @@ def status_line(row: dict) -> str:
         parts.append("Caller hung up early.  This is what was captured before the call ended.")
     if (row.get("fields") or {}).get("callback_requested"):
         parts.append("Callback requested.  No call has been placed.")
-    if not row.get("transcript"):
-        parts.append("No full transcript was received.  The agent's notes are below.")
+    if row.get("verbatim_at"):
+        parts.append("The transcript is the carrier recording, word for word.")
+    elif row.get("capture_failed"):
+        parts.append("The carrier recording could not be transcribed.  The call is saved.")
+    elif not row.get("transcript"):
+        if row.get("turns"):
+            parts.append("The transcript below was written by the phone agent during the call and may paraphrase.  "
+                         "The recording is in the xAI console.")
+        else:
+            parts.append("No full transcript was received.  The agent's notes are below.")
     return "  ".join(parts)
+
+
+def transcript_lines(row: dict, include_number: bool = True) -> list[str]:
+    """Hook transcript if one arrived, else the agent-written turn log.
+
+    Caller text, so phone-number runs are masked to the last 4 whenever the
+    email is set to hide full numbers."""
+    raw = str(row.get("transcript") or "")
+    if raw:
+        lines = raw.splitlines()
+    else:
+        lines = []
+        for t in row.get("turns") or []:
+            label = "Caller" if t.get("speaker") == "caller" else "Agent"
+            lines.append(f"{label}: {_one_line(t.get('text') or '', 500)}")
+    if not include_number:
+        lines = [call_summary.mask_phone_runs(line) for line in lines]
+    return [line for line in lines if line.strip()]
+
+
+def summary_text(row: dict, include_number: bool = True) -> str:
+    text = _one_line(row.get("summary") or "", 1200)
+    return call_summary.mask_phone_runs(text) if (text and not include_number) else text
+
+
+def call_started(row: dict) -> str:
+    """Platform call start in Eastern, or the raw value when its format is unknown."""
+    ts = float(row.get("call_start_ts") or 0)
+    if ts:
+        return when_et(ts)
+    raw = _one_line(row.get("call_start") or "", 64)
+    return f"{raw} (as sent by the platform)" if raw else ""
+
+
+def console_hint(row: dict) -> str:
+    """How to find this call in the xAI console voice logs.  Last 4 only."""
+    caller = call_summary.mask_number((row.get("fields") or {}).get("caller_id") or "")
+    if not caller:
+        return ""
+    started = call_started(row) or when_et(row.get("created_at") or 0)
+    return f"Find it in the xAI console voice logs: caller number ending {caller.lstrip('•')}, call started {started}."
 
 
 def panel_link(base: str) -> str:
@@ -83,6 +133,13 @@ def email(row: dict, to: list[str], sender: str, include_number: bool = True,
     subject = _one_line(f"Phone message from {name}{tag} {ref}", SUBJECT_MAX)
     number = f.get("callback_number") or f.get("caller_id") or ""
     shown = pretty_number(number) if include_number else call_summary.mask_number(number)
+    best_time = f.get("best_time") or f.get("preferred_window") or ""
+    reason = f.get("reason") or ""
+    notes = list(row.get("notes") or [])
+    if not include_number:
+        best_time = call_summary.mask_phone_runs(best_time)
+        reason = call_summary.mask_phone_runs(reason)
+        notes = [call_summary.mask_phone_runs(n) for n in notes]
     details = [
         ("Reference", ref),
         ("Caller", name),
@@ -90,13 +147,15 @@ def email(row: dict, to: list[str], sender: str, include_number: bool = True,
         ("Caller ID", (pretty_number(f.get("caller_id")) if include_number else call_summary.mask_number(f.get("caller_id") or "")) or "Not shown"),
         ("When", when),
         ("Urgency", f.get("urgency") or "normal"),
-        ("Best time", f.get("best_time") or f.get("preferred_window") or ""),
+        ("Best time", best_time),
         ("How it ended", SOURCE_LABEL.get(str(row.get("final_source") or ""), "")),
+        ("Call started", call_started(row)),
+        ("xAI conversation", _one_line(row.get("conversation_id") or "", 100)),
     ]
     details = [(k, v) for k, v in details if v]
-    reason = f.get("reason") or ""
-    notes = list(row.get("notes") or [])
-    transcript = str(row.get("transcript") or "")
+    tx_lines = transcript_lines(row, include_number)
+    transcript = "\n".join(tx_lines)
+    summary = summary_text(row, include_number)
     status = status_line(row)
 
     lines = ["Phone message", ""]
@@ -105,9 +164,14 @@ def email(row: dict, to: list[str], sender: str, include_number: bool = True,
     lines += [f"{k}: {v}" for k, v in details]
     lines += ["", UNTRUSTED_NOTE]
     lines += ["", "Reason", reason or "Not given"]
+    if summary:
+        lines += ["", "Summary", summary]
     if notes:
         lines += ["", "Agent notes"] + [f"- {n}" for n in notes]
     lines += ["", "Transcript", transcript or "Not received."]
+    hint = console_hint(row)
+    if hint:
+        lines += ["", hint]
     lines += ["", f"Open CallCatch (home network): {link}" if link
               else "Open CallCatch from the Home Assistant sidebar.",
               "Caller ID can be faked.  Check the number before calling back."]
@@ -119,7 +183,7 @@ def email(row: dict, to: list[str], sender: str, include_number: bool = True,
         for k, v in details
     )
     notes_html = "".join(f"<li>{e(n)}</li>" for n in notes)
-    tx_html = "<br>".join(e(line) for line in transcript.splitlines()) or "Not received."
+    tx_html = "<br>".join(e(line) for line in tx_lines) or "Not received."
     banner = f'<p style="margin:0 0 16px;color:#171A20;font-weight:600">{e(status)}</p>' if status else ""
     body_html = (
         '<!DOCTYPE html><html><body style="margin:0;background:#f4f4f4;font-family:Helvetica Neue,Arial,sans-serif">'
@@ -130,8 +194,10 @@ def email(row: dict, to: list[str], sender: str, include_number: bool = True,
         f'<table style="border-collapse:collapse;font-size:14px">{rows}</table>'
         f'<p style="margin:20px 0 0;color:#5C5E62;font-size:12px">{e(UNTRUSTED_NOTE)}</p>'
         f'<h2 style="font-size:15px;color:#171A20;margin:20px 0 6px">Reason</h2><p style="margin:0;color:#171A20">{e(reason or "Not given")}</p>'
+        + (f'<h2 style="font-size:15px;color:#171A20;margin:20px 0 6px">Summary</h2><p style="margin:0;color:#171A20">{e(summary)}</p>' if summary else "")
         + (f'<h2 style="font-size:15px;color:#171A20;margin:20px 0 6px">Agent notes</h2><ul style="margin:0;padding-left:18px;color:#171A20">{notes_html}</ul>' if notes else "")
         + f'<h2 style="font-size:15px;color:#171A20;margin:20px 0 6px">Transcript</h2><p style="margin:0;color:#171A20;font-size:14px">{tx_html}</p>'
+        + (f'<p style="margin:20px 0 0;color:#5C5E62;font-size:12px">{e(hint)}</p>' if hint else "")
         + (f'<p style="margin:24px 0 0;color:#5C5E62;font-size:12px">Open <a href="{e(link)}" style="color:#3E6AE1">CallCatch</a> on the home network.  '
            if link else '<p style="margin:24px 0 0;color:#5C5E62;font-size:12px">Open CallCatch from the Home Assistant sidebar.  ')
         + 'Caller ID can be faked.  Check the number before calling back.</p>'
