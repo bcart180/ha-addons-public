@@ -175,3 +175,32 @@ configuration:
       Cap on email + push for calls finalized by the quiet-time finalizer,
       per day (ET).  Over the cap the call is still saved in CallCatch.
       Default 20.
+  telnyx_api_key:
+    name: Telnyx API key
+    description: >-
+      Used to list and delete call recordings. Password field. Never logged.
+      Leave blank to keep the capture path off.
+  telnyx_delete_remote:
+    name: Delete Telnyx recording after save
+    description: >-
+      On (default) deletes Telnyx's copy only after the audio and the
+      transcript are stored locally and re-read. A failure never deletes it.
+  telnyx_poll_s:
+    name: Telnyx recording poll (seconds)
+    description: >-
+      How often to list recordings in case a webhook was missed or CallCatch
+      restarted mid-call. Default 30. Minimum 15.
+  xai_api_key:
+    name: xAI speech-to-text key
+    description: >-
+      Sent only to the xAI speech-to-text endpoint. Password field. Never logged.
+      Read from this option, or from the XAI_API_KEY environment variable when
+      the option is blank.
+  xai_stt_model:
+    name: Speech-to-text model
+    description: Model name for the xAI speech-to-text request. Default grok-voice-transcribe-2.0.
+  recording_grace_s:
+    name: Wait for the recording (seconds)
+    description: >-
+      When a Telnyx or xAI key is set, the one email waits this long for the
+      verbatim transcript. Default 180. The call is still saved if it never arrives.

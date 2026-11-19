@@ -8,6 +8,8 @@ import pytest
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+if not (ROOT / "twilio_house_voice/config.yaml").exists():
+    pytest.skip("twilio_house_voice/ is not in this checkout", allow_module_level=True)
 CC = yaml.safe_load((ROOT / "voicemail/config.yaml").read_text())
 VO = yaml.safe_load((ROOT / "twilio_house_voice/config.yaml").read_text())
 spec = importlib.util.spec_from_file_location("wire", ROOT / "voicemail/tools/wire_voice_link.py")
