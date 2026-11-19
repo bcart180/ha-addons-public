@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import logging
+import sys
 import time
 
 from conftest import AGENT_TOKEN, HOOK_TOKEN, MCP_TOKEN
@@ -439,3 +440,66 @@ async def test_no_caller_id_limits_per_call_with_shared_ceiling(stack):
     headers, _ = await init(line, call_id="conv-anon-over", caller="")
     _, body = await call_tool(line, headers, "take_message", {"reason": "over"}, rid=99)
     assert body["result"]["isError"] and "busy" in body["result"]["content"][0]["text"]
+
+
+# --- 0.1.1: session lost mid-call (Line or HA restart) -----------------------
+
+async def test_lost_session_is_recreated_for_same_call(stack):
+    line, cc_app, cc_mod, _ = stack
+    headers, _ = await init(line)
+    status, body = await call_tool(line, headers, "update_call", {"caller_name": "Test Caller"})
+    assert status == 200 and not body["result"]["isError"]
+    ref = body["result"]["structuredContent"]["ref"]
+    # Simulate a restart: Line forgets every session.
+    st = line.server.app[sys.modules["line_server"].APP]
+    st["sessions"].clear()
+    status, body = await call_tool(line, headers, "take_message", {"reason": "after restart"}, rid=3)
+    assert status == 200 and not body["result"]["isError"]
+    assert body["result"]["structuredContent"]["ref"] == ref  # same call row, not a new one
+    calls, _ = cc_mod.ensure_agent(cc_app)
+    rows = calls.all()
+    assert len(rows) == 1 and rows[0]["agent_final"] and rows[0]["fields"]["reason"] == "after restart"
+    assert headers["Mcp-Session-Id"] in st["sessions"]
+
+
+async def test_lost_session_without_call_header_keys_on_session_id(stack):
+    line, cc_app, cc_mod, _ = stack
+    headers, _ = await init(line, call_id="")
+    status, body = await call_tool(line, headers, "update_call", {"reason": "first"})
+    ref = body["result"]["structuredContent"]["ref"]
+    st = line.server.app[sys.modules["line_server"].APP]
+    st["sessions"].clear()
+    status, body = await call_tool(line, headers, "update_call", {"notes": "second"}, rid=3)
+    assert status == 200 and body["result"]["structuredContent"]["ref"] == ref
+    assert len(cc_mod.ensure_agent(cc_app)[0].all()) == 1
+
+
+async def test_malformed_unknown_session_still_404(stack):
+    line, *_ = stack
+    for sid in ("unknown", "x" * 31, "x" * 33, "a" * 31 + "!"):
+        r = await line.post("/mcp", json=rpc("tools/list"), headers={**AUTH, "Mcp-Session-Id": sid})
+        assert r.status == 404
+    r = await line.delete("/mcp", headers={**AUTH, "Mcp-Session-Id": "unknown"})
+    assert r.status == 404
+
+
+async def test_recreate_still_needs_token(stack):
+    line, *_ = stack
+    sid = "A" * 32
+    r = await line.post("/mcp", json=rpc("tools/list"), headers={"Mcp-Session-Id": sid})
+    assert r.status == 401
+    st = line.server.app[sys.modules["line_server"].APP]
+    assert sid not in st["sessions"]
+
+
+async def test_lost_session_delete_ends_call(stack):
+    _line, cc_app, cc_mod, make_line = stack
+    line2 = await make_line(delete_ends_call=True)
+    headers, _ = await init(line2, call_id="conv-delete-01")
+    await call_tool(line2, headers, "update_call", {"reason": "hello"})
+    st = line2.server.app[sys.modules["line_server"].APP]
+    st["sessions"].clear()
+    r = await line2.delete("/mcp", headers=headers)
+    assert r.status == 204
+    rows = cc_mod.ensure_agent(cc_app)[0].all()
+    assert len(rows) == 1 and rows[0]["state"] == "final" and rows[0]["final_source"] == "ended"

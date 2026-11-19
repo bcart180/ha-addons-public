@@ -19,6 +19,12 @@ configuration:
   caller_header:
     name: Caller number header
     description: Header the phone agent fills with the caller's number. Unverified; shown as caller ID.
+  start_header:
+    name: Call start header
+    description: >-
+      Header the phone agent fills with the call-start time variable. With the
+      caller number it ties every tool call of one call together when the
+      platform has no conversation id variable. Any format; never logged.
   delete_ends_call:
     name: Session close ends the call
     description: >-
@@ -62,3 +68,19 @@ configuration:
       Peers whose CF-Connecting-IP header is believed for the lockout key.
       Blank means the header is ignored and the TCP peer is the key.  Set only
       to the tunnel connector's address.
+  turns_per_call_min:
+    name: Transcript turns per call per minute
+    description: Most update_call transcript turns one call may save in a minute. Default 20.
+  send_conversation_id:
+    name: Pass the conversation id
+    description: >-
+      On sends the per-call header value to CallCatch so the email names the
+      xAI conversation (search it in the console's voice logs). Off sends only
+      the hashed call key.
+  telnyx_public_key:
+    name: Telnyx public key
+    description: >-
+      The account public key from the Telnyx portal (Keys & Credentials).
+      CallCatch Line verifies every POST /telnyx/events with it. A value that
+      is set and does not verify is rejected. Blank turns the webhook off.
+      Never logged.
