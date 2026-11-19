@@ -1,5 +1,5 @@
 name: CallCatch
-version: "0.7.0"
+version: "0.8.0"
 slug: voicemail
 description: Your Personalized Voicemail. iPhone-style house inbox (list + detail) via Supervisor ingress
 url: https://github.com/bcart180/ha-addons-public/tree/main/voicemail
@@ -19,6 +19,10 @@ map:
   - homeassistant_config:ro
   - share:rw
   - media:rw
+# Private carrier audio under /data/callcatch/recordings.  Not part of a backup.
+backup_exclude:
+  - callcatch/recordings
+  - callcatch/recordings/*
 options:
   sensor_entity: sensor.inbound_voicemails
   media_player: ""
@@ -55,6 +59,12 @@ options:
   push_service: ""
   late_update_push: true
   timeout_notify_per_day: 20
+  telnyx_api_key: ""
+  telnyx_delete_remote: true
+  telnyx_poll_s: 30
+  xai_api_key: ""
+  xai_stt_model: "grok-voice-transcribe-2.0"
+  recording_grace_s: 180
 schema:
   sensor_entity: str
   media_player: str?
@@ -91,3 +101,9 @@ schema:
   push_service: str?
   late_update_push: bool
   timeout_notify_per_day: int(1,200)
+  telnyx_api_key: password?
+  telnyx_delete_remote: bool
+  telnyx_poll_s: int(15,300)
+  xai_api_key: password?
+  xai_stt_model: str?
+  recording_grace_s: int(30,900)

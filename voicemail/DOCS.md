@@ -408,6 +408,43 @@ contact counts, directory size and a status code (`ok`, `disabled`,
 
 
 
+## Carrier recordings (0.8.0)
+
+Telnyx records the inbound call from the moment it is answered, dual channel, while the call stays bridged to the existing SIP voice agent. CallCatch does not answer, bridge, or start a recording itself: a command sent after the webhook would miss a hang-up of a couple of seconds. The portal (or the Call Control answer, if that is what bridges the call) starts the recording. CallCatch only receives it.
+
+Two paths write the same job, deduped by recording id, then call session id, then call leg id, then call control id:
+
+1. CallCatch Line `POST /telnyx/events` checks the Telnyx Ed25519 signature and relays a reduced event to `POST /api/agent/telnyx`.
+2. A poller calls `GET /v2/recordings` (`filter[created_at][gte]`) so a missed webhook or a restart mid-call is still captured.
+
+Audio is saved under `/data/callcatch/recordings` (directory 0700, files 0600, excluded from add-on backups). The job index (`jobs.json`) is in that same folder, so a backup does not keep transcripts, caller numbers, or download URLs. Deleting the inbox row blanks those three fields on the job. The download URL must be https, port 443, with no userinfo. The host must be a Telnyx name, or the recording bucket Telnyx documents (`telephony-recorder-prod` on `s3.amazonaws.com`, path-style or virtual-hosted). Resolved addresses in CGNAT (`100.64.0.0/10`) or any other non-public range are rejected. Bodies over 32 MB, or a content type that is not audio, are rejected. Speech-to-text is `POST https://api.x.ai/v1/stt` (model `grok-voice-transcribe-2.0` unless `xai_stt_model` is set). Capture stays off unless both `telnyx_api_key` and `xai_api_key` are set; with only one of them, CallCatch logs a warning and does not hold email for a recording. The key is the option, or the matching environment variable when the option is blank. It is never logged.
+
+Telnyx's copy is deleted (`DELETE /v2/recordings/{id}`) only after the local file and the transcript have been read back and match what was written, only when `telnyx_delete_remote` is on (the default), and only when `input_boolean.callcatch_notify_dry_run` is explicitly `off` (the same gate as the email). An explicit `on` does not delete. Missing, unavailable, or unknown does not delete. A failed download, a failed transcript, or a failed persist does not delete the remote copy. Failures retry with backoff, then stay `dead` on `/api/diag` with a failed flag and an error code. That failure is not stored as the transcript. A second recording of the same call is downloaded, transcribed, and deleted on its own. The call is still one row and one email, and the transcripts are combined in time order.
+
+The recording is the same call as the agent turns when the caller and the start time match (or the Telnyx ids were already stored). That is one inbox row and one email. A call that ends before the agent runs a tool still produces that row and that email. A short or silent recording says `caller hung up after N seconds, no speech detected`. The panel shows the call, the verbatim transcript, and the in-app player. The shared sensor does not carry the transcript or a full number.
+
+`input_boolean.callcatch_notify_dry_run` is unchanged. Only an explicit `off` sends the email, and only an explicit `off` deletes the Telnyx recording. Leave it on until go-live.
+
+### Telnyx settings at go-live
+
+- On the SIP connection that bridges to the voice agent: inbound call recording on, channels dual, format wav, starting at answer. If a Call Control application answers the leg instead, answer with `record` = `record-from-answer`, `record_channels` = `dual`, `record_format` = `wav`. Do not take the call off the existing bridge.
+- Webhook API version 2. Webhook URL is the tunnel path `/telnyx/events` on CallCatch Line.
+- Copy the account public key (portal: Keys & Credentials → Public Key) into Line `telnyx_public_key`.
+- In CallCatch, set `telnyx_api_key` and `xai_api_key`. Leave `telnyx_delete_remote` on.
+
+### New options
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `telnyx_api_key` | blank | List and delete recordings. Password. Never logged. |
+| `telnyx_delete_remote` | on | Delete the Telnyx copy only after a verified local save. |
+| `telnyx_poll_s` | 30 | Seconds between recordings-list polls (15–300). |
+| `xai_api_key` | blank | Speech-to-text key. Password. Never logged. |
+| `xai_stt_model` | `grok-voice-transcribe-2.0` | Model on `POST /v1/stt`. |
+| `recording_grace_s` | 180 | How long the one email waits for the verbatim transcript when a key is set. |
+
+Local audio is removed 30 days after the job closes, or sooner when the inbox row is cleared. The speaker button does not play these files; they stay in the private folder and play in the panel.
+
 ## Phone agent (0.7.0, CallCatch Line)
 
 CallCatch Line (separate add-on) is the internet-facing MCP server for a hosted phone agent.  It talks to CallCatch over the Supervisor network with `agent_token`.  CallCatch keeps one row per call in `/data/callcatch/agent_calls.json` and finalizes it once (agent message, call-ended webhook, closed session, or `agent_inactivity_s` of quiet).  The first finalization stores an inbox row (`source: phone_agent`), queues a callback if asked (no dialing), and enqueues one email and one masked push in `/data/callcatch/notify_outbox.json`.  Failed sends retry with backoff for about four hours, then park as `dead` (counts in `/api/diag`).
