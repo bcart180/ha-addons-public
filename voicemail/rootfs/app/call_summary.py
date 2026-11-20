@@ -381,6 +381,10 @@ def stored_or_extract(item: dict) -> dict:
     saved = item.get("summary")
     transcript = item.get("transcript") or item.get("snippet") or ""
     caller = item.get("caller") or item.get("caller_pretty") or item.get("caller_display") or ""
+    if item.get("source") == "phone_agent" and not (isinstance(saved, dict) and saved.get("urgency") in URGENCY):
+        # Agent rows: the transcript is the agent's turn log and summary, so a
+        # summary is never derived from it (audit L2).
+        saved = {"urgency": "normal"}
     if isinstance(saved, dict) and saved.get("urgency") in URGENCY:
         return {
             "name": _clean(saved.get("name"), NAME_MAX),
@@ -412,7 +416,11 @@ def fallback_line(item: dict) -> str:
     """Push/logbook line for rows without a summary: the first transcript line,
     through the same strip_format + plain_text + mask_phone_runs path, so a
     lock-screen alert never shows more than the last 4 digits of a number.
-    plain_text runs before masking so removed markup cannot join digit runs."""
+    plain_text runs before masking so removed markup cannot join digit runs.
+    Phone-agent rows get no fallback: their transcript is agent-written turn
+    and summary text, which never goes to HA sensors or events (audit L2)."""
+    if item.get("source") == "phone_agent":
+        return ""
     raw = strip_header(strip_format(item.get("transcript") or item.get("snippet") or ""))
     line = next((ln for ln in re.split(r"\r\n|\n|\r", raw) if ln.strip()), "")
     return _clean(mask_phone_runs(plain_text(line)), FALLBACK_MAX)

@@ -15,6 +15,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Iterator
+from zoneinfo import ZoneInfo
 
 import call_summary
 
@@ -24,6 +25,7 @@ except ImportError:  # pragma: no cover - Windows
     fcntl = None  # type: ignore
 
 STORE_VERSION = 1
+DISPLAY_TZ = ZoneInfo("America/New_York")
 RECENT_LIMIT = 20
 SNIPPET_MAX = 180
 AUDIO_EXTS = ("wav", "mp3", "m4a", "ogg")
@@ -105,6 +107,11 @@ def format_displays(iso: str) -> tuple[str, str]:
         parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
     except ValueError:
         return "", ""
+    # Stored times are UTC; show them in the house time zone.  A naive value is
+    # treated as UTC, the same as the rest of the store.
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    parsed = parsed.astimezone(DISPLAY_TZ)
     date_display = f"{parsed.month}/{parsed.day}/{parsed.year % 100:02d}"
     clock = parsed.strftime("%H:%M")
     timestamp = f"{parsed.strftime('%B')} {parsed.day}, {parsed.year} at {clock}"
@@ -525,7 +532,9 @@ def sensor_state(items: list[dict]) -> dict:
                 "trust_verdict": item.get("trust_verdict") or "",
                 # Masked like the pyscript notifications (•••1234).
                 **call_summary.for_sensor(call_summary.stored_or_extract(item)),
-                "summary_fallback": call_summary.fallback_line(item),
+                # Phone-agent rows: the transcript is the agent's turn log and
+                # summary (caller text), so nothing from it goes on the sensor.
+                "summary_fallback": "" if item.get("source") == "phone_agent" else call_summary.fallback_line(item),
                 "caller_label_masked": call_summary.caller_label(item),
                 **callback_sensor_fields(item),
                 **followup_sensor_fields(item),

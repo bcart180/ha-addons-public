@@ -18,7 +18,10 @@ _STR = {
     "best_time": 80,
     "preferred_window": 80,
     "notes": 600,
+    "summary": 1200,
 }
+TURN_TEXT_MAX = 500
+SPEAKERS = ["caller", "agent"]
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _NUM_RE = re.compile(r"^[0-9+()\-.\s]{7,20}$")
 
@@ -36,6 +39,21 @@ _FIELDS = {
     "notes": _s("Any other detail the caller gave.  No guesses.", 600),
 }
 
+_TURN = {
+    "type": "object",
+    "description": (
+        "One turn of the conversation, appended to this call's transcript.  After each thing the caller says, "
+        "send it here as closely to their words as you can.  Never rewrite or remove earlier turns."
+    ),
+    "properties": {
+        "speaker": {"type": "string", "enum": SPEAKERS, "description": "caller or agent."},
+        "text": _s("What was said, as close to word for word as you can.", TURN_TEXT_MAX),
+    },
+    "required": ["speaker", "text"],
+    "additionalProperties": False,
+}
+_SUMMARY = _s("A short summary of the whole call so far: who, why, what was agreed.", 1200)
+
 TOOLS = [
     {
         "name": "update_call",
@@ -44,7 +62,8 @@ TOOLS = [
             "name or reason, and again whenever you learn more.  It protects the message if the call drops.  "
             "It never sends anything to the caller and never reads other calls."
         ),
-        "inputSchema": {"type": "object", "properties": dict(_FIELDS), "additionalProperties": False},
+        "inputSchema": {"type": "object", "properties": {**_FIELDS, "turn": _TURN, "summary": _SUMMARY},
+                        "additionalProperties": False},
         "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
     },
     {
@@ -55,7 +74,7 @@ TOOLS = [
         ),
         "inputSchema": {
             "type": "object",
-            "properties": dict(_FIELDS),
+            "properties": {**_FIELDS, "summary": _SUMMARY},
             "required": ["reason"],
             "additionalProperties": False,
         },
@@ -72,6 +91,7 @@ TOOLS = [
             "properties": {
                 **_FIELDS,
                 "preferred_window": _s("When the caller would like the call back, in their words.", 80),
+                "summary": _SUMMARY,
             },
             "required": ["reason"],
             "additionalProperties": False,
@@ -100,7 +120,8 @@ _ALLOWED = {t["name"]: set(t["inputSchema"]["properties"]) for t in TOOLS}
 _REQUIRED = {t["name"]: set(t["inputSchema"].get("required", [])) for t in TOOLS}
 
 INSTRUCTIONS = (
-    "CallCatch tools for Bryson's phone line.  Call update_call early and as details come in.  "
+    "CallCatch tools for Bryson's phone line.  Call update_call early and as details come in, with one "
+    "transcript turn each time the caller speaks.  "
     "Finish with take_message or request_callback.  get_free_busy gives busy times only.  "
     "These tools cannot read past messages, contacts, or anything else in the house."
 )
@@ -134,6 +155,16 @@ def validate(name: str, args: Any) -> tuple[dict | None, str]:
             if not 1 <= n <= 14:
                 return None, "bad-days"
             out[k] = n
+            continue
+        if k == "turn":
+            if not isinstance(v, dict) or set(v) - {"speaker", "text"}:
+                return None, "bad-turn"
+            who, text = v.get("speaker"), v.get("text")
+            if who not in SPEAKERS or not isinstance(text, str) or not text.strip():
+                return None, "bad-turn"
+            if len(text) > TURN_TEXT_MAX:
+                return None, "too-long-turn"
+            out[k] = {"speaker": who, "text": text}
             continue
         if not isinstance(v, str):
             return None, "bad-" + k

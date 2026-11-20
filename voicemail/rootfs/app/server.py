@@ -38,11 +38,12 @@ import notify_outbox
 import notify_render
 import notify_send
 import share_import
+import telnyx_capture
 
 APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC = APP_DIR / "static"
 EXAMPLE = APP_DIR / "example_voicemails.json"
-VERSION = "0.7.0"
+VERSION = "0.8.0"
 AUDIO_LIMIT = 25 * 1024 * 1024
 SENSOR_RE = re.compile(r"sensor\.[a-z0-9_]+")
 RT = web.AppKey("rt", dict)
@@ -84,6 +85,8 @@ for _secret_key in (
     "icloud_apple_id",
     "agent_token",
     "agentmail_api_key",
+    "telnyx_api_key",
+    "xai_api_key",
 ):
     remember_secret(OPTS.get(_secret_key))
 
@@ -130,6 +133,21 @@ if PUSH_SERVICE.startswith("notify."):
     PUSH_SERVICE = PUSH_SERVICE[len("notify."):]
 LATE_UPDATE_PUSH = bool(OPTS.get("late_update_push", True))
 TIMEOUT_NOTIFY_PER_DAY = _int_opt("timeout_notify_per_day", 20, 1, 200)
+# Carrier recordings.  Keys come from the add-on option, else the matching env
+# name.  They are remembered so a log line that ever contained one is scrubbed.
+TELNYX_API_KEY = str(OPTS.get("telnyx_api_key") or os.environ.get("TELNYX_API_KEY") or "")
+XAI_API_KEY = str(OPTS.get("xai_api_key") or os.environ.get("XAI_API_KEY") or "")
+remember_secret(TELNYX_API_KEY)
+remember_secret(XAI_API_KEY)
+XAI_STT_MODEL = str(OPTS.get("xai_stt_model") or "grok-voice-transcribe-2.0").strip() or "grok-voice-transcribe-2.0"
+TELNYX_DELETE = bool(OPTS.get("telnyx_delete_remote", True))
+TELNYX_POLL_S = _int_opt("telnyx_poll_s", 30, 15, 300)
+RECORDING_GRACE_S = _int_opt("recording_grace_s", 180, 30, 900)
+# Both keys are required.  One without the other must not hold every email for the grace window.
+if bool(TELNYX_API_KEY) != bool(XAI_API_KEY):
+    _missing = "xai_api_key" if TELNYX_API_KEY else "telnyx_api_key"
+    logging.getLogger("voicemail").warning("recording capture off: %s is blank", _missing)
+CAPTURE_ON = bool(TELNYX_API_KEY and XAI_API_KEY)
 # CallCatch Voice owns the allow / block lists in its /data. The inbox edits
 # them through its own ingress-gated routes, which forward with this bearer
 # to Voice on the Supervisor network. Blank = lists not editable here.
@@ -412,6 +430,7 @@ def normalize_item(raw: dict) -> dict:
         "preview": (summary.get("reason") or "")
         or call_summary.fallback_line({"snippet": map_speaker_text(snippet_raw) if isinstance(snippet_raw, str) else ""})
         or call_summary.fallback_line({"transcript": map_speaker_text(transcript_raw) if isinstance(transcript_raw, str) else ""}),
+        "recording_verbatim": bool(raw.get("recording_verbatim")),
     }
 
 
@@ -1060,6 +1079,10 @@ async def api_clear_one(request: web.Request) -> web.Response:
     removed = store.clear_one(vid)
     if removed is None:
         return web.json_response({"ok": False, "error": "not-found"}, status=404)
+    if removed.get("recording_name") or removed.get("agent_ref"):
+        cap = ensure_capture(request.app)
+        cap.unlink(str(removed.get("recording_name") or ""))
+        cap.redact(ref=str(removed.get("agent_ref") or ""), filename=str(removed.get("recording_name") or ""))
     queue = _box(request.app).get("drive_queue")
     if queue is not None:
         queue.enqueue_delete(removed)
@@ -1081,6 +1104,11 @@ async def api_clear_all(request: web.Request) -> web.Response:
         )
     store = ensure_runtime(request.app)
     removed = store.clear_all()
+    cap = ensure_capture(request.app)
+    for item in removed:
+        if item.get("recording_name") or item.get("agent_ref"):
+            cap.unlink(str(item.get("recording_name") or ""))
+            cap.redact(ref=str(item.get("agent_ref") or ""), filename=str(item.get("recording_name") or ""))
     queue = _box(request.app).get("drive_queue")
     if queue is not None:
         for item in removed:
@@ -1408,6 +1436,10 @@ async def api_audio(request: web.Request) -> web.Response:
         item = store.find_by_call(call_id)
         if item:
             path = store.audio_file(item)
+            if path is None and item.get("recording_name"):
+                path = ensure_capture(request.app)._safe_file(str(item.get("recording_name") or ""))
+                if path is not None and not path.is_file():
+                    path = None
             if path is not None:
                 return web.FileResponse(
                     path,
@@ -1727,6 +1759,10 @@ def agent_diag(app: web.Application) -> dict:
         "notify_dry_run_entity": NOTIFY_DRY_RUN_ENTITY,
         "email_full_number": EMAIL_FULL_NUMBER,
         "freebusy_calendars": len(FREEBUSY_CALENDARS),
+        "recordings": ensure_capture(app).counts(),
+        "telnyx_delete_remote": TELNYX_DELETE,
+        "stt_configured": bool(XAI_API_KEY),
+        "capture_on": CAPTURE_ON,
     }
 
 
@@ -1793,7 +1829,9 @@ def agent_item(row: dict) -> dict:
     f = row.get("fields") or {}
     ref = str(row.get("ref") or "")
     notes = list(row.get("notes") or [])
-    transcript = str(row.get("transcript") or "")
+    transcript = str(row.get("transcript") or "") or agent_calls.turns_text(row)
+    if row.get("summary"):
+        transcript = f"Summary: {row['summary']}" + (f"\n{transcript}" if transcript else "")
     if not transcript:
         parts = []
         if f.get("reason"):
@@ -1808,6 +1846,7 @@ def agent_item(row: dict) -> dict:
             "from": caller,
             "caller_title": f.get("caller_name") or "",
             "transcript_text": transcript,
+            "duration_sec": int(row.get("duration_s") or 0),
             "date": agent_calls.iso(float(row.get("created_at") or 0)),
             "summary": {
                 "name": f.get("caller_name") or "",
@@ -1818,9 +1857,26 @@ def agent_item(row: dict) -> dict:
         }
     )
     item["source"] = "phone_agent"
+    # Summary comes from the agent's structured fields only.  item_from_payload
+    # would derive one from the transcript when reason is blank, and that
+    # transcript is caller turn text (audit L2).
+    item["summary"] = call_summary.stored_or_extract(
+        {"source": "phone_agent", "summary": {
+            "name": f.get("caller_name") or "",
+            "reason": f.get("reason") or "",
+            "callback": f.get("callback_number") or "",
+            "urgency": f.get("urgency") if f.get("urgency") in call_summary.URGENCY else "normal",
+        }}
+    )
     item["agent_ref"] = ref
     item["hung_up_early"] = bool(row.get("hung_up_early"))
     item["agent_notes"] = notes
+    if row.get("recording_file"):
+        item["has_audio"] = True
+        item["recording_name"] = row["recording_file"]
+    item["recording_verbatim"] = bool(row.get("verbatim_at"))
+    if row.get("conversation_id"):
+        item["agent_conversation_id"] = row["conversation_id"]
     return item
 
 
@@ -1886,7 +1942,8 @@ async def deliver_final(app: web.Application, row: dict) -> None:
     _calls, outbox = ensure_agent(app)
     ref = str(row.get("ref") or "")
     f = row.get("fields") or {}
-    if not (row.get("transcript") or row.get("notes") or any(
+    if not (row.get("transcript") or row.get("notes") or row.get("turns") or row.get("summary")
+            or row.get("capture_failed") or any(
         f.get(k) for k in ("caller_name", "reason", "caller_id", "callback_number")
     )):
         # Nothing at all was captured (no caller id either): not a real call.
@@ -1940,22 +1997,37 @@ async def api_agent_call(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": "bad-request"}, status=400)
     calls, _outbox = ensure_agent(request.app)
     hint = str(body.get("caller_hint") or "")
+    conv = agent_calls.clean_conversation_id(body.get("conversation_id"))
+    start = agent_calls.clean_call_start(body.get("call_start"))
+    # Match a call already holding this conversation id, else this caller ID +
+    # platform call start; the Line call key is the fallback.
+    if conv:
+        found = calls.find_by_conversation(conv)  # a conversation id is authoritative
+    else:
+        found = calls.find_by_start(hint, start) if (start and hint) else ""
+    if not found and hint:
+        found = calls.find_telnyx_caller(hint, start)
+    key = found or key
     try:
         if op == "touch":
-            res = calls.touch(key, body.get("fields"), hint)
+            res = calls.touch(key, body.get("fields"), hint, turn=body.get("turn"),
+                              summary=body.get("summary"), conversation_id=conv, call_start=start)
             if res["late"] and res["changed"]:
                 await deliver_late(request.app, res["row"])
         elif op == "final":
             res = calls.agent_final(
                 key, str(body.get("kind") or ""), body.get("fields"), hint,
                 hook_expected=HOOK_EXPECTED, hook_grace_s=HOOK_GRACE_S,
+                summary=body.get("summary"), conversation_id=conv, call_start=start,
+                recording_hold=CAPTURE_ON, recording_grace_s=RECORDING_GRACE_S,
             )
             if res["notify"]:
                 await deliver_final(request.app, res["row"])
             elif res["late"] and res["changed"]:
                 await deliver_late(request.app, res["row"])
         else:
-            res = calls.ended(key, hook_expected=HOOK_EXPECTED, hook_grace_s=HOOK_GRACE_S)
+            res = calls.ended(key, hook_expected=HOOK_EXPECTED, hook_grace_s=HOOK_GRACE_S,
+                              recording_hold=CAPTURE_ON, recording_grace_s=RECORDING_GRACE_S)
             if res.get("row") is None:
                 return web.json_response({"ok": True, "state": "unknown"})
             if res["notify"]:
@@ -1982,7 +2054,8 @@ async def api_agent_hook(request: web.Request) -> web.Response:
     if not _KEY_RE.fullmatch(key):
         return web.json_response({"ok": False, "error": "bad-request"}, status=400)
     try:
-        res = calls.hook(key, str(body.get("hook_id") or ""), body.get("transcript"), hint)
+        res = calls.hook(key, str(body.get("hook_id") or ""), body.get("transcript"), hint,
+                         recording_hold=CAPTURE_ON, recording_grace_s=RECORDING_GRACE_S)
     except ValueError:
         return web.json_response({"ok": False, "error": "bad-request"}, status=400)
     if res["notify"]:
@@ -2044,9 +2117,107 @@ async def api_agent_freebusy(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, **out})
 
 
+def ensure_capture(app: web.Application) -> telnyx_capture.Capture:
+    box = _box(app)
+    cap = box.get("capture")
+    if cap is None:
+        cap = telnyx_capture.Capture(data_dir())
+        box["capture"] = cap
+    return cap
+
+
+def _capture_info(job: dict) -> dict:
+    return {
+        "recording_id": job.get("recording_id") or "",
+        "session": job.get("call_session_id") or "",
+        "leg": job.get("call_leg_id") or "",
+        "control": job.get("call_control_id") or "",
+        "caller": job.get("from") or "",
+        "start_ts": job.get("start_ts") or 0,
+        "end_ts": job.get("end_ts") or 0,
+        "duration_s": job.get("duration_s") or 0,
+        "transcript": job.get("transcript") or "",
+        "file": job.get("file") or "",
+        "failed": bool(job.get("failed")),
+        "error_code": job.get("error_code") or "",
+        "siblings_open": bool(job.get("siblings_open")),
+    }
+
+
+async def attach_capture(app: web.Application, job: dict) -> str:
+    """One recording joins one call row and enqueues the one notice."""
+    calls, _outbox = ensure_agent(app)
+    res = calls.apply_capture(_capture_info(job))
+    row = res.get("row")
+    if not row:
+        return ""
+    if res.get("notify"):
+        await deliver_final(app, row)
+    elif res.get("late") and res.get("changed"):
+        await deliver_late(app, row)
+    return str(row.get("ref") or "")
+
+
+def _http_net(app: web.Application) -> telnyx_capture.HttpNet:
+    return telnyx_capture.HttpNet(
+        _box(app).get("session"), TELNYX_API_KEY, XAI_API_KEY, XAI_STT_MODEL, delete_remote=TELNYX_DELETE,
+    )
+
+
+async def capture_tick(app: web.Application, net: Any = None, force: bool = False) -> list[str]:
+    """Poll Telnyx when due, then advance every saved recording.  Tests pass ``net``."""
+    if not force and os.environ.get("VM_CAPTURE_AUTO", "1") != "1":
+        return []
+    cap = ensure_capture(app)
+    box = _box(app)
+    use = net if net is not None else box.get("capture_net")
+    if use is None:
+        if not CAPTURE_ON:
+            return []
+        use = _http_net(app)
+    codes: list[str] = []
+    loop_now = asyncio.get_running_loop().time()
+    if CAPTURE_ON and TELNYX_API_KEY and getattr(use, "list_recordings", None) and loop_now - float(box.get("capture_poll_at") or 0) >= TELNYX_POLL_S:
+        box["capture_poll_at"] = loop_now
+        codes.append(await cap.poll(use))
+    try:
+        delete_gate = await notify_gate(app)
+    except Exception:  # noqa: BLE001
+        delete_gate = "hold"
+    codes.extend(await cap.advance(use, lambda job: attach_capture(app, job), delete_gate=delete_gate))
+    if loop_now - float(box.get("capture_sweep_at") or 0) >= 3600:
+        box["capture_sweep_at"] = loop_now
+        cap.sweep_retention()
+    return codes
+
+
+async def api_agent_telnyx(request: web.Request) -> web.Response:
+    """Reduced Telnyx event from CallCatch Line.  Line already checked the signature."""
+    denied = deny_agent(request)
+    if denied:
+        return denied
+    body = await _agent_json(request)
+    if body is None or not isinstance(body.get("event"), dict):
+        return web.json_response({"ok": False, "error": "bad-request"}, status=400)
+    result = ensure_capture(request.app).ingest_webhook(body["event"])
+    if os.environ.get("VM_CAPTURE_AUTO", "1") == "1":
+        task = asyncio.create_task(_capture_safe(request.app))
+        _box(request.app)["capture_task"] = task
+    return web.json_response({"ok": bool(result.get("ok")), "duplicate": bool(result.get("duplicate")),
+                              "ignored": bool(result.get("ignored"))})
+
+
+async def _capture_safe(app: web.Application) -> None:
+    try:
+        await capture_tick(app)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("recording tick %s", type(exc).__name__)
+
+
 async def agent_tick(app: web.Application) -> None:
     calls, outbox = ensure_agent(app)
-    for row in calls.sweep(AGENT_INACTIVITY_S, HOOK_EXPECTED, HOOK_GRACE_S):
+    for row in calls.sweep(AGENT_INACTIVITY_S, HOOK_EXPECTED, HOOK_GRACE_S,
+                           recording_hold=CAPTURE_ON, recording_grace_s=RECORDING_GRACE_S):
         await deliver_final(app, row)
     box = _box(app)
     senders = box.get("senders")
@@ -2098,9 +2269,12 @@ async def background(app: web.Application) -> None:
                 if queue is not None:
                     await queue.pump_once()
                 loop_now = asyncio.get_running_loop().time()
-                if AGENT_TOKEN and loop_now - float(box.get("agent_tick_at") or 0) >= 10:
+                if loop_now - float(box.get("agent_tick_at") or 0) >= 10:
                     box["agent_tick_at"] = loop_now
-                    await agent_tick(app)
+                    if AGENT_TOKEN:
+                        await agent_tick(app)
+                    if CAPTURE_ON:
+                        await capture_tick(app)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001
@@ -2305,6 +2479,7 @@ def make_app() -> web.Application:
     app.router.add_post("/api/trust/remove", api_trust_remove)
     app.router.add_post("/api/agent/call", api_agent_call)
     app.router.add_post("/api/agent/hook", api_agent_hook)
+    app.router.add_post("/api/agent/telnyx", api_agent_telnyx)
     app.router.add_get("/api/agent/freebusy", api_agent_freebusy)
     app.router.add_get("/api/contacts/status", api_contacts_status)
     app.router.add_post("/api/contacts/sync", api_contacts_sync)

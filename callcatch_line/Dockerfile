@@ -2,7 +2,8 @@ ARG BUILD_FROM=ghcr.io/home-assistant/base:3.23
 FROM ${BUILD_FROM}
 
 # aiohttp floor: 3.13.5 carries the 3.13.4 security fixes.  Tests also run on 3.13.5.
-RUN apk add --no-cache python3 "py3-aiohttp>=3.13.5" tzdata
+# Floor, not an exact apk revision: Alpine bumps the -rN suffix without an API change.
+RUN apk add --no-cache python3 "py3-aiohttp>=3.13.5" "py3-cryptography>=46.0.7" tzdata
 
 COPY rootfs/ /
 RUN chmod a+x /etc/services.d/callcatch_line/run /etc/services.d/callcatch_line/finish

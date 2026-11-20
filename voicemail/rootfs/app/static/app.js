@@ -453,6 +453,14 @@
     $("btn-allow").classList.toggle("hidden", !v.caller_digits);
     renderCallback(v);
     renderSummary(v);
+    const recording = $("d-recording");
+    if (v.recording_verbatim) {
+      recording.textContent = "Verbatim carrier recording";
+      recording.classList.remove("hidden");
+    } else {
+      recording.textContent = "";
+      recording.classList.add("hidden");
+    }
     const plain = polishTranscript(v.transcript || v.snippet || "No transcript");
     const transcriptEl = $("d-transcript");
     transcriptEl.dataset.plain = plain;

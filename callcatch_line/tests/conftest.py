@@ -1,4 +1,4 @@
-"""Fixtures: CallCatch Line in front of a real CallCatch 0.7.0 app (both in-process).
+"""Fixtures: CallCatch Line in front of a real CallCatch 0.7.2 app (both in-process).
 
 Fake data only.  Test tokens are obvious placeholders, never real secrets.
 """
