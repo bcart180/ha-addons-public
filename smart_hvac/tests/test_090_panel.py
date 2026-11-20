@@ -170,7 +170,7 @@ async def test_history_unavailable_is_502(mk):
 
 def test_version_and_slug_notes():
     raw = open(os.path.join(os.path.dirname(__file__), "..", "config.yaml")).read()
-    assert 'version: "0.9.10"' in raw
+    assert 'version: "0.9.11"' in raw
     html = open(INDEX).read()
     assert "--card:#414141" in html and "--selected:#757575" in html and "--blue:#3e6ae1" in html
     assert "#e8a05a" not in html and "#e2c07a" not in html and "#5ec8c5" not in html

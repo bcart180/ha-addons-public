@@ -643,7 +643,7 @@ def test_m3_write_modes_safely_tolerates_an_unreadable_head():
 # ---------- options, docs, UI ----------
 def test_options_schema_and_translations():
     cfg = yaml.safe_load(open(os.path.join(ROOT, "config.yaml"), encoding="utf-8"))
-    assert cfg["version"] == "0.9.10"
+    assert cfg["version"] == "0.9.11"
     assert cfg["options"]["auto_stop_enabled"] is False
     assert cfg["options"]["auto_stop_sensitivity"] == "slow"
     assert cfg["schema"]["auto_stop_enabled"] == "bool?"
