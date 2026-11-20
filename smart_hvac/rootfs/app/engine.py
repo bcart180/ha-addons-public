@@ -1202,9 +1202,17 @@ class Engine:
                 zones[name] = {"member": True, "controlled": False, "mode": cl, "person_off": False}
                 continue
             rows = [list(p) for p in (st["samples"].get(name) or [])]
-            if item.get("indoor") is not None:
+            # The room sensor only. A stale or unavailable room sensor is None, never the head's own
+            # temperature, so it cannot stop the house and it restarts a stop (MA M-1). A zone with no room
+            # sensor configured has only the unit reading.
+            room = item.get("indoor") if (item.get("sensor_ok") or not z.get("indoor")) else None
+            if item["cl"] is None:
+                blocked = blocked or "unavailable"  # head mode unknown (MA L-1)
+            if z.get("window") and item.get("win_state") is None:
+                blocked = blocked or "window"  # contact sensor configured but unknown (MA L-3)
+            if room is not None:
                 if not rows or abs(rows[-1][0] - now) > 1e-3:
-                    rows.append([now, float(item["indoor"])])
+                    rows.append([now, float(room)])
                 st["samples"][name] = core.prune_slope_samples(rows, now, window_s, core.AUTO_STOP_SAMPLE_MARGIN_S)
             else:
                 st["samples"].pop(name, None)
@@ -1217,7 +1225,7 @@ class Engine:
                 blocked = blocked or "hold"
             target, opposite, paused = self._auto_stop_target(item, st)
             zones[name] = {
-                "member": True, "controlled": True, "mode": item["cl"], "indoor": item.get("indoor"),
+                "member": True, "controlled": True, "mode": item["cl"], "indoor": room,
                 "person_off": item["cl"] == "off" and name not in self.st["app_off"],
                 "target": target, "opposite": opposite, "paused": paused,
                 "slope": core.slope_f_per_h(st["samples"].get(name), now, window_s),
@@ -1239,6 +1247,11 @@ class Engine:
                 item["auto_stop_result"] = {"action": "hold" if item["cl"] == "off" else "set", "mode": "off",
                                             "setpoint": rec.get("setpoint"), "reason": "auto_stop",
                                             "profile": None}
+        elif event == "restart" and new.get("restart_reason") in core.AUTO_STOP_RELEASE_REASONS:
+            # MA M-2 / L-2: the other direction is wanted (schedule or a person). Nothing is forced: the heads
+            # stay the app's off, and decide plus the shared-mode lock pick the one mode for all of them.
+            log.info("auto-stop: released without forcing %s (%s)", st.get("mode"), new.get("restart_reason"))
+            new.update(saved={}, since=None, mode=None)
         elif event == "restart":
             log.info("auto-stop: restart all heads together in %s (%s)", st.get("mode"), new.get("restart_reason"))
             for name, rec in st["saved"].items():
@@ -1498,6 +1511,7 @@ class Engine:
                 "eff_setpt": eff_setpt, "inp": inp, "cfg": cfg, "defrost": defrost, "grace": grace, "dact": dact,
                 "stuck": stuck, "aware": aware, "inferred": inferred, "manual": manual,
                 "sensor_state": sensor_state, "sensor_val": sensor_val, "sensor_ok": sensor_ok,
+                "win_state": win,
             })
         outdoor_f = self._outdoor_f(outdoor, wattr.get("temperature_unit") if w is not None else None)
         self._slope_apply(staged, now, vac, outdoor_f)

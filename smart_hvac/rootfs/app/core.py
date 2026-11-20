@@ -871,6 +871,8 @@ AUTO_STOP_DEFAULT_LEVEL = "slow"
 # Restart when the room is this far on the wrong side of the target, now or projected over the window.
 AUTO_STOP_RESTART_MARGIN_F = 0.5
 AUTO_STOP_SAMPLE_MARGIN_S = 10 * 60
+# Restart reasons that hand the heads back to the normal decision without forcing the saved mode.
+AUTO_STOP_RELEASE_REASONS = frozenset({"opposite", "manual_opposite"})
 
 
 def auto_stop_window_min(level):
@@ -943,8 +945,12 @@ def auto_stop_step(prev, now, cfg, gates):
     gates: enabled (option on and app on), blocked (reason string or None: defrost / window / hold),
       zones[name] -> member (split on the shared outdoor unit), controlled (app can write it),
       person_off (off and not by the app), mode (live), indoor, target, slope, changed_ts (last mode change),
-      diverged (a person changed it while stopped), opposite (the schedule now wants the other direction).
-    Returns the new state plus "event" ("stop" | "restart" | None) and "reason".
+      diverged (a person changed it while stopped), opposite (the schedule now wants the other direction),
+      paused (an open window keeps it off). A member with mode None (unavailable) blocks a stop.
+    Returns the new state plus "event" ("stop" | "restart" | None) and "reason". Restart reasons: "needed"
+    (forces the saved mode on every stopped head), "manual" (a person changed a head; the others are forced
+    to the saved mode), "option_off" (forced), "opposite" / "manual_opposite" (released: the normal decision
+    and the shared-mode lock pick the mode, nothing is forced).
     Rules: stop only when every running member is satisfied at once for the whole window, in one shared
     heat or cool mode, and no member changed mode inside min_cycle_s. Restart all saved heads together, in
     the saved mode, once min_cycle_s has passed since the stop and any head needs it. A person's change or
@@ -960,16 +966,22 @@ def auto_stop_step(prev, now, cfg, gates):
     zones = g.get("zones") or {}
     if st["active"]:
         reason = None
+        diverged = [zones.get(n) or {} for n in st["saved"] if (zones.get(n) or {}).get("diverged")]
         if not g.get("enabled"):
             reason = "option_off"
-        elif any((zones.get(n) or {}).get("diverged") for n in st["saved"]):
-            reason = "manual"
+        elif diverged:
+            # A person chose the other direction on a stopped head: release, do not force the others back.
+            fams = {mode_family(z.get("mode")) for z in diverged}
+            reason = "manual_opposite" if any(f in DIRECTIONS and f != st["mode"] for f in fams) else "manual"
         elif now - (now if st["since"] is None else st["since"]) >= min_cycle:
             for name, rec in st["saved"].items():
                 z = zones.get(name)
                 if z is not None and z.get("paused"):
                     continue  # an open window keeps that head off; it does not restart the others
-                if z is None or z.get("opposite"):
+                if z is not None and z.get("opposite"):
+                    reason = "opposite"  # released to the normal decision; the saved mode is not forced
+                    break
+                if z is None:
                     reason = "needed"
                     break
                 if auto_stop_needed(rec["mode"], z.get("indoor"), z.get("target"), z.get("slope"), window_s):
@@ -983,6 +995,11 @@ def auto_stop_step(prev, now, cfg, gates):
             st["all_since"] = None
         return st
     st["saved"], st["since"], st["mode"] = {}, None, None
+    if g.get("enabled") and not g.get("blocked"):
+        for z in zones.values():
+            if z.get("member") and z.get("mode") is None:
+                g = dict(g, blocked="unavailable")  # a head whose mode is unknown: never stop around it
+                break
     if not g.get("enabled") or g.get("blocked"):
         st["all_since"] = None
         st["reason"] = g.get("blocked") if g.get("enabled") else None

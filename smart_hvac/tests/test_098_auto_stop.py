@@ -404,6 +404,126 @@ def test_fuzz_never_opposite_modes():
         assert len(wants) <= 1
 
 
+# ---------- MA review fixes (M-1, M-2, L-1, L-2, L-3) ----------
+def test_m1_unavailable_room_sensor_never_stops_on_the_head_reading():
+    e, ha, clk = world()
+    room(ha, "sensor.lr_t", "unavailable")  # the head still reports 71.5 at its own height
+    r, calls = step(e, ha, clk, 16)
+    assert mode_writes(calls) == []
+    assert e.st["auto_stop"]["active"] is False
+    assert "lr" not in e.st["auto_stop"]["samples"]
+
+
+def test_m1_stale_room_sensor_never_stops():
+    e, ha, clk = world(zones=zones(lr={"indoor_stale_min": 30}))
+    ha.reported["sensor.lr_t"] = iso(clk.t - 4 * 3600)  # frozen reading
+    r, calls = step(e, ha, clk, 16)
+    assert mode_writes(calls) == []
+    assert e.st["auto_stop"]["active"] is False
+
+
+def test_m1_room_sensor_lost_while_stopped_restarts_both():
+    e, ha, clk = world()
+    n, _r, _c = run_until_stop(e, ha, clk)
+    assert n is not None
+    stopped_at = clk.t
+    room(ha, "sensor.br_t", "unavailable")
+    r, calls = step(e, ha, clk, 4)
+    assert sorted(mode_writes(calls)) == [("climate.br", "heat"), ("climate.lr", "heat")]
+    assert e.st["auto_stop"]["restart_reason"] == "needed"
+    assert e.st["auto_stop"]["last_restart"] - stopped_at >= 15 * 60
+
+
+def test_m2_opposite_wanted_releases_without_forcing_the_saved_mode():
+    e, ha, clk = world()
+    n, _r, _c = run_until_stop(e, ha, clk)
+    assert n is not None
+    # the house is now hot and it is hot outside: the schedule wants cool, never a heat run first
+    ha.s["weather.w"] = ("sunny", {"temperature": 95, "cloud_coverage": 0})
+    for ent in ("sensor.lr_t", "sensor.br_t"):
+        room(ha, ent, 77)
+    calls, seen = [], []
+    for _ in range(12):
+        r, c = step(e, ha, clk)
+        calls += c
+        seen.append({n: r[n]["reason"] for n in ("lr", "br")})
+        fams = {core.mode_family(ha.s[x][0]) for x in SPLITS} - {None}
+        assert len(fams) <= 1
+    assert e.st["auto_stop"]["restart_reason"] == "opposite"
+    assert ("climate.lr", "heat") not in mode_writes(calls) and ("climate.br", "heat") not in mode_writes(calls)
+    assert all(v != "auto_stop_restart" for d in seen for v in d.values())
+    assert ha.s["climate.lr"][0] == ha.s["climate.br"][0] == "cool"
+
+
+def test_m2_core_reason_opposite_is_a_release():
+    st = core.empty_auto_stop_state()
+    st.update(active=True, mode="heat", since=0, saved={"lr": {"mode": "heat", "setpoint": 71}})
+    gates = {"enabled": True, "blocked": None,
+             "zones": {"lr": {"member": True, "controlled": True, "mode": "off", "indoor": 77, "target": 76,
+                              "opposite": True, "slope": 0, "changed_ts": 0}}}
+    new = core.auto_stop_step(st, 3600, {"window_s": 1800, "min_cycle_s": 900}, gates)
+    assert new["event"] == "restart" and new["reason"] == "opposite"
+    assert "opposite" in core.AUTO_STOP_RELEASE_REASONS and "needed" not in core.AUTO_STOP_RELEASE_REASONS
+
+
+def test_l1_unavailable_head_blocks_stop():
+    e, ha, clk = world()
+    ha.s["climate.br"] = ("unavailable", {})
+    r, calls = step(e, ha, clk, 16)
+    assert mode_writes(calls) == []
+    assert e.st["auto_stop"]["active"] is False
+    assert e.snapshot()["auto_stop"]["blocked"] == "unavailable"
+
+
+def test_l1_core_unknown_member_mode_blocks():
+    st = core.empty_auto_stop_state()
+    z = {"member": True, "controlled": True, "mode": "heat", "indoor": 72, "target": 71, "slope": 0,
+         "changed_ts": 0}
+    gates = {"enabled": True, "blocked": None, "zones": {"lr": z, "br": dict(z, mode=None)}}
+    new = core.auto_stop_step(st, 10_000, {"window_s": 1800, "min_cycle_s": 900}, gates)
+    assert new["event"] is None and new["reason"] == "unavailable" and new["all_since"] is None
+
+
+def test_l2_person_sets_opposite_on_a_stopped_head_is_followed():
+    e, ha, clk = world()
+    run_until_stop(e, ha, clk)
+    st, at = ha.s["climate.lr"]
+    ha.s["climate.lr"] = ("cool", at)  # a person picks the other direction at the remote
+    calls = []
+    # Within min_cycle of the person's change. Later, the 0.9.3 temperature hold picks the mode as it
+    # always has; auto-stop no longer has a say.
+    for _ in range(2):
+        _r, c = step(e, ha, clk)
+        calls += c
+        fams = {core.mode_family(ha.s[x][0]) for x in SPLITS} - {None}
+        assert len(fams) <= 1
+    assert e.st["auto_stop"]["restart_reason"] == "manual_opposite"
+    assert e.st["override_until"].get("lr")
+    assert not any(m == "heat" for _ent, m in mode_writes(calls))  # the saved heat is never forced
+    assert ha.s["climate.lr"][0] == ha.s["climate.br"][0] == "cool"  # the lock follows the person
+
+
+def test_l3_unknown_contact_sensor_blocks_stop():
+    z = zones(lr={"window": "binary_sensor.lr_w"})
+    e, ha, clk = world(zones=z)
+    ha.s["binary_sensor.lr_w"] = ("unavailable", {})
+    r, calls = step(e, ha, clk, 16)
+    assert mode_writes(calls) == []
+    assert e.snapshot()["auto_stop"]["blocked"] == "window"
+    ha.s["binary_sensor.lr_w"] = ("off", {})  # a closed, readable window lets the window run
+    n, _r, calls = run_until_stop(e, ha, clk)
+    assert n is not None and n * CYCLE >= 1800
+
+
+@pytest.mark.parametrize("rel,guard", [
+    ("rootfs/app/static/thermostat.html", 'const astop=off&&r.reason==="auto_stop";'),
+    ("rootfs/app/static/classic.html", 'r.reason==="auto_stop"&&(r.live||{}).mode==="off"?"Idle"'),
+    ("rootfs/app/static/index.html", 'r.reason === "auto_stop" && live.mode === "off" ? "Idle"'),
+])
+def test_i1_panels_read_idle_only_once_the_head_is_off(rel, guard):
+    assert guard in open(os.path.join(ROOT, rel), encoding="utf-8").read()
+
+
 # ---------- options, docs, UI ----------
 def test_options_schema_and_translations():
     cfg = yaml.safe_load(open(os.path.join(ROOT, "config.yaml"), encoding="utf-8"))
