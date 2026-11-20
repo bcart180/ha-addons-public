@@ -1,6 +1,8 @@
-## Unreleased
+## 0.9.9 — 2026-11-20
 
-- Lovelace card: no orange or amber left.  The hold color (event strip and the glance "Hold" line) is now the neutral white `#f2f2f2`, the same `--hold` token the Climate panel already uses.  The heat pill, heating band and legend, vacation chip, and practice-mode notice use the panels' neutral grays and white.  The blue accent stays reserved for app status.  No behavior or option changes.  Ships with the next version bump.
+- Fix: setpoint writes to a mini split that only takes a target range (low/high) failed every cycle with HTTP 400 when the head's other bound sat at its max (88 °F, set at the remote or the vendor app).  88 °F is 31.1 °C, past the head's native 31.0 °C limit, so Home Assistant rejected the whole call.  Smart HVAC now moves a kept bound that sits at or past min/max one step inside (87 °F high in heat, 51 °F low in cool), the same rule 0.8.6 already used for an unknown bound.  A bound already inside is kept exactly as before.
+- Lovelace card: no orange or amber left.  The hold color (event strip and the glance "Hold" line) is now the neutral white `#f2f2f2`, the same `--hold` token the Climate panel already uses.  The heat pill, heating band and legend, vacation chip, and practice-mode notice use the panels' neutral grays and white.  The blue accent stays reserved for app status.  No behavior or option changes.  (Merged as PR #62; the card is installed by hand from the repo.)
+- No option, auto-stop, panel or mode-lock changes.  Rollback: install 0.9.8.
 
 ## 0.9.8 — 2026-11-20
 

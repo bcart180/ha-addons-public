@@ -827,8 +827,10 @@ def setpoint_payload(attrs, mode, t):
     Returns (data or None, snapped t, reason). data None = do not write (reason says why).
       - TARGET_TEMPERATURE (bit 1): {"temperature": t}
       - only TARGET_TEMPERATURE_RANGE (bit 2): heat -> target_temp_low=t, cool/dry -> target_temp_high=t;
-        the other bound keeps its current value, or (unknown / invalid) sits one step inside min/max, because
-        an edge value can fail the device's native range after unit conversion (e.g. 88 F -> 31.11 C > 31.0 C).
+        the other bound keeps its current value, or (unknown / invalid / at or past min/max) sits one step inside
+        min/max, because an edge value can fail the device's native range after unit conversion
+        (e.g. 88 F -> 31.11 C > 31.0 C). 0.9.9: a current bound sitting at the edge (set at the remote or the
+        vendor app) is moved inside too; keeping it made every write fail with HTTP 400.
       - neither bit: no write. No supported_features attribute at all = legacy single setpoint.
     Unchanged value (already the entity's current setpoint) = no write (reason "unchanged")."""
     attrs = attrs or {}
@@ -846,14 +848,14 @@ def setpoint_payload(attrs, mode, t):
         if mode in ("cool", "dry"):
             if cur_hi == t:
                 return None, t, "unchanged"
-            low = cur_lo if cur_lo is not None and cur_lo <= t else None
+            low = cur_lo if cur_lo is not None and cur_lo <= t and (lo_b is None or cur_lo > lo_b) else None
             if low is None:
                 low = min(t, (lo_b + step) if lo_b is not None else t)
             return {"target_temp_low": low, "target_temp_high": t}, t, "ok"
         if mode == "heat":
             if cur_lo == t:
                 return None, t, "unchanged"
-            high = cur_hi if cur_hi is not None and cur_hi >= t else None
+            high = cur_hi if cur_hi is not None and cur_hi >= t and (hi_b is None or cur_hi < hi_b) else None
             if high is None:
                 high = max(t, (hi_b - step) if hi_b is not None else t)
             return {"target_temp_low": t, "target_temp_high": high}, t, "ok"
