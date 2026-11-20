@@ -66,7 +66,7 @@ function graph(c,h){const ctx=c.getContext("2d"),W=c.width=c.clientWidth*2,H=c.h
   h.forEach((r,k)=>{if(r[i]==null)return;const x=k/(h.length-1)*W,y=H-(r[i]-lo)/(hi-lo)*H;s?ctx.lineTo(x,y):ctx.moveTo(x,y);s=true;});ctx.stroke();});}
 const REASONS={vacation_setback:"Vacation — setting back",vacation_at_setback:"Vacation — holding the setback",
  vacation_radiant_off:"Vacation — radiant floor stays off",window_slope_pause:"Paused, window open?",
- auto_stop:"Idle, all rooms at target",auto_stop_restart:"Restarting, a room needs it"};
+ auto_stop:"Idle, all rooms at target",auto_stop_restart:"Restarting, a room needs it",auto_stop_wait:"Off while another room runs the other way"};
 function render(){
  $("sub").textContent=S.last&&S.last.outdoor!=null?`Outside ${Math.round(S.last.outdoor)}°`:"";
  const n=$("notice");n.hidden=S.enabled&&!S.dry_run;

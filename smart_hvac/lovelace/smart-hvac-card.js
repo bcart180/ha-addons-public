@@ -289,7 +289,7 @@ export function fmtClock(ts, tz) {
 const REASON = { manual_override: "Manual hold", vacation_setback: "Vacation setback", vacation_at_setback: "Vacation setback",
   vacation_radiant_off: "Vacation — radiant off", window_open: "Window open — off",
   window_slope_pause: "Paused, window open?", auto_stop: "Idle, all rooms at target",
-  auto_stop_restart: "Restarting, a room needs it", unit_off: "Off at the unit — app won't turn it on",
+  auto_stop_restart: "Restarting, a room needs it", auto_stop_wait: "Off while another room runs the other way", unit_off: "Off at the unit — app won't turn it on",
   overtemp_shutoff: "Bath over air shutoff — off", short_cycle_guard: "Waiting (anti short-cycle)",
   defrosting: "Defrosting — app waits", preheating: "Pre-heating — app waits", disabled: "App off" };
 

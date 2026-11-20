@@ -74,7 +74,7 @@ const $=id=>document.getElementById(id), esc=t=>String(t??"").replace(/[&<>"']/g
 let S=null; const UI={}; const H={}; const pend={};
 const REASONS={ok:"Target set by the active profile",defrosting:"Defrosting — the app waits",preheating:"Pre-heating coil — the app waits",no_change:"At target — nothing to change",manual_override:"Manual hold — app is waiting",
  unit_off:"Turned off by a person — app won't turn it back on",disabled:"App is off",short_cycle_guard:"Short-cycle guard (protecting the compressor)",
- overtemp_shutoff:"Safety cap reached — radiant shut off",window_open:"Window open — paused",window_slope_pause:"Paused, window open?",auto_stop:"Idle, all rooms at target",auto_stop_restart:"Restarting, a room needs it","missing:indoor_temp":"Indoor sensor offline — holding",
+ overtemp_shutoff:"Safety cap reached — radiant shut off",window_open:"Window open — paused",window_slope_pause:"Paused, window open?",auto_stop:"Idle, all rooms at target",auto_stop_restart:"Restarting, a room needs it",auto_stop_wait:"Off while another room runs the other way","missing:indoor_temp":"Indoor sensor offline — holding",
  "missing:outdoor_temp":"Outdoor temp unavailable — holding","missing:presence":"Presence unknown — holding","missing:unit":"Unit unavailable",zone_disabled:"Zone disabled in app",
  vacation_setback:"Vacation — setting back",vacation_at_setback:"Vacation — holding the setback",vacation_radiant_off:"Vacation — radiant floor stays off"};
 const PROF={home:"Home",away:"Away",sleep:"Sleep",guest:"Guest",auto:"Auto",vacation:"Vacation"};
