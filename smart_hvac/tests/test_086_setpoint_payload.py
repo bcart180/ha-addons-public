@@ -51,6 +51,21 @@ def test_range_only_keeps_existing_other_bound():
     assert data == {"target_temp_low": 65.0, "target_temp_high": 76.0}
 
 
+def test_099_kept_bound_at_the_edge_moves_one_step_inside():
+    # live bug (0.9.8): the head's high bound read 88 (= max_temp, set at the unit), so the kept bound was 88 F
+    # = 31.11 C > device max 31.0 C and every heat write failed with HTTP 400.
+    edge = dict(RANGE, target_temp_low=72.0, target_temp_high=88.0)
+    data, t, why = core.setpoint_payload(edge, "heat", 65.0)
+    assert (data, t, why) == ({"target_temp_low": 65.0, "target_temp_high": 87.0}, 65.0, "ok")
+    assert core.setpoint_payload(dict(edge, target_temp_high=95.0), "heat", 65.0)[0]["target_temp_high"] == 87.0
+    low_edge = dict(RANGE, target_temp_low=50.0, target_temp_high=78.0)
+    assert core.setpoint_payload(low_edge, "cool", 76.0)[0] == {"target_temp_low": 51.0, "target_temp_high": 76.0}
+    # a bound already inside is kept exactly as before (living-room shape: 70/87)
+    inside = dict(RANGE, target_temp_low=70.0, target_temp_high=87.0)
+    assert core.setpoint_payload(inside, "heat", 68.0)[0] == {"target_temp_low": 68.0, "target_temp_high": 87.0}
+    assert core.setpoint_payload(inside, "heat", 70.0) == (None, 70.0, "unchanged")
+
+
 def test_range_cool_low_falls_inside_min():
     data, _, _ = core.setpoint_payload(dict(RANGE, target_temp_low=None), "cool", 76.0)
     assert data == {"target_temp_low": 51.0, "target_temp_high": 76.0}
@@ -109,3 +124,36 @@ def test_setpoint_climate_excluded_entity_falls_back():
     e = Engine(TE.opts(), TE.FakeHA(TE.states()), None, clock=lambda: TE.NOW, localtime=TE.lt14)
     z = {"climate": "climate.lr", "setpoint_climate": "climate.p3arl2_climate_555"}
     assert e.setpoint_target(z) == "climate.lr"
+
+
+class NativeCelsiusHA(RangeHA):
+    """Like HA core with an ESPHome head whose native max is 31.0 C: a value past it is a 400."""
+
+    class Bad(Exception):
+        code = 400
+
+    def call(self, domain, service, data):
+        if service == "set_temperature":
+            for k in ("target_temp_low", "target_temp_high", "temperature"):
+                if k in data and not (10.0 <= (data[k] - 32) * 5 / 9 <= 31.0):
+                    self.calls.append(("rejected", data))
+                    raise self.Bad("temp_out_of_range")
+        return super().call(domain, service, data)
+
+
+def test_099_engine_heat_write_succeeds_when_the_head_high_bound_sits_at_max():
+    from engine import Engine
+    s = TE.states()
+    s["climate.lr_source_555"] = ("heat", dict(RANGE, target_temp_low=72.0, target_temp_high=88.0))
+    o = TE.opts(zones=[dict(z) for z in TE.ZONES])
+    for z in o["zones"]:
+        if z["climate"] == "climate.lr":
+            z["setpoint_climate"] = "climate.lr_source_555"
+    ha = NativeCelsiusHA(s)
+    e = Engine(o, ha, None, clock=lambda: TE.NOW, localtime=TE.lt14)
+    r = e.evaluate()
+    assert not [d for sv, d in ha.calls if sv == "rejected"]
+    sp = [d for sv, d in ha.calls if sv == "set_temperature" and d["entity_id"] == "climate.lr_source_555"]
+    assert sp and sp[0]["target_temp_high"] == 87.0
+    lr = next(z["name"] for z in o["zones"] if z["climate"] == "climate.lr")
+    assert r[lr]["reason"] != "setpoint_write_failed"
