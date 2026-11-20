@@ -100,7 +100,7 @@ function card(z){
  const hold=z.override_until&&z.override_until>now, mode=lv.mode||"off", off=mode==="off";
  const sp=pend[z.name]??lv.setpoint, act=lv.hvac_action, heat=act==="heating"||(!act&&mode==="heat");
  const dfr=!off && (act==="preheating"||r.defrost==="preheating")?"Pre-heating":(!off && (r.defrosting||r.defrost||act==="defrosting"||act==="preheating")?"Defrosting":"");
-const astop=r.reason==="auto_stop";
+const astop=off&&r.reason==="auto_stop";
  const stat=astop?"Idle":off?"Off":dfr?dfr:act==="heating"?"Heating":act==="cooling"?"Cooling":act==="fan"?"Fan":"Idle";
  const prof=r.profile||(S.profile&&S.profile!=="auto"?S.profile:null);
  const capOn=L.radiant_timeout==="on";

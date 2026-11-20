@@ -130,7 +130,7 @@ export function glanceRow(hass, z, api, vac, tz) {
   if (dlab) doing = dlab;
   else if (vac) doing = z.heat_only ? "Vacation · off" : "Vacation";
   else if (hold) doing = `Hold · auto at ${fmtClock(hold, tz)}`;
-  else if (zr?.reason === "auto_stop") doing = "Idle, all rooms at target";
+  else if (zr?.reason === "auto_stop" && st?.state === "off") doing = "Idle, all rooms at target";
   else if (zr?.preheat) doing = "Warming up";
   else if (zr?.profile === "away") doing = "Away";
   else if (zr?.profile === "sleep") doing = s.off ? "Off" : "Sleep";

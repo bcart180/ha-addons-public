@@ -212,7 +212,7 @@ function zoneCard(z){
   const whyHtml = r.reason === "window_slope_pause" || r.reason === "auto_stop" ? '<span class="slope-pause">' + esc(why) + "</span>" : esc(why);
   const next = r.next && r.next.setpoint != null ? "Next schedule " + r.next.setpoint + "° " + (r.next.profile || "") + " at " + fmtClock(r.next.ts) : "";
   const dfr = r.defrosting || r.defrost;
-  const status = r.reason === "auto_stop" ? "Idle" : dfr ? (r.defrost === "preheating" ? "Pre-heating" : "Defrosting") : (live.hvac_action || live.mode || "—");
+  const status = r.reason === "auto_stop" && live.mode === "off" ? "Idle" : dfr ? (r.defrost === "preheating" ? "Pre-heating" : "Defrosting") : (live.hvac_action || live.mode || "—");
   const act = String(live.hvac_action || "");
   const tone = dfr ? "defrost" : act === "heating" ? "heat" : act === "cooling" ? "cool" : "";
   let slot = 0;
