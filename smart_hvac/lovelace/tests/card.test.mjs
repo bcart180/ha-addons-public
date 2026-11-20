@@ -346,4 +346,10 @@ test("0.9.8 auto-stop: an app stop reads Idle with the reason, a person's off st
   const row = glanceRow(hass, LR, { zones: [{ name: LR.zone }], last: { zones: { [LR.zone]: { reason: "auto_stop" } } } },
     false, "UTC");
   assert.equal(row.doing, "Idle, all rooms at target");
+  // MA I-1: an off write that has not taken yet never reads Idle
+  const on = { state: "heat", attributes: { hvac_action: "heating" } };
+  assert.equal(statusOf(on, LR, false, { reason: "auto_stop" }).status, "Heating");
+  const row2 = glanceRow({ states: { [LR.entity]: on } }, LR,
+    { zones: [{ name: LR.zone }], last: { zones: { [LR.zone]: { reason: "auto_stop" } } } }, false, "UTC");
+  assert.notEqual(row2.doing, "Idle, all rooms at target");
 });
