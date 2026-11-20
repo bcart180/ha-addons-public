@@ -81,7 +81,8 @@ export function buildHeaterRequest(action, value) {
 }
 const HEATER_REASON = { heating: "Heating", idle: "Holding", satisfied: "Holding", min_off: "Holding (short-cycle guard)",
   mode_off: "Off", hard_cap: "Off: over 80° cap", cooldown: "Cooldown (2 h run limit)", lockout: "Locked out: 8 h/day limit",
-  no_rise: "Off: heater not warming the room", relay_fault: "Relay fault", sensor_unavailable: "Off: sensor unavailable",
+  no_rise: "Off: heater not warming the room", awaiting_reading: "Off: waiting for a temperature reading",
+  relay_fault: "Relay fault", sensor_unavailable: "Off: sensor unavailable",
   door_open: "Paused: door open", dry_run: "Practice mode (plug stays off)", app_off: "App off", exception: "Off: error",
   startup: "Starting", shutdown: "Stopped", not_configured: "Not set up" };
 /** 0.8.2: the heater card renders only on a card that asks for it (show_heater: true or layout: heater),

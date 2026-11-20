@@ -294,6 +294,11 @@ test("0.8.0 heater: own endpoint, 55-75 clamp, heat/off only, never in the split
   assert.equal(heaterStatus({ last: { reason: "dry_run" } }), "Practice mode (plug stays off)");
 });
 
+test("0.9.11 heater: awaiting_reading has its own status text, distinct from no_rise", () => {
+  assert.equal(heaterStatus({ last: { reason: "awaiting_reading" } }), "Off: waiting for a temperature reading");
+  assert.equal(heaterStatus({ last: { reason: "no_rise" } }), "Off: heater not warming the room");
+});
+
 import { showHeater } from "../smart-hvac-card.js";
 
 test("0.8.2 heater card: only where show_heater: true or layout: heater (no duplicate per instance)", () => {
