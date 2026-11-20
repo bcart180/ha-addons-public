@@ -177,3 +177,61 @@ def test_l3_corrupt_file_alerts(tmp_path):
     ha = B.FakeHA(c, 60.0)
     restart(tmp_path, c, ha)
     assert any("unreadable" in n for n in ha.notes) and ha.sw == "off"
+
+
+def test_0911_awaiting_survives_restart_and_is_judged(tmp_path):
+    h, ha, c = mkp(tmp_path, temp=65.0)
+    ha.seen = c.t
+    h.tick()
+    B.run(h, c, 31 * 60)
+    assert h.last["reason"] == "awaiting_reading" and ha.sw == "off"
+    d = json.load(open(tmp_path / "heater.json"))
+    assert d["await_ref"][1] == 65.0 and d["latched"] is None
+    h2 = restart(tmp_path, c, ha)
+    assert h2.await_ref is not None
+    B.run(h2, c, 5 * 60)
+    assert ha.sw == "off" and h2.last["reason"] == "awaiting_reading"
+    ha.temp, ha.seen = 65.5, None           # next report: no 1 F rise -> latch + notify
+    c.t += 30
+    h2.tick()
+    assert h2.latched == "no_rise" and any("rise" in n for n in ha.notes)
+    assert json.load(open(tmp_path / "heater.json"))["await_ref"] is None
+
+
+def test_0911_await_ref_dropped_when_latched_or_bad(tmp_path):
+    write(tmp_path, {"mode": "heat", "setpoint": 67.0, "latched": "lockout", "await_ref": [B.T0 - 60, 65.0]})
+    c = B.Clock()
+    h, _, _ = mkp(tmp_path, clock=c)
+    assert h.await_ref is None
+    write(tmp_path, {"mode": "heat", "setpoint": 67.0, "await_ref": [B.T0 + 9999, 65.0]})
+    h, _, _ = mkp(tmp_path, clock=c)
+    assert h.await_ref is None
+    write(tmp_path, {"mode": "heat", "setpoint": 67.0, "await_ref": [B.T0 - 60, True]})
+    h, _, _ = mkp(tmp_path, clock=c)
+    assert h.await_ref is None
+
+
+def test_0911_rise_ref_rearmed_after_failed_off_mid_run():
+    """A failed off write mid-run (HA down) clears the checkpoint but the plug stays on. 0.9.11 re-arms it when
+    the plug is seen on, so the run is still bounded by awaiting_reading / no_rise, not only the 2 h max run."""
+    h, ha, c = B.mk(temp=65.0)
+    ha.seen = c.t
+    h.tick()
+    assert ha.sw == "on"
+    B.run(h, c, 5 * 60)
+    real = ha.heater_switch
+
+    def broken(eid, on):
+        raise OSError("ha down")
+
+    ha.fail_states, ha.heater_switch = True, broken
+    c.t += 30
+    h.tick()                                # tick fails -> safe_off -> off write fails; plug still on
+    assert ha.sw == "on" and h.rise_ref is None
+    ha.fail_states, ha.heater_switch = False, real
+    ha.seen = c.t                           # one report as HA comes back, then nothing
+    c.t += 30
+    h.tick()
+    assert h.rise_ref is not None
+    B.run(h, c, 31 * 60)
+    assert ha.sw == "off" and h.last["reason"] == "awaiting_reading"

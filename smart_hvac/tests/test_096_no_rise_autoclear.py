@@ -11,17 +11,19 @@ H = B.H
 
 
 def trip(h, ha, c, temp=65.0):
-    """Heat with a reading frozen in time (slow sensor): no report during the run -> no_rise latch."""
+    """Heat with fresh reports that never rise -> no_rise latch at 45 min. Then the sensor's last report stays at
+    the trip tick until a test sets a newer one. 0.9.11: a run with NO report at all goes awaiting_reading at 30 min
+    instead (test_0911_awaiting_reading.py), so the latch here comes from reports that prove no rise."""
     ha.temp = temp
     h.tick()
     assert ha.sw == "on"
-    ha.seen = c.t  # sensor's last report stays at run start
     for _ in range(46 * 2):
         c.t += 30
         h.tick()
         if h.latched:
             break
     assert h.latched == "no_rise" and ha.sw == "off"
+    ha.seen = c.t  # nothing newer than the trip tick until the test reports again
     return h.nr_trip
 
 
@@ -29,7 +31,7 @@ def test_fresh_reading_1F_above_clears_without_notify():
     h, ha, c = B.mk(temp=65.0)
     t = trip(h, ha, c)
     assert t is not None and t[1] == 65.0
-    B.run(h, c, 10 * 60)                       # still no new report (56 min old, not stale): stays latched
+    B.run(h, c, 10 * 60)                       # still no new report (10 min old, not stale): stays latched
     assert h.latched == "no_rise"
     ha.temp, ha.seen = 73.5, None              # fresh report after the trip, +8.5 F
     c.t += 30

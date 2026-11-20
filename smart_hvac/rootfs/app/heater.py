@@ -51,6 +51,7 @@ STALE_S = STALE_MIN_DEFAULT * 60
 FUTURE_SKEW_S = 60  # timestamps further ahead than this are rejected
 CLOCK_JUMP_S = 60  # 0.8.5 (SA M1b): wall clock back > 60 s, or off from monotonic elapsed by > 60 s = clock jump
 NO_RISE_S, NO_RISE_F = 45 * 60, 1.0
+NO_FRESH_S = 30 * 60  # 0.9.11: plug on this long with no temperature report this recent -> off, awaiting_reading
 POWER_FAULT_W = 5.0
 BAD = ("unavailable", "unknown", "none", "")
 RX = {"heater_switch": r"^switch\.[a-z0-9_]+$", "temp_sensor": r"^sensor\.[a-z0-9_]+$",
@@ -126,6 +127,8 @@ class SpareHeater:
         self.cap_latched = False
         self.latched = None         # "lockout" | "no_rise" | "relay_fault": off until mode off -> heat
         self.nr_trip = None         # 0.9.6: (wall ts, checkpoint temp) of the no_rise trip, for the auto-clear
+        self.await_ref = None       # 0.9.11: (wall ts, checkpoint temp) of an awaiting_reading off, judged on the
+                                    # next temperature report (no latch until that report shows < 1 F rise)
         self._seen_now = None       # 0.9.6: this tick's temp-sensor report time (wall), None = unknown
         self.runs = []              # [(start, end)] on-intervals, pruned to 24 h
         self.rise_ref = None        # (ts, temp) last progress checkpoint (run start, then each 1 F rise)
@@ -146,7 +149,8 @@ class SpareHeater:
                 "rise_ref": list(rr) if rr else None, "on_since": self.on_since, "off_since": self.off_since,
                 "runs": [list(x) for x in self.runs], "run_start": self.run_start,
                 "carry": list(self.carry) if self.carry else None,
-                "nr_trip": list(self.nr_trip) if self.nr_trip else None}
+                "nr_trip": list(self.nr_trip) if self.nr_trip else None,
+                "await_ref": list(self.await_ref) if self.await_ref else None}
 
     def _load(self):
         """Restore persisted state. Missing file = first run (defaults). Unreadable / corrupt file = fail safe:
@@ -194,6 +198,10 @@ class SpareHeater:
         if self.latched == "no_rise" and isinstance(nt, list) and len(nt) == 2 and ok(nt[0]) is not None \
                 and _num(nt[1]) is not None and not isinstance(nt[1], bool):
             self.nr_trip = (ok(nt[0]), _num(nt[1]))
+        ar = d.get("await_ref")
+        if self.latched is None and isinstance(ar, list) and len(ar) == 2 and ok(ar[0]) is not None \
+                and _num(ar[1]) is not None and not isinstance(ar[1], bool):
+            self.await_ref = (ok(ar[0]), _num(ar[1]))
         runs = d.get("runs")
         if isinstance(runs, list):
             self.runs = [(ok(x[0]), ok(x[1])) for x in runs if isinstance(x, list) and len(x) == 2
@@ -250,6 +258,7 @@ class SpareHeater:
         if mode == "off":
             self.latched = None  # off -> heat is the human reset for lockout / no-rise / relay fault
             self.nr_trip = None
+            self.await_ref = None
             self.notified.clear()
         self.st["mode"] = mode
         self._save()
@@ -381,6 +390,10 @@ class SpareHeater:
         # observed-state bookkeeping
         if is_on and self.on_since is None:
             self.on_since = now
+        # 0.9.11: re-arm the progress checkpoint whenever the plug is seen on without one (e.g. an off write
+        # that failed mid-run cleared it), so no_rise / awaiting_reading can never be disarmed for a run.
+        if is_on and self.rise_ref is None and temp is not None:
+            self.rise_ref = (now, temp)
         if not is_on and self.on_since is not None:
             self._end_run(now)
 
@@ -467,6 +480,8 @@ class SpareHeater:
                 self.notified.discard("cap")
             else:
                 return "hard_cap", False
+        if self.await_ref and not self.latched:
+            self._judge_awaiting(temp)
         if self.latched == "no_rise":
             self._no_rise_autoclear(temp)
             if self.latched == "no_rise":
@@ -475,6 +490,8 @@ class SpareHeater:
             return self.latched, False
         if self.st["mode"] != "heat":
             return "mode_off", False
+        if self.await_ref:  # 0.9.11: off until the next temperature report is judged (no latch, no notify)
+            return "awaiting_reading", False
         if self._on_seconds_24h(now) > DAY_LIMIT_S:
             self.latched = "lockout"
             self._notify("lockout", "Heater ran over 8 h in 24 h. Locked out: set Off then Heat to reset.")
@@ -494,6 +511,17 @@ class SpareHeater:
         if is_on and self.rise_ref and self.rise_ref[1] is not None and temp is not None and \
                 (temp >= self.rise_ref[1] + NO_RISE_F or (temp >= sp > self.rise_ref[1])):
             self.rise_ref = (now, temp)
+        # 0.9.11: a slow sensor (hourly reports) cannot show progress inside the 45 min window. After 30 min on
+        # since the checkpoint with no report in the last 30 min, go off (awaiting_reading, no latch) and judge
+        # the run on the next report: a rise < 1 F over the checkpoint latches no_rise and notifies.
+        if is_on and self.rise_ref and self.rise_ref[1] is not None and now - self.rise_ref[0] >= NO_FRESH_S \
+                and self._report_age() >= NO_FRESH_S:
+            if temp >= sp:  # at / above setpoint: plain off, nothing to judge (same as holding)
+                return "holding", False
+            self.await_ref = (self.clock(), self.rise_ref[1])
+            log.info("spare bathroom: no temperature report for %d min while heating; off until the next report",
+                     NO_FRESH_S // 60)
+            return "awaiting_reading", False
         if is_on and self.rise_ref and now - self.rise_ref[0] >= NO_RISE_S and \
                 (self.rise_ref[1] is None or temp < self.rise_ref[1] + NO_RISE_F):
             if temp >= sp:  # SA: at / above setpoint a frozen reading is not a fault: plain off, no latch
@@ -517,6 +545,29 @@ class SpareHeater:
                 return "min_off", False
             return "heating", True
         return "idle", False
+
+    def _report_age(self):
+        """0.9.11: seconds since the temperature sensor's last report (wall clock); unknown = infinite."""
+        if self._seen_now is None:
+            return float("inf")
+        return max(0.0, self.clock() - self._seen_now)
+
+    def _judge_awaiting(self, temp):
+        """0.9.11: the first report after an awaiting_reading off decides the run. A rise >= 1 F over the
+        checkpoint clears it (normal control resumes); a smaller rise latches no_rise with trip info dated at
+        the off, so the 0.9.7 notify path sends the "not warming" alert on this same report."""
+        a = self.await_ref
+        if not a or temp is None or self._seen_now is None or self._seen_now <= a[0]:
+            return
+        self.await_ref = None
+        if temp >= a[1] + NO_RISE_F:
+            log.info("spare bathroom: report after the awaiting_reading off is %.1f F, >= %.1f F above the %.1f F "
+                     "checkpoint; normal control resumes", temp, NO_RISE_F, a[1])
+            return
+        self.latched = "no_rise"
+        self.nr_trip = (a[0], a[1])
+        self._log("No 1 F rise after the heating run (first report after it). "
+                  "Heater off: check it is plugged in and on.")
 
     def _no_rise_autoclear(self, temp):
         """0.9.6: clear a no_rise latch when a reading reported after the trip shows the room rose >= 1 F over

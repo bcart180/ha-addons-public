@@ -10,7 +10,7 @@ import test_096_no_rise_autoclear as A  # noqa: E402
 
 
 def test_trip_then_auto_clear_is_silent():
-    """The hourly-sensor pattern: trip after 45 min, later reading shows the room rose, no notification."""
+    """Trip after 45 min, later reading shows the room rose, no notification."""
     h, ha, c = B.mk(temp=65.0)
     A.trip(h, ha, c)
     assert h.latched == "no_rise" and not ha.notes
@@ -34,10 +34,10 @@ def test_post_trip_reading_without_rise_notifies_once():
 
 
 def test_waiting_for_next_reading_stays_quiet():
-    """Frozen last-report (slow sensor) after the trip: still inside the stale window, no notify yet."""
+    """Frozen last-report after the trip: still inside the stale window, no notify yet."""
     h, ha, c = B.mk(temp=65.0)
     A.trip(h, ha, c)
-    B.run(h, c, 10 * 60)  # 55 min old, stale cutoff is 75
+    B.run(h, c, 10 * 60)  # 10 min old, stale cutoff is 75
     assert h.latched == "no_rise" and not ha.notes
 
 
