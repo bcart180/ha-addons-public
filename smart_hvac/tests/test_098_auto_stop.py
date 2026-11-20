@@ -404,6 +404,30 @@ def test_fuzz_never_opposite_modes():
         assert len(wants) <= 1
 
 
+@pytest.mark.parametrize("seed", [1, 2, 3])
+def test_fuzz_outages_and_opposite_choices_never_opposite_never_raise(seed):
+    rng = random.Random(seed)
+    e, ha, clk = world(auto_stop_sensitivity="fast", min_cycle_min=5, override_hours=1)
+    saved_attr = {x: ha.s[x][1] for x in SPLITS}
+    for _ in range(400):
+        for ent in ("sensor.lr_t", "sensor.br_t"):
+            room(ha, ent, "unavailable" if rng.random() < 0.05 else round(rng.uniform(68.5, 73.5), 1))
+        ha.s["weather.w"] = ("cloudy", {"temperature": rng.choice([30, 40, 80, 95]), "cloud_coverage": 100})
+        for ent in SPLITS:
+            roll = rng.random()
+            if roll < 0.03:
+                ha.s[ent] = ("unavailable", {})
+            elif roll < 0.10 and ha.s[ent][0] == "unavailable":
+                ha.s[ent] = ("off", saved_attr[ent])
+            elif roll < 0.13 and ha.s[ent][0] != "unavailable":
+                ha.s[ent] = (rng.choice(["off", "heat", "cool"]), ha.s[ent][1])
+        r, calls = step(e, ha, clk)  # never raises
+        fams = {core.mode_family(ha.s[x][0]) for x in SPLITS} - {None}
+        assert len(fams) <= 1, (fams, calls)
+        wants = {core.mode_family(r[n]["mode"]) for n in ("lr", "br") if r[n]["action"] == "set"} - {None}
+        assert len(wants) <= 1
+
+
 # ---------- MA review fixes (M-1, M-2, L-1, L-2, L-3) ----------
 def test_m1_unavailable_room_sensor_never_stops_on_the_head_reading():
     e, ha, clk = world()
@@ -484,23 +508,78 @@ def test_l1_core_unknown_member_mode_blocks():
     assert new["event"] is None and new["reason"] == "unavailable" and new["all_since"] is None
 
 
-def test_l2_person_sets_opposite_on_a_stopped_head_is_followed():
+def test_l2_l4_person_sets_opposite_on_a_stopped_head_others_wait_off():
     e, ha, clk = world()
     run_until_stop(e, ha, clk)
     st, at = ha.s["climate.lr"]
     ha.s["climate.lr"] = ("cool", at)  # a person picks the other direction at the remote
-    calls = []
-    # Within min_cycle of the person's change. Later, the 0.9.3 temperature hold picks the mode as it
-    # always has; auto-stop no longer has a say.
-    for _ in range(2):
-        _r, c = step(e, ha, clk)
+    calls, parked_seen = [], False
+    for _ in range(10):
+        r, c = step(e, ha, clk)
         calls += c
         fams = {core.mode_family(ha.s[x][0]) for x in SPLITS} - {None}
         assert len(fams) <= 1
+        if ha.s["climate.lr"][0] == "cool":  # MA L-4: while the person's head cools, the other waits off
+            assert ha.s["climate.br"][0] == "off" and r["br"]["reason"] == "auto_stop_wait"
+            assert e.snapshot()["auto_stop"]["parked"] == ["br"]
+            assert "br" in e.st["app_off"] and "br" not in e.st["override_until"]
+            parked_seen = True
+    assert parked_seen
     assert e.st["auto_stop"]["restart_reason"] == "manual_opposite"
     assert e.st["override_until"].get("lr")
-    assert not any(m == "heat" for _ent, m in mode_writes(calls))  # the saved heat is never forced
-    assert ha.s["climate.lr"][0] == ha.s["climate.br"][0] == "cool"  # the lock follows the person
+    # the other head is never driven to the person's direction, so there is no group-wide reversal
+    assert ("climate.br", "cool") not in mode_writes(calls)
+
+
+def test_l4_park_ends_with_the_hold_and_survives_a_restart(tmp_path):
+    p = str(tmp_path / "state.json")
+    e, ha, clk = world(path=p, override_hours=1, min_cycle_min=120)  # the person's cool lasts the whole hold
+    run_until_stop(e, ha, clk)
+    st, at = ha.s["climate.lr"]
+    ha.s["climate.lr"] = ("cool", at)
+    step(e, ha, clk, 2)
+    e2 = Engine(e.opts, ha, p, clock=clk, localtime=lt14)  # add-on restart while parked
+    assert e2.st["auto_stop"]["park"]["heads"] == ["br"] and "br" in e2.st["app_off"]
+    released = None
+    for i in range(20):
+        step(e2, ha, clk)
+        fams = {core.mode_family(ha.s[x][0]) for x in SPLITS} - {None}
+        assert len(fams) <= 1
+        if not e2.st["auto_stop"].get("park"):
+            released = i
+            break
+        assert ha.s["climate.lr"][0] == "cool" and ha.s["climate.br"][0] == "off"
+    assert released is not None
+    assert not e2._override_active("lr", clk.t)  # released exactly because the hold ended
+
+
+def test_l4_park_releases_when_the_person_returns_to_the_saved_direction():
+    e, ha, clk = world()
+    run_until_stop(e, ha, clk)
+    st, at = ha.s["climate.lr"]
+    ha.s["climate.lr"] = ("cool", at)
+    step(e, ha, clk, 2)
+    assert e.st["auto_stop"]["park"]
+    ha.s["climate.lr"] = ("heat", ha.s["climate.lr"][1])  # back to the saved direction
+    step(e, ha, clk)
+    assert not e.st["auto_stop"].get("park")
+
+
+def test_l4_park_record_is_sanitized():
+    ok = core.copy_auto_stop({"park": {"by": ["lr"], "heads": ["br", "lr", 3], "mode": "heat"}})
+    assert ok["park"] == {"by": ["lr"], "heads": ["br"], "mode": "heat"}
+    for bad in ({"by": [], "heads": ["br"], "mode": "heat"}, {"by": ["lr"], "heads": ["br"], "mode": "off"},
+                "x", {"by": "lr", "heads": ["br"], "mode": "heat"}):
+        assert core.copy_auto_stop({"park": bad})["park"] is None
+    assert core.copy_auto_stop({"active": True, "mode": "heat", "saved": {"br": {"mode": "heat"}},
+                                "park": {"by": ["lr"], "heads": ["br"], "mode": "heat"}})["park"] is None
+
+
+def test_i4_missing_room_sensor_shows_a_blocked_reason():
+    e, ha, clk = world()
+    room(ha, "sensor.lr_t", "unavailable")
+    step(e, ha, clk, 2)
+    assert e.snapshot()["auto_stop"]["blocked"] == "sensor"
 
 
 def test_l3_unknown_contact_sensor_blocks_stop():
@@ -522,6 +601,43 @@ def test_l3_unknown_contact_sensor_blocks_stop():
 ])
 def test_i1_panels_read_idle_only_once_the_head_is_off(rel, guard):
     assert guard in open(os.path.join(ROOT, rel), encoding="utf-8").read()
+
+
+def test_m3_head_unavailable_during_stop_never_breaks_the_cycle(tmp_path):
+    p = str(tmp_path / "state.json")
+    e, ha, clk = world(path=p)
+    n, _r, _c = run_until_stop(e, ha, clk)
+    assert n is not None
+    ha.s["climate.br"] = ("unavailable", {})  # the head drops off while no room needs heat
+    bst, bat = ha.s["climate.bath"]
+    ha.s["climate.bath"] = (bst, dict(bat, temperature=65))  # the radiant floor needs a new setpoint
+    os.remove(p)
+    bath_sp = []
+    for _ in range(6):
+        clk.t += CYCLE
+        ha.calls.clear()
+        r = e.evaluate()  # used to raise KeyError every cycle
+        assert r["lr"]["reason"] == "auto_stop"
+        assert all(d.get("entity_id") != "climate.br" for _svc, d in ha.calls)  # nothing forced at it
+        # the radiant floor still gets its own decision and writes on the same cycle
+        bath_sp += [d for svc, d in ha.calls if svc == "set_temperature" and d["entity_id"] == "climate.bath"]
+    assert bath_sp, "setpoint writes for the other zones continue"
+    assert json.load(open(p))["auto_stop"]["active"] is True  # state keeps being saved
+    # a room needing heat still restarts the head that is there
+    room(ha, "sensor.lr_t", 69.0)
+    _r, calls = step(e, ha, clk, 2)
+    assert ("climate.lr", "heat") in mode_writes(calls)
+
+
+def test_m3_write_modes_safely_tolerates_an_unreadable_head():
+    e, ha, clk = world()
+    step(e, ha, clk)
+    ha.s["climate.br"] = ("unavailable", {})
+    zs = {z["name"]: z for z in e.opts["zones"]}
+    states = {s["entity_id"]: s for s in ha.get_states()}
+    pending = [("br", zs["br"], {"action": "set", "mode": "off"}, None, None, None, None, None)]
+    ok = e._write_modes_safely(pending, states)  # used to raise KeyError
+    assert ok["br"] is False  # not known to be off, so not reported as applied
 
 
 # ---------- options, docs, UI ----------

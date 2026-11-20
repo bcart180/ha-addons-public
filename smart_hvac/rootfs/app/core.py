@@ -883,7 +883,7 @@ def auto_stop_window_min(level):
 def empty_auto_stop_state():
     """Persisted auto-stop record. Absent from older state files."""
     return {"active": False, "since": None, "all_since": None, "mode": None, "saved": {}, "samples": {},
-            "last_stop": None, "last_restart": None, "restart_reason": None}
+            "last_stop": None, "last_restart": None, "restart_reason": None, "park": None}
 
 
 def copy_auto_stop(prev):
@@ -911,6 +911,14 @@ def copy_auto_stop(prev):
     if not base["active"] or base["mode"] is None or not base["saved"]:
         base["active"], base["since"], base["saved"] = False, None, {}
         base["mode"] = None
+    # MA L-4: after a person set a stopped head to the other direction, the other stopped heads stay the app's
+    # off until that person's hold ends ("by" = the person's heads, "heads" = the parked ones).
+    park = src.get("park") if isinstance(src.get("park"), dict) else {}
+    by = [n for n in (park.get("by") or []) if isinstance(n, str)] if isinstance(park.get("by"), list) else []
+    heads = [n for n in (park.get("heads") or []) if isinstance(n, str) and n not in by] \
+        if isinstance(park.get("heads"), list) else []
+    if not base["active"] and by and heads and park.get("mode") in DIRECTIONS:
+        base["park"] = {"by": by, "heads": heads, "mode": park["mode"]}
     return base
 
 

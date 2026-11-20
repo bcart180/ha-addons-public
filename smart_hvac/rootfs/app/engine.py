@@ -369,9 +369,11 @@ class Engine:
 
     def _recover_auto_stop_app_off(self):
         st = self.st.get("auto_stop")
-        if not isinstance(st, dict) or not st.get("active"):
+        if not isinstance(st, dict) or not (st.get("active") or st.get("park")):
             return
         names = [n for n in (st.get("saved") or {}) if isinstance(n, str)]
+        park = st.get("park") if isinstance(st.get("park"), dict) else {}
+        names += [n for n in (park.get("heads") or []) if isinstance(n, str)]
         self.st["app_off"] = sorted(set(self.st["app_off"]) | set(names))
 
     def save(self):
@@ -795,6 +797,12 @@ class Engine:
                         dropped.add(n)
             if astop.get("active") and not astop.get("saved"):
                 astop.update(active=False, since=None, mode=None)
+            park = astop.get("park")
+            if isinstance(park, dict):
+                for key in ("by", "heads"):
+                    park[key] = [n for n in (park.get(key) or []) if n in names]
+                if not park["by"] or not park["heads"]:
+                    astop["park"] = None
         if dropped:
             log.info("pruned state of removed zones: %s", ", ".join(sorted(dropped)))
         return sorted(dropped)
@@ -1208,6 +1216,8 @@ class Engine:
             room = item.get("indoor") if (item.get("sensor_ok") or not z.get("indoor")) else None
             if item["cl"] is None:
                 blocked = blocked or "unavailable"  # head mode unknown (MA L-1)
+            if z.get("indoor") and room is None:
+                blocked = blocked or "sensor"  # configured room sensor missing or stale (MA I-4)
             if z.get("window") and item.get("win_state") is None:
                 blocked = blocked or "window"  # contact sensor configured but unknown (MA L-3)
             if room is not None:
@@ -1232,6 +1242,12 @@ class Engine:
                 "changed_ts": changed,
                 "diverged": name in st["saved"] and bool(item.get("manual") or hold),
             }
+        if st.get("park"):
+            if self._auto_stop_park(st, by, zones, now):
+                self._auto_stop_reason = "parked"
+                self.st["auto_stop"] = st
+                return
+            st["park"] = None
         gates = {"enabled": on and self.enabled, "blocked": blocked, "zones": zones}
         new = core.auto_stop_step(st, now, {"window_s": window_s, "min_cycle_s": min_cycle_s}, gates)
         event, self._auto_stop_reason = new.pop("event", None), new.pop("reason", None)
@@ -1241,8 +1257,8 @@ class Engine:
         if new.get("active"):
             for name, rec in new["saved"].items():
                 item = by.get(name)
-                if item is None:
-                    continue
+                if item is None or item["cl"] is None:
+                    continue  # unknown / unavailable head: nothing to force; it stays saved (MA M-3)
                 item["auto_stop_force"] = True
                 item["auto_stop_result"] = {"action": "hold" if item["cl"] == "off" else "set", "mode": "off",
                                             "setpoint": rec.get("setpoint"), "reason": "auto_stop",
@@ -1251,6 +1267,15 @@ class Engine:
             # MA M-2 / L-2: the other direction is wanted (schedule or a person). Nothing is forced: the heads
             # stay the app's off, and decide plus the shared-mode lock pick the one mode for all of them.
             log.info("auto-stop: released without forcing %s (%s)", st.get("mode"), new.get("restart_reason"))
+            if new.get("restart_reason") == "manual_opposite":
+                # MA L-4: the others stay the app's off while the person's hold lasts; no group reversal later.
+                opp = [n for n in st["saved"] if (zones.get(n) or {}).get("diverged")
+                       and core.mode_family((zones.get(n) or {}).get("mode")) in core.DIRECTIONS
+                       and core.mode_family((zones.get(n) or {}).get("mode")) != st.get("mode")]
+                heads = [n for n in st["saved"] if n not in opp]
+                if opp and heads and st.get("mode") in core.DIRECTIONS:
+                    new["park"] = {"by": opp, "heads": heads, "mode": st["mode"]}
+                    self._auto_stop_park(new, by, zones, now)
             new.update(saved={}, since=None, mode=None)
         elif event == "restart":
             log.info("auto-stop: restart all heads together in %s (%s)", st.get("mode"), new.get("restart_reason"))
@@ -1268,6 +1293,29 @@ class Engine:
             new.update(saved={}, since=None, mode=None)
         self.st["auto_stop"] = new
 
+    def _auto_stop_park(self, st, by, zones, now):
+        """MA L-4. True while the park holds: a person's head still runs the other direction under its hold.
+        The parked heads that are still off are held off (the app's own off). One a person turned on is let go."""
+        park = st["park"]
+        opposite = any(core.mode_family((zones.get(n) or {}).get("mode")) in core.DIRECTIONS
+                       and core.mode_family((zones.get(n) or {}).get("mode")) != park["mode"] for n in park["by"])
+        unknown = any((zones.get(n) or {}).get("mode") is None for n in park["by"])
+        held = any(self._override_active(n, now) for n in park["by"])
+        if not held or not (opposite or unknown):
+            log.info("auto-stop: hold over or direction back; parked heads go back to the schedule")
+            return False
+        keep = []
+        for name in park["heads"]:
+            item = by.get(name)
+            if item is None or item["cl"] != "off":
+                continue  # never overwrite a mode someone else set; the shared-mode lock still runs
+            keep.append(name)
+            item["auto_stop_force"] = True
+            item["auto_stop_result"] = {"action": "hold", "mode": "off", "setpoint": item.get("setpt"),
+                                        "reason": "auto_stop_wait", "profile": None}
+        park["heads"] = keep
+        return bool(keep)
+
     def _auto_stop_public(self):
         """/api/state block. Option off -> enabled false and nothing else is active."""
         st = self.st.get("auto_stop") if isinstance(self.st.get("auto_stop"), dict) else {}
@@ -1281,6 +1329,7 @@ class Engine:
             "all_since": st.get("all_since"), "last_stop": st.get("last_stop"),
             "last_restart": st.get("last_restart"), "restart_reason": st.get("restart_reason"),
             "blocked": getattr(self, "_auto_stop_reason", None) if not st.get("active") else None,
+            "parked": sorted((st.get("park") or {}).get("heads") or []),
         }
 
     # ---------- main loop ----------
@@ -1689,7 +1738,7 @@ class Engine:
                 elif mode != "off":
                     ok[name] = False
             if mode == "off":
-                ok[name] = live[eid] == "off"
+                ok[name] = live.get(eid) == "off"  # an unreadable split is not known to be off (MA M-3)
         # 2) new modes, each only if consistent with the live pair
         for name, eid, _cl, mode in todo:
             if mode == "off" or name in ok:
