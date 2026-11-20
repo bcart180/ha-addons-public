@@ -331,3 +331,11 @@ test("0.8.2 render: heater card once, only on the card that asks for it", async 
   assert.equal(count(only), 1);
   assert.doesNotMatch(only, /Room A|data-preset|data-shared/);
 });
+
+test("hold color is the neutral Tesla white, never orange or amber", async () => {
+  const { EVENT_COLORS } = await import("../smart-hvac-card.js");
+  assert.equal(EVENT_COLORS.hold, "#f2f2f2");
+  const others = Object.entries(EVENT_COLORS).filter(([k]) => k !== "hold").map(([, v]) => v.toLowerCase());
+  assert.ok(!others.includes("#f2f2f2"), "hold stays distinct from every other event color");
+  assert.doesNotMatch(SRC, /orange|amber|#d9902b|#e08a3c|#f0c27a|rgba\(201,\s*137,\s*43/i);
+});
