@@ -1,10 +1,15 @@
-"""Telnyx carrier recording -> private file -> xAI transcript (CallCatch 0.8.0).
+"""Telnyx carrier recording -> private file -> xAI transcript (CallCatch 0.8.0, connection allowlist 0.8.1).
 
 Telnyx records the bridged call from answer (dual channel).  This module never
 places or answers a call.  Two inputs land on one job:
 
 * a signed webhook relay (call lifecycle + ``call.recording.saved``)
 * a poll of ``GET /v2/recordings`` (missed webhook, or a restart mid-call)
+
+Only recordings and events from an allowlisted Telnyx connection are
+touched (0.8.1).  An empty allowlist touches nothing: no job, no download, no
+transcript, no email, no remote delete.  Another connection on the same
+account (for example an outbound-only TeXML app) is never read or deleted.
 
 Jobs dedupe by recording id, then call session id, then leg id, then call
 control id.  The remote recording is deleted only after the local file and
@@ -34,6 +39,10 @@ log = logging.getLogger("voicemail.capture")
 
 VERSION = 1
 ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
+# Telnyx connection ids are decimal strings.  Anything else fails the whole allowlist closed.
+CONNECTION_RE = re.compile(r"^[0-9]{1,32}$")
+MAX_CONNECTIONS = 10
+SKIP_ERROR = "connection-not-allowed"
 FILE_RE = re.compile(r"^[a-f0-9]{32}\.(wav|mp3)$")
 ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})$")
 # Telnyx documents this bucket in "Storing call recordings":
@@ -64,7 +73,31 @@ POLL_OVERLAP_S = 120
 LEASE_S = 90
 TRANSCRIPT_MAX = 60_000
 TERMINAL_DOWNLOAD = frozenset({"oversize", "bad-type", "ssrf"})
-_STATE_RANK = {"wait": 0, "download": 1, "transcribe": 2, "attach": 3, "delete": 4, "done": 5, "dead": 5}
+_STATE_RANK = {"wait": 0, "download": 1, "transcribe": 2, "attach": 3, "delete": 4, "done": 5, "dead": 5,
+               "skipped": 5}
+CLOSED = frozenset({"done", "dead", "skipped"})
+
+
+def parse_connection_ids(raw: Any) -> frozenset[str]:
+    """Comma or space separated Telnyx connection ids.
+
+    Fail closed: blank, more than MAX_CONNECTIONS, or any token that is not a
+    decimal id gives an empty allowlist, and an empty allowlist touches nothing.
+    """
+    tokens = [t for t in re.split(r"[\s,]+", str(raw or "").strip()) if t]
+    if not tokens or len(tokens) > MAX_CONNECTIONS:
+        return frozenset()
+    if any(not CONNECTION_RE.fullmatch(t) for t in tokens):
+        return frozenset()
+    return frozenset(tokens)
+
+
+def connection_id_of(value: Any) -> str:
+    """The connection id as Telnyx sends it (string or integer), or "" when it is not a decimal id."""
+    if isinstance(value, bool):
+        return ""
+    text = str(value if value is not None else "").strip()
+    return text if CONNECTION_RE.fullmatch(text) else ""
 
 
 def now_ts() -> float:
@@ -315,6 +348,7 @@ def _blank_job(jid: str, now: float) -> dict:
         "call_leg_id": "",
         "call_control_id": "",
         "recording_id": "",
+        "connection_id": "",
         "from": "",
         "start_ts": 0.0,
         "end_ts": 0.0,
@@ -342,12 +376,28 @@ def _blank_job(jid: str, now: float) -> dict:
 
 
 class Capture:
-    def __init__(self, data_dir: pathlib.Path, retention_days: int = 30):
+    def __init__(self, data_dir: pathlib.Path, retention_days: int = 30,
+                 allowed_connections: Any = frozenset()):
         # Jobs live next to the audio, inside the backup-excluded folder.
         self.dir = data_dir / "recordings"
         self.path = self.dir / "jobs.json"
         self.lock_path = self.dir / "jobs.lock"
         self.retention_s = max(1, int(retention_days)) * 86400
+        allowed = frozenset(str(c) for c in (allowed_connections or ()))
+        # One bad id empties the list (fail closed), the same rule as the option parser.
+        self.allowed = allowed if allowed and all(CONNECTION_RE.fullmatch(c) for c in allowed) else frozenset()
+        self.skipped = 0
+
+    def connection_allowed(self, value: Any) -> bool:
+        """True only for a non-empty allowlist that names this connection id."""
+        cid = connection_id_of(value)
+        return bool(self.allowed) and bool(cid) and cid in self.allowed
+
+    def _skip_input(self, kind: str) -> dict:
+        """A recording or event from another connection.  Nothing is stored or fetched."""
+        self.skipped += 1
+        log.info("recording skipped %s connection not allowed", kind)
+        return {"ok": True, "ignored": True, "duplicate": False, "id": "", "reason": "connection"}
 
     def _read(self) -> dict:
         try:
@@ -449,7 +499,7 @@ class Capture:
     @staticmethod
     def _fill(dst: dict, src: dict) -> None:
         for field in (
-            "call_session_id", "call_leg_id", "call_control_id", "recording_id", "from",
+            "call_session_id", "call_leg_id", "call_control_id", "recording_id", "connection_id", "from",
             "channels", "format", "file", "sha256", "transcript", "ref", "deleted", "last_error",
         ):
             if not dst.get(field) and src.get(field):
@@ -474,6 +524,9 @@ class Capture:
         """Store one reduced Telnyx event.  Idempotent on event id and call ids."""
         if not isinstance(event, dict):
             return {"ok": False, "ignored": True, "duplicate": False, "id": ""}
+        if not self.connection_allowed(event.get("connection_id")):
+            return self._skip_input("event")
+        connection = connection_id_of(event.get("connection_id"))
         etype = str(event.get("event_type") or "")
         eid = _id(event.get("event_id"))
         if etype not in EVENTS or not eid:
@@ -498,6 +551,8 @@ class Capture:
                 return {"ok": True, "ignored": False, "duplicate": True, "id": job["id"]}
             job["event_ids"] = (list(job.get("event_ids") or []) + [eid])[-20:]
             job["updated_at"] = now
+            if not job.get("connection_id"):
+                job["connection_id"] = connection
             self._apply_ids(job, session=session, leg=leg, control=control, recording_id=recording_id)
             caller = _caller(event.get("from"))
             if caller and not job.get("from"):
@@ -533,6 +588,9 @@ class Capture:
         """Store one recordings-list resource.  Same job as a webhook for that id."""
         if not isinstance(record, dict):
             return {"ok": False, "ignored": True, "duplicate": False, "id": ""}
+        if not self.connection_allowed(record.get("connection_id")):
+            return self._skip_input("recording")
+        connection = connection_id_of(record.get("connection_id"))
         status = str(record.get("status") or "completed")
         if status not in ("completed", ""):
             return {"ok": True, "ignored": True, "duplicate": False, "id": ""}
@@ -555,6 +613,8 @@ class Capture:
                 jid = recording_id
             job = jobs[jid]
             before = (job.get("state"), job.get("url"), job.get("recording_id"))
+            if not job.get("connection_id"):
+                job["connection_id"] = connection
             self._apply_ids(job, session=session, leg=leg, control=control, recording_id=recording_id)
             caller = _caller(record.get("from"))
             if caller and not job.get("from"):
@@ -678,7 +738,7 @@ class Capture:
     def _make_room(self, jobs: dict) -> None:
         """Stay near the cap by dropping the oldest finished job.  A new call is never refused."""
         while len(jobs) >= MAX_JOBS:
-            closed = [k for k, j in jobs.items() if isinstance(j, dict) and j.get("state") in ("done", "dead")]
+            closed = [k for k, j in jobs.items() if isinstance(j, dict) and j.get("state") in CLOSED]
             if not closed:
                 log.warning("recording jobs over cap count=%s", len(jobs) + 1)
                 return
@@ -742,6 +802,15 @@ class Capture:
         self._update(jid, fn)
         log.info("recording %s from=%s", code, "none")
 
+    @staticmethod
+    def _close_skipped(job: dict, clock: float) -> None:
+        """Terminal and silent: no row, no email, and the remote copy is left alone."""
+        job["state"] = "skipped"
+        job["last_error"] = SKIP_ERROR
+        job["done_at"] = clock
+        job["lease_until"] = 0
+        job["url"] = ""
+
     async def poll(self, net: Any, now: float | None = None) -> str:
         """Pull one window of recordings.
 
@@ -750,6 +819,8 @@ class Capture:
         after re-reading the page before it so a shifted item is not skipped.
         """
         clock = now_ts() if now is None else now
+        if not self.allowed:
+            return "poll-off"
         with exclusive_lock(self.lock_path):
             stored = self._read()
             watermark = float(stored.get("watermark") or 0)
@@ -811,7 +882,7 @@ class Capture:
             for jid, job in self._read()["jobs"].items():
                 if not isinstance(job, dict):
                     continue
-                if job.get("state") in ("done", "dead", "wait"):
+                if job.get("state") in CLOSED or job.get("state") == "wait":
                     continue
                 if clock < float(job.get("next_at") or 0):
                     continue
@@ -824,7 +895,14 @@ class Capture:
         with exclusive_lock(self.lock_path):
             data = self._read()
             job = data["jobs"].get(jid)
-            if not isinstance(job, dict) or job.get("state") in ("done", "dead", "wait"):
+            if not isinstance(job, dict) or job.get("state") in CLOSED or job.get("state") == "wait":
+                return None
+            if not self.connection_allowed(job.get("connection_id")):
+                # Defense in depth: a job from before 0.8.1, or a connection removed
+                # from the allowlist, is closed without a download, transcript,
+                # email, or remote delete.
+                self._close_skipped(job, clock)
+                self._write(data)
                 return None
             if clock < float(job.get("next_at") or 0) or clock < float(job.get("lease_until") or 0):
                 return None
@@ -854,6 +932,10 @@ class Capture:
             for job in data["jobs"].values():
                 if not isinstance(job, dict) or job.get("state") != "wait":
                     continue
+                if not self.connection_allowed(job.get("connection_id")):
+                    self._close_skipped(job, clock)
+                    dirty = True
+                    continue
                 if clock - float(job.get("created_at") or clock) <= GIVE_UP_S:
                     continue
                 job["state"] = "dead"
@@ -867,7 +949,8 @@ class Capture:
         with exclusive_lock(self.lock_path):
             out = []
             for jid, job in self._read()["jobs"].items():
-                if isinstance(job, dict) and job.get("state") == "dead" and not job.get("ref") and not job.get("surfaced"):
+                if (isinstance(job, dict) and job.get("state") == "dead" and not job.get("ref")
+                        and not job.get("surfaced") and self.connection_allowed(job.get("connection_id"))):
                     out.append(jid)
             return out
 
@@ -881,7 +964,7 @@ class Capture:
             other = str(job.get("recording_id") or "")
             if not other or other == recording_id:
                 continue
-            if job.get("state") not in ("done", "dead"):
+            if job.get("state") not in CLOSED:
                 return True
         return False
 
@@ -915,7 +998,11 @@ class Capture:
                 fresh = self.get(jid)
                 if not fresh or int(fresh.get("lease") or 0) != token:
                     return codes
-                if fresh.get("state") in ("done", "dead"):
+                if not self.connection_allowed(fresh.get("connection_id")):
+                    self._update(jid, lambda j: self._close_skipped(j, clock))
+                    codes.append("recording " + SKIP_ERROR)
+                    return codes
+                if fresh.get("state") in CLOSED:
                     if fresh.get("state") == "dead":
                         await self._surface_dead(fresh, attach)
                     return codes
@@ -1055,6 +1142,11 @@ class Capture:
 
     async def _step_delete(self, jid: str, job: dict, net: Any, clock: float, delete_gate: str = "hold") -> str:
         current = self.get(jid) or job
+        # Never delete a recording from a connection outside the allowlist.
+        if not (self.connection_allowed(current.get("connection_id"))
+                and self.connection_allowed(job.get("connection_id"))):
+            self._update(jid, lambda j: self._close_skipped(j, clock))
+            return SKIP_ERROR
         if not self.persisted(current):
             self._fail(jid, "persist", clock)
             return "persist"
@@ -1081,6 +1173,10 @@ class Capture:
         if deleter is None:
             self._fail(jid, "no-key", clock)
             return "no-key"
+        # Re-check right before the remote call, against the stored job.
+        if not self.connection_allowed((self.get(jid) or {}).get("connection_id")):
+            self._update(jid, lambda j: self._close_skipped(j, clock))
+            return SKIP_ERROR
         rid = str(current.get("recording_id") or "")
         if not ID_RE.fullmatch(rid):
             self._fail(jid, "delete-no-id", clock, terminal=True)
@@ -1109,6 +1205,8 @@ class Capture:
     async def _surface_dead(self, job: dict, attach: Callable[[dict], Awaitable[str]]) -> None:
         """A terminal failure still becomes one call row.  The remote copy stays."""
         if job.get("ref") or job.get("surfaced"):
+            return
+        if not self.connection_allowed(job.get("connection_id")):
             return
         code = str(job.get("last_error") or "failed")
         surfaced = dict(job)
@@ -1143,7 +1241,7 @@ class Capture:
                 if isinstance(job, dict) and job.get("file"):
                     live.add(str(job["file"]))
             stale = [k for k, j in data["jobs"].items()
-                     if isinstance(j, dict) and j.get("state") in ("done", "dead")
+                     if isinstance(j, dict) and j.get("state") in CLOSED
                      and clock - float(j.get("done_at") or clock) > self.retention_s]
             for key in stale:
                 data["jobs"].pop(key, None)

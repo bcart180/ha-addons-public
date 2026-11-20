@@ -43,7 +43,7 @@ import telnyx_capture
 APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC = APP_DIR / "static"
 EXAMPLE = APP_DIR / "example_voicemails.json"
-VERSION = "0.8.0"
+VERSION = "0.8.1"
 AUDIO_LIMIT = 25 * 1024 * 1024
 SENSOR_RE = re.compile(r"sensor\.[a-z0-9_]+")
 RT = web.AppKey("rt", dict)
@@ -147,7 +147,12 @@ RECORDING_GRACE_S = _int_opt("recording_grace_s", 180, 30, 900)
 if bool(TELNYX_API_KEY) != bool(XAI_API_KEY):
     _missing = "xai_api_key" if TELNYX_API_KEY else "telnyx_api_key"
     logging.getLogger("voicemail").warning("recording capture off: %s is blank", _missing)
-CAPTURE_ON = bool(TELNYX_API_KEY and XAI_API_KEY)
+# 0.8.1: only these Telnyx connections are ever read, transcribed, emailed, or
+# deleted.  Blank or invalid means capture stays off (fail closed).
+TELNYX_CONNECTION_IDS = telnyx_capture.parse_connection_ids(OPTS.get("telnyx_connection_ids"))
+if TELNYX_API_KEY and XAI_API_KEY and not TELNYX_CONNECTION_IDS:
+    logging.getLogger("voicemail").warning("recording capture off: telnyx_connection_ids is blank or invalid")
+CAPTURE_ON = bool(TELNYX_API_KEY and XAI_API_KEY and TELNYX_CONNECTION_IDS)
 # CallCatch Voice owns the allow / block lists in its /data. The inbox edits
 # them through its own ingress-gated routes, which forward with this bearer
 # to Voice on the Supervisor network. Blank = lists not editable here.
@@ -1763,6 +1768,8 @@ def agent_diag(app: web.Application) -> dict:
         "telnyx_delete_remote": TELNYX_DELETE,
         "stt_configured": bool(XAI_API_KEY),
         "capture_on": CAPTURE_ON,
+        "telnyx_connections": len(TELNYX_CONNECTION_IDS),
+        "recordings_skipped": ensure_capture(app).skipped,
     }
 
 
@@ -2121,7 +2128,7 @@ def ensure_capture(app: web.Application) -> telnyx_capture.Capture:
     box = _box(app)
     cap = box.get("capture")
     if cap is None:
-        cap = telnyx_capture.Capture(data_dir())
+        cap = telnyx_capture.Capture(data_dir(), allowed_connections=TELNYX_CONNECTION_IDS)
         box["capture"] = cap
     return cap
 
