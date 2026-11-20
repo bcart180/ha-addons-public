@@ -6,7 +6,7 @@
 <title>Climate</title>
 <style>
 :root{
-  --bg:#000000;--band:#1a1a1a;--card:#414141;--selected:#757575;--blue:#005aff;--green:#3ddc5a;
+  --bg:#000000;--band:#1a1a1a;--card:#414141;--selected:#757575;--blue:#3e6ae1;--green:#3ddc5a;
   --line:#5c5c5c;--fg:#ffffff;--mut:#d0d0d0;--dim:#b4b6bb;
   /* Words stay the meaning. Blue is the active mark. Green is only the current temperature. */
   --heat:#d0d0d0;--cool:var(--blue);--hold:#f2f2f2;
@@ -306,14 +306,14 @@ function graphSvg(d, plotH){
   (d.heating || []).forEach(([t, on], i) => { if (!on) return; const t2 = (d.heating[i + 1] || [d.end])[0];
     bands += '<rect x="' + X(t).toFixed(1) + '" y="' + pad.t + '" width="' + Math.max(1, X(t2) - X(t)).toFixed(1) + '" height="' + H + '" fill="rgba(117,117,117,.45)"/>'; });
   (d.cooling || []).forEach(([t, on], i) => { if (!on) return; const t2 = (d.cooling[i + 1] || [d.end])[0];
-    bands += '<rect x="' + X(t).toFixed(1) + '" y="' + pad.t + '" width="' + Math.max(1, X(t2) - X(t)).toFixed(1) + '" height="' + H + '" fill="rgba(0,90,255,.22)"/>'; });
+    bands += '<rect x="' + X(t).toFixed(1) + '" y="' + pad.t + '" width="' + Math.max(1, X(t2) - X(t)).toFixed(1) + '" height="' + H + '" fill="rgba(62,106,225,.22)"/>'; });
   (d.defrost || []).forEach(([t, on], i) => { if (!on) return; const t2 = (d.defrost[i + 1] || [d.end])[0];
     bands += '<rect x="' + X(t).toFixed(1) + '" y="' + pad.t + '" width="' + Math.max(2, X(t2) - X(t)).toFixed(1) + '" height="' + H + '" fill="rgba(117,117,117,.28)"/><text x="' + (X(t) + 4).toFixed(1) + '" y="' + (pad.t + 16) + '" fill="#d0d0d0" font-size="16">Defrosting</text>'; });
   let grid = "";
   for (const v of [lo, Math.round((lo + hi) / 2), hi]) grid += '<line x1="' + pad.l + '" x2="' + (w - pad.r) + '" y1="' + Y(v) + '" y2="' + Y(v) + '" stroke="#6a6a6a"/><text x="' + (w - 2) + '" y="' + (Y(v) + 4) + '" fill="#b4b6bb" font-size="16" text-anchor="end">' + v + "°</text>";
   return '<svg class="g" viewBox="0 0 ' + w + " " + h + '" role="img">' + grid + bands +
     '<path d="' + line(d.outdoor) + '" fill="none" stroke="#757575" stroke-dasharray="4 3" stroke-width="1.2"/>' +
-    '<path d="' + line(d.setpoint) + '" fill="none" stroke="#005aff" stroke-width="1.6"/>' +
+    '<path d="' + line(d.setpoint) + '" fill="none" stroke="#3e6ae1" stroke-width="1.6"/>' +
     '<path d="' + line(d.indoor) + '" fill="none" stroke="#3ddc5a" stroke-width="1.8"/></svg>';
 }
 
@@ -340,7 +340,7 @@ function graphCard(){
     (rng === "24h" ? ' class="on"' : "") + '>24h</button><button data-range="7d"' + (rng === "7d" ? ' class="on"' : "") + ">7d</button></div></div>" +
     '<div class="durs">' + names + "</div>" + body +
     (gap ? '<p class="hint">Gap in the recorded history. Missing time is not drawn as a real temperature.</p>' : "") +
-    '<div class="leg"><span><i style="background:#3ddc5a"></i>Indoor</span><span><i style="background:#005aff"></i>Target</span><span><i style="background:#757575"></i>Outdoor</span><span><i style="background:#757575;height:8px"></i>Heating</span><span><i style="background:#005aff;height:8px"></i>Cooling / defrost</span></div>' +
+    '<div class="leg"><span><i style="background:#3ddc5a"></i>Indoor</span><span><i style="background:#3e6ae1"></i>Target</span><span><i style="background:#757575"></i>Outdoor</span><span><i style="background:#757575;height:8px"></i>Heating</span><span><i style="background:#3e6ae1;height:8px"></i>Cooling / defrost</span></div>' +
     '<div class="metrics">' + metrics.join("") + "</div>" +
     '<p class="hint">Times above are measured from the history that was returned. No energy, cost, or efficiency number is estimated.</p></article>';
 }
