@@ -180,6 +180,13 @@ configuration:
     description: >-
       Used to list and delete call recordings. Password field. Never logged.
       Leave blank to keep the capture path off.
+  telnyx_connection_ids:
+    name: Telnyx connection allowlist
+    description: >-
+      Telnyx connection ids (digits, comma or space separated, up to 10) whose
+      recordings CallCatch may read. Recordings from any other connection on the
+      account are never downloaded, transcribed, emailed or deleted. Blank or
+      invalid keeps capture off.
   telnyx_delete_remote:
     name: Delete Telnyx recording after save
     description: >-
