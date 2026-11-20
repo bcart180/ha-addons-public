@@ -355,3 +355,11 @@ test("0.9.8 auto-stop: an app stop reads Idle with the reason, a person's off st
   // MA L-4: a head parked while a person runs another room the other way
   assert.equal(nextLine({ reason: "auto_stop_wait" }, "UTC", null), "Off while another room runs the other way");
 });
+
+test("hold color is the neutral Tesla white, never orange or amber", async () => {
+  const { EVENT_COLORS } = await import("../smart-hvac-card.js");
+  assert.equal(EVENT_COLORS.hold, "#f2f2f2");
+  const others = Object.entries(EVENT_COLORS).filter(([k]) => k !== "hold").map(([, v]) => v.toLowerCase());
+  assert.ok(!others.includes("#f2f2f2"), "hold stays distinct from every other event color");
+  assert.doesNotMatch(SRC, /orange|amber|#d9902b|#e08a3c|#f0c27a|rgba\(201,\s*137,\s*43/i);
+});
