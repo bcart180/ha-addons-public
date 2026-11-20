@@ -130,6 +130,7 @@ export function glanceRow(hass, z, api, vac, tz) {
   if (dlab) doing = dlab;
   else if (vac) doing = z.heat_only ? "Vacation · off" : "Vacation";
   else if (hold) doing = `Hold · auto at ${fmtClock(hold, tz)}`;
+  else if (zr?.reason === "auto_stop" && st?.state === "off") doing = "Idle, all rooms at target";
   else if (zr?.preheat) doing = "Warming up";
   else if (zr?.profile === "away") doing = "Away";
   else if (zr?.profile === "sleep") doing = s.off ? "Off" : "Sleep";
@@ -265,11 +266,13 @@ export function statusOf(stateObj, zone, vacation, zr) {
   const act = stateObj?.attributes?.hvac_action;
   const off = mode === "off";
   const dlab = defrostLabel(stateObj, zr);
-  const status = !stateObj || mode === "unavailable" ? "Unavailable" : off ? "Off"
+  const astop = off && zr && zr.reason === "auto_stop";
+  const status = !stateObj || mode === "unavailable" ? "Unavailable" : astop ? "Idle" : off ? "Off"
     : dlab ? dlab : act === "heating" ? "Heating" : act === "cooling" ? "Cooling" : act === "fan" ? "Fan" : "Idle";
   let why = "";
   if (vacation) why = zone.heat_only ? "Vacation — radiant floor stays off" : "Vacation — set back";
   else if (zr && zr.reason === "window_slope_pause") why = "Paused, window open?";
+  else if (astop) why = "Idle, all rooms at target";
   else if (off) why = "Off";
   else if (dlab) why = `${dlab} — not a manual change; the app waits`;
   return { mode, off, status, why };
@@ -285,7 +288,8 @@ export function fmtClock(ts, tz) {
 
 const REASON = { manual_override: "Manual hold", vacation_setback: "Vacation setback", vacation_at_setback: "Vacation setback",
   vacation_radiant_off: "Vacation — radiant off", window_open: "Window open — off",
-  window_slope_pause: "Paused, window open?", unit_off: "Off at the unit — app won't turn it on",
+  window_slope_pause: "Paused, window open?", auto_stop: "Idle, all rooms at target",
+  auto_stop_restart: "Restarting, a room needs it", auto_stop_wait: "Off while another room runs the other way", unit_off: "Off at the unit — app won't turn it on",
   overtemp_shutoff: "Bath over air shutoff — off", short_cycle_guard: "Waiting (anti short-cycle)",
   defrosting: "Defrosting — app waits", preheating: "Pre-heating — app waits", disabled: "App off" };
 
@@ -490,7 +494,7 @@ class SmartHvacCard extends Base {
       <div class="sp"><button class="step" data-i="${i}" data-d="-1" ${s.off || ro ? "disabled" : ""}>−</button>
       <div class="pill ${s.off ? "" : esc(s.mode)}">${s.off ? "Off" : sp != null ? sp : "--"}</div>
       <button class="step" data-i="${i}" data-d="1" ${s.off || ro ? "disabled" : ""}>+</button></div></div>
-      <div class="chips">${chips}</div><div class="why${zr && zr.reason === "window_slope_pause" ? " slope" : ""}">${esc(s.why)}</div><div class="next">${esc(nl)}</div>
+      <div class="chips">${chips}</div><div class="why${zr && (zr.reason === "window_slope_pause" || zr.reason === "auto_stop") ? " slope" : ""}">${esc(s.why)}</div><div class="next">${esc(nl)}</div>
       <div class="row">${modes.map((m) => `<button class="btn ${m === s.mode ? "sel" : ""}" data-i="${i}" data-mode="${m}" ${ro || (z.heat_only && vac && m !== "off") ? "disabled" : ""}>${modeLabel(m, z.heat_only)}</button>`).join("")}
       ${fans.map((f) => `<button class="btn ${f === a.fan_mode ? "sel" : ""}" data-i="${i}" data-fan="${esc(f)}" ${ro ? "disabled" : ""}>${esc(f)}</button>`).join("")}</div>
       <div class="g">${g ? graphSvg(g, tz) : '<div class="dim">Loading history…</div>'}</div>
