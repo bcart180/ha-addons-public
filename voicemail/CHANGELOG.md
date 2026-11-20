@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.1 — 2026-11-20
+
+- **Connection allowlist for carrier recordings (fail closed).**  New option `telnyx_connection_ids`: the Telnyx connection ids (comma or space separated, digits only, up to 10) whose recordings CallCatch may read.  Blank, too many, or any bad token means capture stays off: no poll, no job, no download, no transcript, no email, and no remote delete.  Capture now needs both API keys **and** a valid allowlist; with the keys set and the list blank, CallCatch logs one warning and does not hold email for a recording.
+- **Other connections are never touched.**  A recordings-list item or a relayed webhook event whose `connection_id` is missing or not on the list is dropped before any job is written.  A stored job whose connection is not on the list (a job from 0.8.0, or a connection later removed) closes as `skipped` (`connection-not-allowed`) with no download, transcript, call row, email, or Telnyx delete, and the delete step re-checks the list right before `DELETE /v2/recordings/{id}`.  This keeps another app on the same Telnyx account (for example an outbound-only TeXML number) out of CallCatch.
+- `/api/diag` shows `telnyx_connections` (count only) and `recordings_skipped` (inputs dropped since start; a recording seen on several polls counts each time).  No ids, numbers, or URLs are logged.
+
 ## 0.8.0 — 2026-11-19
 
 - **Every inbound call is captured.** Telnyx records the bridged call from answer (dual channel) while the SIP voice agent stays on the call. CallCatch Line verifies the Telnyx webhook (Ed25519, 5-minute replay window, fail closed when a public key is set) and relays a reduced event. A poller lists `GET /v2/recordings` so a missed webhook or a restart mid-call still finds the audio. The same recording id, call session, leg, or call-control id is one job.

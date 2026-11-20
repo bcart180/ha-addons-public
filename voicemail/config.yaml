@@ -1,5 +1,5 @@
 name: CallCatch
-version: "0.8.0"
+version: "0.8.1"
 slug: voicemail
 description: Your Personalized Voicemail. iPhone-style house inbox (list + detail) via Supervisor ingress
 url: https://github.com/bcart180/ha-addons-public/tree/main/voicemail
@@ -60,6 +60,7 @@ options:
   late_update_push: true
   timeout_notify_per_day: 20
   telnyx_api_key: ""
+  telnyx_connection_ids: ""
   telnyx_delete_remote: true
   telnyx_poll_s: 30
   xai_api_key: ""
@@ -102,6 +103,7 @@ schema:
   late_update_push: bool
   timeout_notify_per_day: int(1,200)
   telnyx_api_key: password?
+  telnyx_connection_ids: match(^[0-9, ]{0,400}$)?
   telnyx_delete_remote: bool
   telnyx_poll_s: int(15,300)
   xai_api_key: password?
