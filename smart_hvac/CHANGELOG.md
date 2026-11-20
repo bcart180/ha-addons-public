@@ -1,3 +1,10 @@
+## 0.9.11 — 2026-11-20
+
+- Spare bathroom heater: a run with no fresh temperature report no longer trips `no_rise`.  The Zooz sensor reports temperature about once an hour, so every run started just after a report had no new reading inside the 45 min window and latched `no_rise` although the heater was warming the room.  Now, 30 min after the last checkpoint with no report in the last 30 min, the plug turns off as `awaiting_reading` (card: "Off: waiting for a temperature reading").  It does not latch or notify, and it stays off until the sensor reports again.
+- The next report decides the run: a rise of at least 1°F over the checkpoint resumes normal control; a smaller rise latches `no_rise` and sends the "not warming the room" notification, the same as before.  A sensor that does report and shows no rise still latches `no_rise` at 45 min.  The pending check survives a restart (`await_ref` in `/data/heater.json`), and Off then Heat clears it.
+- Heater safety fix: the progress checkpoint is re-armed whenever the plug is seen on without one.  Before, an off write that failed mid-run (Home Assistant briefly down) cleared the checkpoint while the plug stayed on, and the no-rise check stayed off for the rest of that run.
+- Unchanged: the 2 h max run and 20 min cooldown, the 8 h / 24 h lockout, the 80°F cap, the stale-sensor cutoff (75 min), the 45 min / 1°F no-rise rule, the 0.9.6 auto-clear, the 0.9.7 notify policy, the plug watchdog automation, and all options.  The blind run is now at most 30 min instead of 45, which also cuts the overshoot after a run.  The card needs a manual copy for the new status text.  Rollback: install 0.9.10 (a pending `await_ref` is ignored by 0.9.10).
+
 ## 0.9.10 — 2026-11-20
 
 - Lovelace card: black card background (`#000`, thin `#1f1f1f` edge) instead of `#16202b`.  Selected buttons, the setpoint line and legend, the glance mode pill and links use the accent blue `#3E6AE1` instead of teal.  The "next change" line is neutral gray.
