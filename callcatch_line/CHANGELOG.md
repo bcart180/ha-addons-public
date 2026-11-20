@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 — 2026-11-20
+
+- **Connection allowlist (fail closed).**  New option `telnyx_connection_ids` (comma or space separated Telnyx connection ids, digits only, up to 10).  `POST /telnyx/events` stays off (503) until both `telnyx_public_key` and a valid list are set.  A signed event from any other connection, or with no connection id, is acknowledged (200) and never relayed to CallCatch.  The reduced event now carries `connection_id` so CallCatch applies the same list.
+
 ## 0.2.0 — 2026-11-19
 
 - **Telnyx call webhooks.** `POST /telnyx/events` checks the Ed25519 signature (`telnyx-signature-ed25519` over `{telnyx-timestamp}|` plus the raw body) with `telnyx_public_key`. A timestamp more than 5 minutes off is rejected. A key that is set but does not verify rejects every request. Blank leaves the path off. Lifecycle and recording-saved events are reduced (ids, times, caller, short-lived recording URL) and relayed to CallCatch. The URL and the key are never logged. The caller is logged as the last 4 digits.

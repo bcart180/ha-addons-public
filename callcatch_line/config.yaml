@@ -1,5 +1,5 @@
 name: CallCatch Line
-version: "0.2.0"
+version: "0.2.1"
 slug: callcatch_line
 description: MCP server for the CallCatch phone agent. Messages, callbacks, and busy times only.
 url: https://github.com/bcart180/ha-addons-public/tree/main/callcatch_line
@@ -45,6 +45,7 @@ options:
   turns_per_call_min: 20
   send_conversation_id: true
   telnyx_public_key: ""
+  telnyx_connection_ids: ""
 schema:
   mcp_token: password
   callcatch_agent_token: password
@@ -66,3 +67,4 @@ schema:
   turns_per_call_min: int(1,120)
   send_conversation_id: bool
   telnyx_public_key: password?
+  telnyx_connection_ids: match(^[0-9, ]{0,400}$)?
