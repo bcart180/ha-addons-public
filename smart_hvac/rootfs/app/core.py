@@ -859,3 +859,168 @@ def setpoint_payload(attrs, mode, t):
             return {"target_temp_low": t, "target_temp_high": high}, t, "ok"
         return None, t, "range_mode_unsupported"
     return None, t, "no_setpoint_feature"
+
+
+# ---- 0.9.8: whole-house auto-stop (Versatile Thermostat auto-start/stop shape, over_climate) ----
+# All split heads run off ONE outdoor unit. When every running head is at or past its target and the
+# room trend is flat or favorable for a sustained window, all heads are turned off together. They all
+# restart together, in the shared mode they had, when the trend or the deviation says heat or cool is
+# needed again. Detection windows follow VT's levels (very slow / slow / medium / fast).
+AUTO_STOP_LEVELS = {"very_slow": 60, "slow": 30, "medium": 15, "fast": 7}
+AUTO_STOP_DEFAULT_LEVEL = "slow"
+# Restart when the room is this far on the wrong side of the target, now or projected over the window.
+AUTO_STOP_RESTART_MARGIN_F = 0.5
+AUTO_STOP_SAMPLE_MARGIN_S = 10 * 60
+
+
+def auto_stop_window_min(level):
+    """Detection window in minutes. Unknown or missing level -> slow (30)."""
+    return AUTO_STOP_LEVELS.get(level, AUTO_STOP_LEVELS[AUTO_STOP_DEFAULT_LEVEL])
+
+
+def empty_auto_stop_state():
+    """Persisted auto-stop record. Absent from older state files."""
+    return {"active": False, "since": None, "all_since": None, "mode": None, "saved": {}, "samples": {},
+            "last_stop": None, "last_restart": None, "restart_reason": None}
+
+
+def copy_auto_stop(prev):
+    """Sanitized copy. Anything malformed falls back to the empty record (never raises)."""
+    base = empty_auto_stop_state()
+    src = prev if isinstance(prev, dict) else {}
+    base["active"] = src.get("active") is True
+    for key in ("since", "all_since", "last_stop", "last_restart"):
+        base[key] = _num(src.get(key))
+    base["mode"] = src.get("mode") if src.get("mode") in DIRECTIONS else None
+    if isinstance(src.get("restart_reason"), str):
+        base["restart_reason"] = src["restart_reason"]
+    saved = src.get("saved") if isinstance(src.get("saved"), dict) else {}
+    for name, rec in saved.items():
+        if isinstance(name, str) and isinstance(rec, dict) and rec.get("mode") in DIRECTIONS:
+            base["saved"][name] = {"mode": rec["mode"], "setpoint": _num(rec.get("setpoint"))}
+    samples = src.get("samples") if isinstance(src.get("samples"), dict) else {}
+    for name, rows in samples.items():
+        if not isinstance(name, str) or not isinstance(rows, list):
+            continue
+        kept = [[_num(r[0]), _num(r[1])] for r in rows
+                if isinstance(r, (list, tuple)) and len(r) >= 2 and _num(r[0]) is not None and _num(r[1]) is not None]
+        if kept:
+            base["samples"][name] = kept
+    if not base["active"] or base["mode"] is None or not base["saved"]:
+        base["active"], base["since"], base["saved"] = False, None, {}
+        base["mode"] = None
+    return base
+
+
+def auto_stop_satisfied(mode, indoor, target, slope, window_s):
+    """At or past target now, and still at or past it projected over the window (flat or favorable trend).
+    Unknown slope (history shorter than the window) checks the room only; a stop also needs every slope known."""
+    i, t, s = _num(indoor), _num(target), _num(slope)
+    if mode not in DIRECTIONS or i is None or t is None:
+        return False
+    proj = i if s is None else i + s * window_s / 3600.0
+    if mode == "heat":
+        return i >= t and proj >= t
+    return i <= t and proj <= t
+
+
+def auto_stop_needed(mode, indoor, target, slope, window_s, margin=AUTO_STOP_RESTART_MARGIN_F):
+    """True when a stopped head needs its mode again: the room is `margin` past the wrong side of the target
+    now, or will be within the window at the current slope. Missing room or target -> True (fail safe)."""
+    i, t, s = _num(indoor), _num(target), _num(slope)
+    if mode not in DIRECTIONS or i is None or t is None:
+        return True
+    proj = None if s is None else i + s * window_s / 3600.0
+    if mode == "heat":
+        return i < t - margin or (proj is not None and proj < t - margin)
+    return i > t + margin or (proj is not None and proj > t + margin)
+
+
+def auto_stop_step(prev, now, cfg, gates):
+    """One cycle of the whole-house auto-stop. Pure; never raises on bad input.
+
+    cfg: {"window_s", "min_cycle_s"}.
+    gates: enabled (option on and app on), blocked (reason string or None: defrost / window / hold),
+      zones[name] -> member (split on the shared outdoor unit), controlled (app can write it),
+      person_off (off and not by the app), mode (live), indoor, target, slope, changed_ts (last mode change),
+      diverged (a person changed it while stopped), opposite (the schedule now wants the other direction).
+    Returns the new state plus "event" ("stop" | "restart" | None) and "reason".
+    Rules: stop only when every running member is satisfied at once for the whole window, in one shared
+    heat or cool mode, and no member changed mode inside min_cycle_s. Restart all saved heads together, in
+    the saved mode, once min_cycle_s has passed since the stop and any head needs it. A person's change or
+    the option going off restarts the others at once.
+    """
+    st = copy_auto_stop(prev)
+    st["event"], st["reason"] = None, None
+    c = cfg or {}
+    window_s = _num(c.get("window_s")) or AUTO_STOP_LEVELS[AUTO_STOP_DEFAULT_LEVEL] * 60
+    min_cycle = _num(c.get("min_cycle_s"))
+    min_cycle = DEFAULTS["min_cycle_s"] if min_cycle is None else min_cycle
+    g = gates or {}
+    zones = g.get("zones") or {}
+    if st["active"]:
+        reason = None
+        if not g.get("enabled"):
+            reason = "option_off"
+        elif any((zones.get(n) or {}).get("diverged") for n in st["saved"]):
+            reason = "manual"
+        elif now - (now if st["since"] is None else st["since"]) >= min_cycle:
+            for name, rec in st["saved"].items():
+                z = zones.get(name)
+                if z is not None and z.get("paused"):
+                    continue  # an open window keeps that head off; it does not restart the others
+                if z is None or z.get("opposite"):
+                    reason = "needed"
+                    break
+                if auto_stop_needed(rec["mode"], z.get("indoor"), z.get("target"), z.get("slope"), window_s):
+                    reason = "needed"
+                    break
+        if reason:
+            st["event"], st["reason"] = "restart", reason
+            st["restart_reason"] = reason
+            st["last_restart"] = now
+            st["active"] = False
+            st["all_since"] = None
+        return st
+    st["saved"], st["since"], st["mode"] = {}, None, None
+    if not g.get("enabled") or g.get("blocked"):
+        st["all_since"] = None
+        st["reason"] = g.get("blocked") if g.get("enabled") else None
+        return st
+    running, fams = {}, set()
+    for name, z in zones.items():
+        if not z.get("member"):
+            continue
+        fam = mode_family(z.get("mode"))
+        if fam is None or z.get("person_off"):
+            continue  # off / fan_only: not asking the outdoor unit for anything
+        if not z.get("controlled"):
+            st["all_since"] = None  # a running split the app cannot write: never stop around it
+            st["reason"] = "uncontrolled"
+            return st
+        running[name] = z
+        fams.add(fam)
+    if not running or len(fams) != 1 or next(iter(fams)) not in DIRECTIONS:
+        st["all_since"] = None
+        return st
+    mode = next(iter(fams))
+    for z in running.values():
+        if z.get("opposite") or not auto_stop_satisfied(mode, z.get("indoor"), z.get("target"), z.get("slope"),
+                                                        window_s):
+            st["all_since"] = None
+            return st
+    if st["all_since"] is None:
+        st["all_since"] = now
+    if now - st["all_since"] < window_s or any(_num(z.get("slope")) is None for z in running.values()):
+        return st  # sustained for the whole window, and the trend over that window is known for every head
+    for z in running.values():
+        changed = _num(z.get("changed_ts"))
+        if changed is not None and now - changed < min_cycle:
+            st["reason"] = "short_cycle_guard"
+            return st
+    st["active"], st["since"], st["mode"] = True, now, mode
+    st["saved"] = {name: {"mode": mode, "setpoint": _num(z.get("target"))} for name, z in running.items()}
+    st["last_stop"] = now
+    st["restart_reason"] = None
+    st["event"], st["reason"] = "stop", "all_satisfied"
+    return st

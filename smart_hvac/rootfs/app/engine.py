@@ -178,10 +178,14 @@ class Engine:
         self._sanitize_prefs()
         self._sanitize_override_temps()
         self._sanitize_slope()
+        if "auto_stop" in self.st:  # 0.9.8: absent from older state files; malformed -> empty record
+            self.st["auto_stop"] = core.copy_auto_stop(self.st.get("auto_stop"))
         # After a restart every "off" is treated as a person's off (M1), like the pyscript version.
         # A slope pause that is still active is the app's own off, so those splits can resume.
+        # So is an active whole-house auto-stop (0.9.8).
         self.st["app_off"] = []
         self._recover_slope_app_off()
+        self._recover_auto_stop_app_off()
 
     # MA L1 (0.5.1): a state file that parses but has the wrong shape must not error every cycle.
     _STATE_DICTS = ("last_change", "last_cmd", "override_until", "history", "last_result", "events",
@@ -362,6 +366,13 @@ class Engine:
             if isinstance(rec, dict) and (rec.get("cmd_mode") or "off") == "off":
                 names.append(name)
         self.st["app_off"] = sorted(set(names))
+
+    def _recover_auto_stop_app_off(self):
+        st = self.st.get("auto_stop")
+        if not isinstance(st, dict) or not st.get("active"):
+            return
+        names = [n for n in (st.get("saved") or {}) if isinstance(n, str)]
+        self.st["app_off"] = sorted(set(self.st["app_off"]) | set(names))
 
     def save(self):
         if not self.state_path:
@@ -774,6 +785,16 @@ class Engine:
                     dropped.add(n)
             if slope.get("trigger_zone") not in names and slope.get("trigger_zone") is not None:
                 slope["trigger_zone"] = None
+        astop = self.st.get("auto_stop")
+        if isinstance(astop, dict):
+            for key in ("saved", "samples"):
+                bucket = astop.get(key)
+                if isinstance(bucket, dict):
+                    for n in [n for n in bucket if n not in names]:
+                        bucket.pop(n, None)
+                        dropped.add(n)
+            if astop.get("active") and not astop.get("saved"):
+                astop.update(active=False, since=None, mode=None)
         if dropped:
             log.info("pruned state of removed zones: %s", ", ".join(sorted(dropped)))
         return sorted(dropped)
@@ -1115,6 +1136,140 @@ class Engine:
             new.pop(key, None)
         self.st["window_slope"] = new
 
+    # ---------- whole-house auto-stop (0.9.8) ----------
+    def _auto_stop_on(self):
+        return self.opts.get("auto_stop_enabled") is True
+
+    def _auto_stop_level(self):
+        lvl = self.opts.get("auto_stop_sensitivity")
+        return lvl if lvl in core.AUTO_STOP_LEVELS else core.AUTO_STOP_DEFAULT_LEVEL
+
+    def _min_cycle_s(self):
+        m = _num(self.opts.get("min_cycle_min"))
+        return m * 60 if m is not None else core.DEFAULTS["min_cycle_s"]
+
+    def _auto_stop_target(self, item, st):
+        """(target, opposite, window) for one split from core.decide. While stopped the probe runs as if the
+        head were still in its saved mode, so a schedule change (e.g. pre-heat before wake) moves the target."""
+        inp = item["inp"]
+        rec = (st.get("saved") or {}).get(item["name"]) if st.get("active") else None
+        if rec:
+            ref = rec["mode"]
+            last_sp = rec.get("setpoint") if rec.get("setpoint") is not None else inp.get("last_setpoint")
+            probe = dict(inp, last_mode=ref, last_setpoint=last_sp, app_turned_off=True,
+                         last_mode_change_ts=st.get("since") or 0)
+        else:
+            ref = item["cl"]
+            probe = inp
+        r = core.decide(probe, item["z"], item["cfg"])
+        if r.get("reason") == "window_open":
+            return None, False, True
+        want, have = core.mode_family(r.get("mode")), core.mode_family(ref)
+        opposite = want in core.DIRECTIONS and have in core.DIRECTIONS and want != have
+        target = _num(r.get("setpoint"))
+        if target is None or opposite:
+            target = _num(probe.get("last_setpoint"))
+        return target, opposite, False
+
+    def _auto_stop_apply(self, staged, now, states):
+        """Whole-house auto-stop. Option off and no stop in progress -> nothing runs and no state is kept,
+        so the add-on behaves exactly like 0.9.7."""
+        prev = self.st.get("auto_stop")
+        was_active = isinstance(prev, dict) and prev.get("active") is True
+        on = self._auto_stop_on()
+        self._auto_stop_reason = None
+        if not on and not was_active:
+            self.st.pop("auto_stop", None)
+            return
+        st = core.copy_auto_stop(prev)
+        window_s = core.auto_stop_window_min(self._auto_stop_level()) * 60
+        min_cycle_s = self._min_cycle_s()
+        by = {item["name"]: item for item in staged}
+        blocked = None
+        slope = self.st.get("window_slope")
+        if isinstance(slope, dict) and slope.get("active"):
+            blocked = "window"
+        zones = {}
+        for z in self.opts.get("zones", []) or []:
+            name = z.get("name")
+            if z.get("heat_only") or not name:
+                continue  # radiant is not on the outdoor unit
+            item = by.get(name)
+            cs = states.get(z.get("climate")) or {}
+            changed = max(_num(self.st["last_change"].get(name)) or 0, _ts(cs.get("last_changed")) or 0) or None
+            if item is None:  # disabled / excluded split: still on the outdoor unit, but the app cannot write it
+                cl, _ = self._get(states, z.get("climate"))
+                zones[name] = {"member": True, "controlled": False, "mode": cl, "person_off": False}
+                continue
+            rows = [list(p) for p in (st["samples"].get(name) or [])]
+            if item.get("indoor") is not None:
+                if not rows or abs(rows[-1][0] - now) > 1e-3:
+                    rows.append([now, float(item["indoor"])])
+                st["samples"][name] = core.prune_slope_samples(rows, now, window_s, core.AUTO_STOP_SAMPLE_MARGIN_S)
+            else:
+                st["samples"].pop(name, None)
+            if item.get("defrost") or item.get("grace"):
+                blocked = blocked or "defrost"
+            if item.get("slope_force") or item["inp"].get("window_open") is True:
+                blocked = blocked or "window"
+            hold = self._override_active(name, now)
+            if hold:
+                blocked = blocked or "hold"
+            target, opposite, paused = self._auto_stop_target(item, st)
+            zones[name] = {
+                "member": True, "controlled": True, "mode": item["cl"], "indoor": item.get("indoor"),
+                "person_off": item["cl"] == "off" and name not in self.st["app_off"],
+                "target": target, "opposite": opposite, "paused": paused,
+                "slope": core.slope_f_per_h(st["samples"].get(name), now, window_s),
+                "changed_ts": changed,
+                "diverged": name in st["saved"] and bool(item.get("manual") or hold),
+            }
+        gates = {"enabled": on and self.enabled, "blocked": blocked, "zones": zones}
+        new = core.auto_stop_step(st, now, {"window_s": window_s, "min_cycle_s": min_cycle_s}, gates)
+        event, self._auto_stop_reason = new.pop("event", None), new.pop("reason", None)
+        if event == "stop":
+            log.info("auto-stop: every split at target for %d min; all heads off together (%s)",
+                     window_s // 60, new.get("mode"))
+        if new.get("active"):
+            for name, rec in new["saved"].items():
+                item = by.get(name)
+                if item is None:
+                    continue
+                item["auto_stop_force"] = True
+                item["auto_stop_result"] = {"action": "hold" if item["cl"] == "off" else "set", "mode": "off",
+                                            "setpoint": rec.get("setpoint"), "reason": "auto_stop",
+                                            "profile": None}
+        elif event == "restart":
+            log.info("auto-stop: restart all heads together in %s (%s)", st.get("mode"), new.get("restart_reason"))
+            for name, rec in st["saved"].items():
+                item = by.get(name)
+                zg = zones.get(name) or {}
+                if item is None or zg.get("diverged") or zg.get("paused") or item["cl"] == rec["mode"]:
+                    continue  # a person's change or an open window keeps its own path through decide
+                if item["cl"] != "off":
+                    continue  # never overwrite a mode someone else set
+                sp = zg.get("target") if zg.get("target") is not None else rec.get("setpoint")
+                item["auto_stop_force"] = True
+                item["auto_stop_result"] = {"action": "set", "mode": rec["mode"], "setpoint": sp,
+                                            "reason": "auto_stop_restart", "profile": None}
+            new.update(saved={}, since=None, mode=None)
+        self.st["auto_stop"] = new
+
+    def _auto_stop_public(self):
+        """/api/state block. Option off -> enabled false and nothing else is active."""
+        st = self.st.get("auto_stop") if isinstance(self.st.get("auto_stop"), dict) else {}
+        level = self._auto_stop_level()
+        return {
+            "enabled": self._auto_stop_on(), "sensitivity": level,
+            "window_min": core.auto_stop_window_min(level),
+            "active": bool(st.get("active")), "mode": st.get("mode") if st.get("active") else None,
+            "since": st.get("since") if st.get("active") else None,
+            "zones": sorted((st.get("saved") or {}).keys()) if st.get("active") else [],
+            "all_since": st.get("all_since"), "last_stop": st.get("last_stop"),
+            "last_restart": st.get("last_restart"), "restart_reason": st.get("restart_reason"),
+            "blocked": getattr(self, "_auto_stop_reason", None) if not st.get("active") else None,
+        }
+
     # ---------- main loop ----------
     def evaluate(self):
         states = {s["entity_id"]: s for s in self.ha.get_states()}
@@ -1346,12 +1501,18 @@ class Engine:
             })
         outdoor_f = self._outdoor_f(outdoor, wattr.get("temperature_unit") if w is not None else None)
         self._slope_apply(staged, now, vac, outdoor_f)
+        self._auto_stop_apply(staged, now, states)
         for s in staged:
             (name, z, cl, cattr, indoor, hum, setpt, inp, cfg, defrost, dact, stuck, aware, inferred) = (
                 s["name"], s["z"], s["cl"], s["cattr"], s["indoor"], s["hum"], s["setpt"], s["inp"], s["cfg"],
                 s["defrost"], s["dact"], s["stuck"], s["aware"], s["inferred"])
             grace = s["grace"]
-            r = s["slope_result"] if s.get("slope_force") else core.decide(inp, z, cfg)
+            if s.get("slope_force"):
+                r = s["slope_result"]
+            elif s.get("auto_stop_force"):
+                r = s["auto_stop_result"]
+            else:
+                r = core.decide(inp, z, cfg)
             if grace and not defrost and r.get("reason") == "defrosting":
                 # Post-defrost grace skips the setpoint chase without leaving a Defrosting badge up.
                 r = dict(r, reason="no_change")
@@ -1604,6 +1765,7 @@ class Engine:
                 "vacation_heat": self.vacation_targets()[0], "vacation_cool": self.vacation_targets()[1],
                 "radiant_floor_cap": _num(self.opts.get("radiant_floor_cap")) or core.DEFAULTS.get("radiant_floor_cap"),
                 "shared_mode": getattr(self, "shared_mode", None),
+                "auto_stop": self._auto_stop_public(),
                 "preferences": {z["name"]: self.preference_view(z) for z in self.opts.get("zones", []) or []},
                 "override_temps": {z["name"]: self.override_temp_view(z) for z in self.opts.get("zones", []) or []},
                 "zones": [{"name": z["name"], "label": z.get("label", z["name"]),
