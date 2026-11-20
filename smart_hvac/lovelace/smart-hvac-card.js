@@ -330,6 +330,13 @@ export function eventStrip(events, start, end, w = 600, h = 12) {
   return `<svg class="ev" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><rect width="${w}" height="${h}" rx="3" fill="#0f161d"/>${r}</svg>`;
 }
 
+/** Legend for the event strip: one swatch per kind shown in the window (pre-heat, hold, window ...), empty when none. */
+export function eventLegend(events, start, end) {
+  const kinds = [...new Set(eventSpans(events, start, end).map((s) => s.kind))].filter((k) => EVENT_COLORS[k]);
+  if (!kinds.length) return "";
+  return `<div class="leg evl">${kinds.map((k) => `<span><i style="background:${EVENT_COLORS[k]};height:7px"></i>${EVENT_LABEL[k]}</span>`).join("")}</div>`;
+}
+
 /** SVG graph markup (pure; testable). */
 export function graphSvg(s, tz, w = 600, h = 140) {
   const pad = { l: 30, r: 6, t: 6, b: 18 }, W = w - pad.l - pad.r, Hh = h - pad.t - pad.b;
@@ -357,7 +364,7 @@ export function graphSvg(s, tz, w = 600, h = 140) {
     xt += `<text x="${X(t)}" y="${h - 4}" fill="#6f8296" font-size="10" text-anchor="${i === 0 ? "start" : i === ticks ? "end" : "middle"}">${fmtTime(t, tz)}</text>`; }
   return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${grid}${bands}
     <path d="${line(s.outdoor)}" stroke="#6f8296" stroke-dasharray="4 3" fill="none" stroke-width="1.2"/>
-    <path d="${step(s.setpoint)}" stroke="#2fb3a0" fill="none" stroke-width="1.6"/>
+    <path d="${step(s.setpoint)}" stroke="#3e6ae1" fill="none" stroke-width="1.6"/>
     <path d="${line(s.indoor)}" stroke="#e8eef4" fill="none" stroke-width="1.8"/>${xt}</svg>`;
 }
 
@@ -366,7 +373,7 @@ const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => "&#" + c.charCodeA
 const CSS = `
 :host{display:block;font-family:var(--paper-font-body1_-_font-family,system-ui,sans-serif)}
 .wrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;font-family:var(--paper-font-body1_-_font-family,system-ui,sans-serif);color:#e8eef4}
-.card{background:#16202b;border-radius:16px;padding:12px 14px;box-shadow:0 2px 10px rgba(0,0,0,.35)}
+.card{background:#000;border:1px solid #1f1f1f;border-radius:16px;padding:12px 14px;box-shadow:0 2px 10px rgba(0,0,0,.35)}
 .zh{display:flex;justify-content:space-between;align-items:baseline}.zh h2{margin:0;font-size:17px;font-weight:500}.dim{color:#8a9aab;font-size:12px}
 .face{margin:10px auto 8px;border-radius:44px;background:radial-gradient(120% 90% at 50% 0%,#1f2933,#050708 70%);aspect-ratio:1.25;max-height:230px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
 .face.off .big{color:#5d6b78}
@@ -375,23 +382,23 @@ const CSS = `
 .step:disabled{opacity:.35}.pill{min-width:52px;padding:5px 12px;border-radius:18px;border:1.5px solid #3a4652;text-align:center;font-size:17px}
 .pill.heat{border-color:#6a6a6a}.pill.cool{border-color:#3fa7e0}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}.chip{font-size:12px;padding:3px 9px;border-radius:12px;border:1px solid #2c3a47;color:#b9c5d0}
-.chip.vac{border-color:#6a6a6a;color:#ffffff}.why{font-size:13px;color:#b9c5d0;min-height:18px}
+.chip.vac{border-color:#6a6a6a;color:#ffffff}.why{font-size:13px;color:#b9c5d0}
 /* slope-pause-start */
 .why.slope{color:#3e6ae1}
 /* slope-pause-end */
 .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.btn{font-size:12px;padding:5px 10px;border-radius:10px;border:1px solid #2c3a47;background:#0f161d;color:#e8eef4;cursor:pointer}
-.btn.sel{border-color:#2fb3a0;color:#7fe0d0}.btn:disabled{opacity:.35}
+.btn.sel{border-color:#3e6ae1;background:#3e6ae1;color:#fff}.btn:disabled{opacity:.35}
 .g{margin-top:8px}.g svg{width:100%;height:120px;display:block}
-.leg{display:flex;gap:10px;font-size:11px;color:#8a9aab;margin-top:2px}.leg i{display:inline-block;width:12px;height:3px;margin-right:4px;vertical-align:middle}
+.leg{display:flex;flex-wrap:wrap;gap:2px 10px;font-size:11px;color:#8a9aab;margin-top:2px}.leg i{display:inline-block;width:12px;height:3px;margin-right:4px;vertical-align:middle}
 .pre{display:flex;gap:8px;align-items:center;margin:0 0 10px}.pre .btn{font-size:14px;padding:7px 16px}.pre .dim{margin-left:auto}
-.next{font-size:12px;color:#7fe0d0;min-height:16px}.ev{width:100%;height:10px;display:block;margin-top:4px}.chip.dfr{border-color:#7fd6ff;color:#7fd6ff}
-.ro{margin:0 0 10px;padding:8px 12px;border-radius:10px;background:#1d2733;color:#f2f2f2;font-size:13px}.ro a{color:#7fe0d0}
+.next{font-size:12px;color:#9fb0c0}.why:empty,.next:empty{display:none}.ev{width:100%;height:10px;display:block;margin-top:4px}.chip.dfr{border-color:#7fd6ff;color:#7fd6ff}
+.ro{margin:0 0 10px;padding:8px 12px;border-radius:10px;background:#1d2733;color:#f2f2f2;font-size:13px}.ro a{color:#3e6ae1}
 @media (max-width:1300px) and (max-height:820px){.big{font-size:56px}.face{max-height:170px;margin:6px auto 4px}.g svg{height:84px}.chips{margin:4px 0}.card{padding:10px 12px}.pre{margin:0 0 8px}}
 `;
 
-const GCSS = `.gl{color:#e6edf3;display:flex;flex-direction:column;gap:6px}.gr{display:grid;grid-template-columns:1fr auto auto auto;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:#141a21}
+const GCSS = `.gl{color:#e6edf3;display:flex;flex-direction:column;gap:6px}.gr{display:grid;grid-template-columns:1fr auto auto auto;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:#000;border:1px solid #1f1f1f}
 .gn{font-size:15px}.gd{font-size:12px;color:#9fb0c0}.gd.h{color:#f2f2f2}.gt{font-size:34px;font-weight:300;min-width:56px;text-align:right}.gs{display:flex;align-items:center;gap:6px}
-.gp{min-width:44px;text-align:center;padding:4px 8px;border-radius:999px;border:1px solid #2fb3a0;color:#2fb3a0}.gp.heat{border-color:#6a6a6a;color:#ffffff}.gp.cool{border-color:#4aa3e0;color:#4aa3e0}
+.gp{min-width:44px;text-align:center;padding:4px 8px;border-radius:999px;border:1px solid #3e6ae1;color:#3e6ae1}.gp.heat{border-color:#6a6a6a;color:#ffffff}.gp.cool{border-color:#4aa3e0;color:#4aa3e0}
 .gh{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 8px}.gh .sep{flex:1}.gh .btn{min-height:48px;min-width:48px}
 `;
 
@@ -498,8 +505,8 @@ class SmartHvacCard extends Base {
       <div class="row">${modes.map((m) => `<button class="btn ${m === s.mode ? "sel" : ""}" data-i="${i}" data-mode="${m}" ${ro || (z.heat_only && vac && m !== "off") ? "disabled" : ""}>${modeLabel(m, z.heat_only)}</button>`).join("")}
       ${fans.map((f) => `<button class="btn ${f === a.fan_mode ? "sel" : ""}" data-i="${i}" data-fan="${esc(f)}" ${ro ? "disabled" : ""}>${esc(f)}</button>`).join("")}</div>
       <div class="g">${g ? graphSvg(g, tz) : '<div class="dim">Loading history…</div>'}</div>
-      ${g ? eventStrip(evs, g.start, g.end) : ""}
-      <div class="leg"><span><i style="background:#e8eef4"></i>Indoor</span><span><i style="background:#2fb3a0"></i>Setpoint</span><span><i style="background:rgba(117,117,117,.8);height:7px"></i>Heating</span><span><i style="background:#6f8296"></i>Outdoor</span><span><i style="background:rgba(127,214,255,.7);height:7px"></i>Defrost</span></div></div>`;
+      ${g ? eventStrip(evs, g.start, g.end) + eventLegend(evs, g.start, g.end) : ""}
+      <div class="leg"><span><i style="background:#e8eef4"></i>Indoor</span><span><i style="background:#3e6ae1"></i>Setpoint</span><span><i style="background:rgba(117,117,117,.8);height:7px"></i>Heating</span><span><i style="background:#6f8296"></i>Outdoor</span><span><i style="background:rgba(127,214,255,.7);height:7px"></i>Defrost</span></div></div>`;
   }
 
   async _shared(mode) {

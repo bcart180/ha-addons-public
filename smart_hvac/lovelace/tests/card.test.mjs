@@ -363,3 +363,14 @@ test("hold color is the neutral Tesla white, never orange or amber", async () =>
   assert.ok(!others.includes("#f2f2f2"), "hold stays distinct from every other event color");
   assert.doesNotMatch(SRC, /orange|amber|#d9902b|#e08a3c|#f0c27a|rgba\(201,\s*137,\s*43/i);
 });
+
+import { eventLegend, EVENT_COLORS as EC } from "../smart-hvac-card.js";
+test("0.9.10: event legend names each kind on the strip (pre-heat included), empty when none", () => {
+  assert.equal(eventLegend([], 100, 400), "");
+  const html = eventLegend([[150, "preheat", "start"], [200, "preheat", "end"], [250, "hold", "start"]], 100, 400);
+  assert.match(html, /Pre-heat/);
+  assert.match(html, /Hold/);
+  assert.ok(html.includes(EC.preheat) && html.includes("#f2f2f2"));
+  assert.ok(!/Defrost/.test(html));
+  assert.equal(eventLegend([[10, "preheat", "start"], [20, "preheat", "end"]], 100, 400), "");
+});

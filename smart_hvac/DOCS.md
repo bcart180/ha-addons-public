@@ -60,7 +60,7 @@ Do not Start until the go-live checklist below is done; Start alone is still dry
   After `manual_opposite` the other stopped splits do not follow the person: they stay the app's off (reason `auto_stop_wait`, "Off while another room runs the other way") until the person's hold ends or that split goes back to the stopped direction.  Then they return to the normal decision.  So the group is never driven to the person's direction and back, and never runs opposite modes.  This survives an add-on restart; `/api/state` `auto_stop.parked` lists those splits.
   A split that goes unknown or unavailable during a stop is not written; it stays in the stop and the cycle carries on for every other zone.  `auto_stop.blocked` reads `sensor` while a configured room sensor is missing or stale, and `unavailable` while a split's mode is unknown.
   The panels say "Idle" only once a split actually reads off.  If an off write has not taken yet, the live mode is shown and the app retries each cycle.
-  The stop is the app's own off.  It does not start a hold and is not taken as a manual change.  It is stored in the add-on state file, so after a restart the stopped splits are still the app's off and can restart.  While stopped the reason is `auto_stop`, shown as "Idle, all rooms at target" on Climate, the thermostat page, the classic page, and the Lovelace card.  `/api/state` adds `auto_stop`: `{enabled, sensitivity, window_min, active, mode, since, zones, all_since, last_stop, last_restart, restart_reason, blocked}`.
+  The stop is the app's own off.  It does not start a hold and is not taken as a manual change.  It is stored in the add-on state file, so after a restart the stopped splits are still the app's off and can restart.  While stopped the reason is `auto_stop`, shown as "Idle, all rooms at target" on Climate, the thermostat page, the classic page, and the Lovelace card.  `/api/state` adds `auto_stop`: `{enabled, sensitivity, window_min, active, mode, since, zones, all_since, last_stop, last_restart, restart_reason, blocked, parked}`.
   With the option off and no stop in progress nothing runs and nothing is stored, so behavior matches 0.9.7.  Rollback: turn `auto_stop_enabled` off first (the splits restart), then install 0.9.7.  0.9.7 treats every off as a person's off after a restart, so do not roll back while a stop is active.  0.9.7's schema does not know the two new keys, so remove them from the Configuration tab before that rollback.
 - **Open window from temperature slope (0.9.5)**: `window_slope` (default **on**). Detection uses each mini split that has an `indoor` sensor and no contact `window` sensor. The pause and the resume still apply to every mini split the app controls, including a partner that has a contact sensor or no room sensor. Radiant (`heat_only`) zones are excluded. Set `window_slope: false` to match 0.9.4.
   The signal is only that room sensor, as samples of `(last_changed, value)`. The slope is `(temperature now − temperature held 20 minutes ago) / 20 minutes`, in °F/hr. It is undefined until the sensor history covers the lookback, so a gap (unavailable, non-numeric, or stale via `indoor_stale_min`) does not compare across the gap. The unit's `current_temperature` is never used, including the stale fallback.
@@ -96,8 +96,8 @@ Do not Start until the go-live checklist below is done; Start alone is still dry
 (-/+), mode, fan and power in the ☰ menu, and the app's state: profile, "App in control" or "Manual hold until …",
 the reason, outdoor temp, and for the bath floor the 90-min cap automation state and the room cap.
 Any card change = manual hold for `override_hours` (default 2). **Resume auto** hands the zone back immediately.
-Cards are read-only when the app is off or in dry run. The graph shows indoor (white), setpoint (teal step),
-heating (amber band) and outdoor (dashed), 24h or 7d.
+Cards are read-only when the app is off or in dry run. The graph shows indoor (white), setpoint (blue `#3E6AE1` step),
+heating (gray band) and outdoor (dashed), 24h or 7d.  Under it, the event strip has its own legend for the kinds shown (pre-heat, hold, window, vacation, defrost).
 Note: turning a unit **off** from the card is a person's off, so the app will not turn it back on (M1) — use **On**.
 
 ## Vacation mode (0.3.2)
@@ -109,7 +109,7 @@ The old `vacation_mode_handler` automation is left as-is until vacation mode is 
 ## Climate screen (0.9.0)
 The ingress panel (`/`) is the Climate screen: large temperatures, the schedule, and a history graph. It reads `/api/state` when it opens and does not change a hold or a thermostat by being opened.
 
-Color (0.9.2). The screen stays black, with `#414141` cards and `#757575` for a selected control. Blue `#005aff` marks an active control and the target line. Green `#3ddc5a` is only the current indoor temperature. Heating, cooling, a temporary hold, and defrost are told by their words. There is no amber, gold, or colored left stripe. Each room shows its history graph with the temperature.
+Color (0.9.2). The screen stays black, with `#414141` cards and `#757575` for a selected control. Blue `#3E6AE1` (0.9.10; was `#005aff`) marks an active control and the target line. Green `#3ddc5a` is only the current indoor temperature. Heating, cooling, a temporary hold, and defrost are told by their words. There is no amber, gold, or colored left stripe. Each room shows its history graph with the temperature.
 
 The controls:
 

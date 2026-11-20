@@ -1,3 +1,11 @@
+## 0.9.10 — 2026-11-20
+
+- Lovelace card: black card background (`#000`, thin `#1f1f1f` edge) instead of `#16202b`.  Selected buttons, the setpoint line and legend, the glance mode pill and links use the accent blue `#3E6AE1` instead of teal.  The "next change" line is neutral gray.
+- Lovelace card: the event strip under the graph gets a legend with one entry per kind shown, so the pink pre-heat bar (`#e0637a`) is labeled "Pre-heat".  The hold stays white `#f2f2f2`, distinct from defrost `#7fd6ff`.
+- Lovelace card: empty status lines take no space, removing the gap under the mode chip.
+- Climate, thermostat and classic screens: active blue is `#3E6AE1` (was `#005aff`), including the target line and the cooling band.
+- Still no orange or amber; the test now also checks the black background and the `#3E6AE1` accent.  No behavior, option or control changes.  Rollback: install 0.9.9.
+
 ## 0.9.9 — 2026-11-20
 
 - Fix: setpoint writes to a mini split that only takes a target range (low/high) failed every cycle with HTTP 400 when the head's other bound sat at its max (88 °F, set at the remote or the vendor app).  88 °F is 31.1 °C, past the head's native 31.0 °C limit, so Home Assistant rejected the whole call.  Smart HVAC now moves a kept bound that sits at or past min/max one step inside (87 °F high in heat, 51 °F low in cool), the same rule 0.8.6 already used for an unknown bound.  A bound already inside is kept exactly as before.
