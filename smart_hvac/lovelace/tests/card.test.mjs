@@ -352,4 +352,6 @@ test("0.9.8 auto-stop: an app stop reads Idle with the reason, a person's off st
   const row2 = glanceRow({ states: { [LR.entity]: on } }, LR,
     { zones: [{ name: LR.zone }], last: { zones: { [LR.zone]: { reason: "auto_stop" } } } }, false, "UTC");
   assert.notEqual(row2.doing, "Idle, all rooms at target");
+  // MA L-4: a head parked while a person runs another room the other way
+  assert.equal(nextLine({ reason: "auto_stop_wait" }, "UTC", null), "Off while another room runs the other way");
 });
