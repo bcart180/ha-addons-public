@@ -1,3 +1,11 @@
+## 0.9.8 — 2026-11-20
+
+- Whole-house auto-stop, off by default (`auto_stop_enabled: false`).  When every running mini split is at or past its target and the room trend is flat or favorable for the whole detection window, all heads turn off together.  They restart together, in the same heat or cool mode, when a room drifts more than 0.5°F past its target or is projected to within the window.  Modeled on Versatile Thermostat's auto-start/stop for heat pumps.
+- `auto_stop_sensitivity`: `slow` (about 30 min, default), `very_slow` (60), `medium` (15), `fast` (7).  `min_cycle_min` applies to the stop and to the restart.  No stop during defrost or its grace, an open window (contact or slope pause), a manual hold, or while a split the app cannot write is running.  The radiant floor is never included.
+- The stop is the app's own off, not a manual takeover.  It survives an add-on restart.  A person who turns a split on during a stop gets a normal hold and the other splits restart in the same mode.  The shared-mode lock still runs after it, so the heads are never asked for opposite modes.
+- While stopped, Climate, the thermostat page, the classic page, and the Lovelace card show "Idle, all rooms at target" in the blue accent.  `/api/state` adds an `auto_stop` block.
+- Option off: nothing runs and nothing is stored, so 0.9.7 behavior is unchanged.  Rollback: turn the option off (the splits restart), remove the two new keys, then install 0.9.7.
+
 ## 0.9.7 — 2026-11-14
 
 - Spare bathroom heater notifications now fire only for real problems. A no-rise trip that later auto-clears, the auto-clear itself, and the 2 h cooldown are logged only. A notification is still sent when a later post-trip reading shows the room did not rise 1°F (the heater did not warm the room), when a pre-0.9.6 latch has no trip info so it cannot auto-clear, or for a stale or missing sensor, the 80°F cap, a plug on when it should be off, a relay fault, the 8 h / 24 h lockout, a clock jump, an unreadable state file, a door left open, or a low-temp warning.
