@@ -306,7 +306,7 @@ export function nextLine(zr, tz, holdUntil) {
   return REASON[zr.reason] || "";
 }
 
-export const EVENT_COLORS = { hold: "#d9902b", window: "#3fa7e0", vacation: "#b07ad9", defrost: "#7fd6ff", preheat: "#e0637a", defrost_stuck: "#ff3b3b" };
+export const EVENT_COLORS = { hold: "#f2f2f2", window: "#3fa7e0", vacation: "#b07ad9", defrost: "#7fd6ff", preheat: "#e0637a", defrost_stuck: "#ff3b3b" };
 const EVENT_LABEL = { hold: "Hold", window: "Window", vacation: "Vacation", defrost: "Defrost", preheat: "Pre-heat", defrost_stuck: "Defrost stuck > 30 min" };
 
 /** [ts, kind, start|end] events -> [{kind, t1, t2}] spans clipped to the window (open spans run to end). */
@@ -347,7 +347,7 @@ export function graphSvg(s, tz, w = 600, h = 140) {
     .map(([t, v], i) => `${i ? "L" : "M"}${X(t).toFixed(1)},${Y(v).toFixed(1)}`).join("");
   let bands = "";
   s.heating.forEach(([t, on], i) => { if (!on) return; const t2 = (s.heating[i + 1] || [s.end])[0];
-    bands += `<rect x="${X(t).toFixed(1)}" y="${pad.t}" width="${Math.max(1, X(t2) - X(t)).toFixed(1)}" height="${Hh}" fill="rgba(201,137,43,.28)"/>`; });
+    bands += `<rect x="${X(t).toFixed(1)}" y="${pad.t}" width="${Math.max(1, X(t2) - X(t)).toFixed(1)}" height="${Hh}" fill="rgba(117,117,117,.45)"/>`; });
   (s.defrost || []).forEach(([t, on], i) => { if (!on) return; const t2 = (s.defrost[i + 1] || [s.end])[0];
     bands += `<rect class="dfr" x="${X(t).toFixed(1)}" y="${pad.t}" width="${Math.max(2, X(t2) - X(t)).toFixed(1)}" height="${Hh}" fill="rgba(127,214,255,.35)"/><text x="${(X(t) + 2).toFixed(1)}" y="${pad.t + 10}" fill="#7fd6ff" font-size="9">Defrosting</text>`; });
   let grid = "";
@@ -373,9 +373,9 @@ const CSS = `
 .status{font-size:13px;color:#b9c5d0}.big{font-size:72px;font-weight:200;line-height:1}
 .sp{display:flex;gap:12px;align-items:center}.step{width:36px;height:36px;border-radius:50%;border:1px solid #3a4652;background:#0b0f13;color:#e8eef4;font-size:20px;cursor:pointer}
 .step:disabled{opacity:.35}.pill{min-width:52px;padding:5px 12px;border-radius:18px;border:1.5px solid #3a4652;text-align:center;font-size:17px}
-.pill.heat{border-color:#d9902b}.pill.cool{border-color:#3fa7e0}
+.pill.heat{border-color:#6a6a6a}.pill.cool{border-color:#3fa7e0}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}.chip{font-size:12px;padding:3px 9px;border-radius:12px;border:1px solid #2c3a47;color:#b9c5d0}
-.chip.vac{border-color:#d9902b;color:#f0c27a}.why{font-size:13px;color:#b9c5d0;min-height:18px}
+.chip.vac{border-color:#6a6a6a;color:#ffffff}.why{font-size:13px;color:#b9c5d0;min-height:18px}
 /* slope-pause-start */
 .why.slope{color:#3e6ae1}
 /* slope-pause-end */
@@ -385,13 +385,13 @@ const CSS = `
 .leg{display:flex;gap:10px;font-size:11px;color:#8a9aab;margin-top:2px}.leg i{display:inline-block;width:12px;height:3px;margin-right:4px;vertical-align:middle}
 .pre{display:flex;gap:8px;align-items:center;margin:0 0 10px}.pre .btn{font-size:14px;padding:7px 16px}.pre .dim{margin-left:auto}
 .next{font-size:12px;color:#7fe0d0;min-height:16px}.ev{width:100%;height:10px;display:block;margin-top:4px}.chip.dfr{border-color:#7fd6ff;color:#7fd6ff}
-.ro{margin:0 0 10px;padding:8px 12px;border-radius:10px;background:#1d2733;color:#f0c27a;font-size:13px}.ro a{color:#7fe0d0}
+.ro{margin:0 0 10px;padding:8px 12px;border-radius:10px;background:#1d2733;color:#f2f2f2;font-size:13px}.ro a{color:#7fe0d0}
 @media (max-width:1300px) and (max-height:820px){.big{font-size:56px}.face{max-height:170px;margin:6px auto 4px}.g svg{height:84px}.chips{margin:4px 0}.card{padding:10px 12px}.pre{margin:0 0 8px}}
 `;
 
 const GCSS = `.gl{color:#e6edf3;display:flex;flex-direction:column;gap:6px}.gr{display:grid;grid-template-columns:1fr auto auto auto;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:#141a21}
-.gn{font-size:15px}.gd{font-size:12px;color:#9fb0c0}.gd.h{color:#d9902b}.gt{font-size:34px;font-weight:300;min-width:56px;text-align:right}.gs{display:flex;align-items:center;gap:6px}
-.gp{min-width:44px;text-align:center;padding:4px 8px;border-radius:999px;border:1px solid #2fb3a0;color:#2fb3a0}.gp.heat{border-color:#e08a3c;color:#e08a3c}.gp.cool{border-color:#4aa3e0;color:#4aa3e0}
+.gn{font-size:15px}.gd{font-size:12px;color:#9fb0c0}.gd.h{color:#f2f2f2}.gt{font-size:34px;font-weight:300;min-width:56px;text-align:right}.gs{display:flex;align-items:center;gap:6px}
+.gp{min-width:44px;text-align:center;padding:4px 8px;border-radius:999px;border:1px solid #2fb3a0;color:#2fb3a0}.gp.heat{border-color:#6a6a6a;color:#ffffff}.gp.cool{border-color:#4aa3e0;color:#4aa3e0}
 .gh{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 8px}.gh .sep{flex:1}.gh .btn{min-height:48px;min-width:48px}
 `;
 
@@ -499,7 +499,7 @@ class SmartHvacCard extends Base {
       ${fans.map((f) => `<button class="btn ${f === a.fan_mode ? "sel" : ""}" data-i="${i}" data-fan="${esc(f)}" ${ro ? "disabled" : ""}>${esc(f)}</button>`).join("")}</div>
       <div class="g">${g ? graphSvg(g, tz) : '<div class="dim">Loading history…</div>'}</div>
       ${g ? eventStrip(evs, g.start, g.end) : ""}
-      <div class="leg"><span><i style="background:#e8eef4"></i>Indoor</span><span><i style="background:#2fb3a0"></i>Setpoint</span><span><i style="background:rgba(201,137,43,.6);height:7px"></i>Heating</span><span><i style="background:#6f8296"></i>Outdoor</span><span><i style="background:rgba(127,214,255,.7);height:7px"></i>Defrost</span></div></div>`;
+      <div class="leg"><span><i style="background:#e8eef4"></i>Indoor</span><span><i style="background:#2fb3a0"></i>Setpoint</span><span><i style="background:rgba(117,117,117,.8);height:7px"></i>Heating</span><span><i style="background:#6f8296"></i>Outdoor</span><span><i style="background:rgba(127,214,255,.7);height:7px"></i>Defrost</span></div></div>`;
   }
 
   async _shared(mode) {

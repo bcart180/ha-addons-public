@@ -1,3 +1,7 @@
+## Unreleased
+
+- Lovelace card: no orange or amber left.  The hold color (event strip and the glance "Hold" line) is now the neutral white `#f2f2f2`, the same `--hold` token the Climate panel already uses.  The heat pill, heating band and legend, vacation chip, and practice-mode notice use the panels' neutral grays and white.  The blue accent stays reserved for app status.  No behavior or option changes.  Ships with the next version bump.
+
 ## 0.9.8 — 2026-11-20
 
 - Whole-house auto-stop, off by default (`auto_stop_enabled: false`).  When every running mini split is at or past its target and the room trend is flat or favorable for the whole detection window, all heads turn off together.  They restart together, in the same heat or cool mode, when a room drifts more than 0.5°F past its target or is projected to within the window.  Modeled on Versatile Thermostat's auto-start/stop for heat pumps.
