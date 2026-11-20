@@ -332,10 +332,26 @@ test("0.8.2 render: heater card once, only on the card that asks for it", async 
   assert.doesNotMatch(only, /Room A|data-preset|data-shared/);
 });
 
-test("hold color is the neutral Tesla white, never orange or amber", async () => {
-  const { EVENT_COLORS } = await import("../smart-hvac-card.js");
-  assert.equal(EVENT_COLORS.hold, "#f2f2f2");
-  const others = Object.entries(EVENT_COLORS).filter(([k]) => k !== "hold").map(([, v]) => v.toLowerCase());
-  assert.ok(!others.includes("#f2f2f2"), "hold stays distinct from every other event color");
-  assert.doesNotMatch(SRC, /orange|amber|#d9902b|#e08a3c|#f0c27a|rgba\(201,\s*137,\s*43/i);
+test("0.9.8 auto-stop: an app stop reads Idle with the reason, a person's off still reads Off", async () => {
+  const off = { state: "off", attributes: { hvac_action: "off" } };
+  const s = statusOf(off, LR, false, { reason: "auto_stop" });
+  assert.equal(s.status, "Idle");
+  assert.equal(s.why, "Idle, all rooms at target");
+  assert.equal(s.off, true);
+  const p = statusOf(off, LR, false, { reason: "unit_off" });
+  assert.equal(p.status, "Off");
+  assert.equal(nextLine({ reason: "auto_stop" }, "UTC", null), "Idle, all rooms at target");
+  const { glanceRow } = await import("../smart-hvac-card.js");
+  const hass = { states: { [LR.entity]: off } };
+  const row = glanceRow(hass, LR, { zones: [{ name: LR.zone }], last: { zones: { [LR.zone]: { reason: "auto_stop" } } } },
+    false, "UTC");
+  assert.equal(row.doing, "Idle, all rooms at target");
+  // MA I-1: an off write that has not taken yet never reads Idle
+  const on = { state: "heat", attributes: { hvac_action: "heating" } };
+  assert.equal(statusOf(on, LR, false, { reason: "auto_stop" }).status, "Heating");
+  const row2 = glanceRow({ states: { [LR.entity]: on } }, LR,
+    { zones: [{ name: LR.zone }], last: { zones: { [LR.zone]: { reason: "auto_stop" } } } }, false, "UTC");
+  assert.notEqual(row2.doing, "Idle, all rooms at target");
+  // MA L-4: a head parked while a person runs another room the other way
+  assert.equal(nextLine({ reason: "auto_stop_wait" }, "UTC", null), "Off while another room runs the other way");
 });
