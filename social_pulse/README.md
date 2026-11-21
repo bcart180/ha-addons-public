@@ -1,12 +1,12 @@
 # Social Pulse
 
-Read-only sidebar panel. X engagement for the accounts you list, and a per-site Cloudflare card for each zone you list. The household sites are `winchestergetaway.com` and `hideawaytavernlcv.com`. Other zones appear as their own cards. Pure-black page (`#000000`) with Trading Desk reading size and 16px cards. Purple, orange, yellow, red, pink, green, and cyan mark categories and sit next to written labels.
+Read-only sidebar panel. X engagement for the accounts you list, and a per-site Cloudflare card for each zone you list. The household sites are `winchestergetaway.com` and `hideawaytavernlcv.com`. Other zones appear as their own cards. Pure-black page (`#000000`) with Trading Desk reading size and 16px cards. Purple, blue, indigo, red, pink, green, and cyan mark categories and sit next to written labels.
 
 Nothing on a card is estimated. A missing token, zone, or Web Analytics field stays empty or "Not available".
 
 ## Trial
 
-`/ui-trial` is a BRYSON-UI-4 presentation of the same snapshot. Production `/`, `/index.html`, `/app.css`, `/app.js`, and `/soft-slate.css` stay the 0.3.1 page. The trial calls `GET api/snapshot` on the add-on root. This version does not add a second snapshot API.
+`/ui-trial` is a BRYSON-UI-4 presentation of the same snapshot. Production `/`, `/index.html`, `/app.css`, `/app.js`, and `/soft-slate.css` use the BRYSON-UI-4 presentation (from 0.3.3). The trial calls `GET api/snapshot` on the add-on root. This version does not add a second snapshot API.
 
 ## Tokens (Configuration only; password fields, stored in the add-on's /data/options.json)
 

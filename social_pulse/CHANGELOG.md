@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.3 — 2026-11-20
+
+- Style only. Production `/` is now BRYSON-UI-4: page and cards are `#000000`, accent `#3e6ae1`, and orange / amber / gold tokens are gone. Category colors stay distinct (purple, blue, indigo, red, pink, green, cyan) and still have written labels.
+- Snapshot API, range control, and `/ui-trial` routes are unchanged.
+
 ## 0.3.2 — 2026-11-11
 
 - Trial path `/ui-trial` serves a BRYSON-UI-4 presentation of the same snapshot page. Production `/`, `/index.html`, `/app.css`, `/app.js`, and `/soft-slate.css` are unchanged from 0.3.1.
