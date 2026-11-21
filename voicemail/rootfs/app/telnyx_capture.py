@@ -1,4 +1,4 @@
-"""Telnyx carrier recording -> private file -> xAI transcript (CallCatch 0.8.0, connection allowlist 0.8.1).
+"""Telnyx carrier recording -> private file -> xAI transcript (CallCatch 0.8.0, allowlist 0.8.1, download retries 0.8.2).
 
 Telnyx records the bridged call from answer (dual channel).  This module never
 places or answers a call.  Two inputs land on one job:
@@ -72,7 +72,11 @@ LOOKBACK_S = 6 * 3600
 POLL_OVERLAP_S = 120
 LEASE_S = 90
 TRANSCRIPT_MAX = 60_000
-TERMINAL_DOWNLOAD = frozenset({"oversize", "bad-type", "ssrf"})
+# bad-type is retried (0.8.2): three attempts, then terminal.
+BAD_TYPE_TRIES = 3
+BAD_TYPE_DELAYS = (5, 15, 45)
+TERMINAL_DOWNLOAD = frozenset({"oversize", "ssrf"})
+HARD_REJECT_TYPES = frozenset({"text/html", "application/json", "application/xml"})
 _STATE_RANK = {"wait": 0, "download": 1, "transcribe": 2, "attach": 3, "delete": 4, "done": 5, "dead": 5,
                "skipped": 5}
 CLOSED = frozenset({"done", "dead", "skipped"})
@@ -207,9 +211,46 @@ def magic_ok(blob: bytes) -> bool:
     return blob[0] == 0xFF and (blob[1] & 0xE0) == 0xE0
 
 
+def content_type_base(value: str) -> str:
+    return str(value or "").split(";", 1)[0].strip().lower()
+
+
 def content_type_ok(value: str) -> bool:
-    base = str(value or "").split(";", 1)[0].strip().lower()
-    return base in ALLOWED_TYPES
+    return content_type_base(value) in ALLOWED_TYPES
+
+
+def content_type_hard_reject(value: str) -> bool:
+    """HTML, JSON, or XML is never accepted, even if the bytes look like audio."""
+    return content_type_base(value) in HARD_REJECT_TYPES
+
+
+def content_type_for_log(value: str) -> str:
+    """A short type token for logs.  Never a URL or a body."""
+    text = content_type_base(value).replace("\n", " ").replace("\r", " ")
+    return (text[:80] or "-")
+
+
+def log_fetch_decision(error: str, check: str, http_status: int, content_type: str, n_bytes: int) -> None:
+    """Log why a download was rejected.  No body bytes and no URL."""
+    log.info(
+        "recording fetch %s check=%s http=%s type=%s bytes=%s",
+        error, check or "-", int(http_status), content_type_for_log(content_type), int(n_bytes),
+    )
+
+
+def classify_audio(content_type: str, blob: bytes) -> tuple[str, str]:
+    """Return (error, check).  Empty error means the bytes are acceptable audio.
+
+    A valid RIFF/WAVE, ID3, or MPEG frame is accepted even when the Content-Type
+    is unexpected, unless the type is text/html, application/json, or
+    application/xml (those fail as check=header).  Wrong type and wrong magic
+    is still a failure (check=magic).
+    """
+    if content_type_hard_reject(content_type):
+        return "bad-type", "header"
+    if not magic_ok(blob):
+        return "bad-type", "magic"
+    return "", ""
 
 
 def _iso(value: Any) -> str:
@@ -316,20 +357,28 @@ def turns_from_stt(result: dict, channels: str) -> str:
     return str(result.get("text") or "").strip()[:TRANSCRIPT_MAX]
 
 
-def interpret_fetch(result: Any) -> tuple[str, bytes]:
+def interpret_fetch(result: Any, *, content_type: str = "", http_status: int = 0) -> tuple[str, bytes]:
     """Return (error, body).  error is empty when the bytes are acceptable audio."""
     if isinstance(result, dict):
         err = str(result.get("error") or "download")
         if err not in {"oversize", "bad-type", "ssrf", "redirect", "download", "empty"}:
             err = "download"
+        if err == "bad-type":
+            check = str(result.get("check") or "magic")
+            status = int(result.get("http_status") or http_status or 0)
+            n_bytes = int(result.get("bytes") or 0)
+            ctype = str(result.get("content_type") or content_type or "")
+            log_fetch_decision(err, check, status, ctype, n_bytes)
         return err, b""
     if not isinstance(result, (bytes, bytearray)) or not result:
         return "empty" if result == b"" else "download", b""
     blob = bytes(result)
     if len(blob) > MAX_AUDIO:
         return "oversize", b""
-    if not magic_ok(blob):
-        return "bad-type", b""
+    err, check = classify_audio(content_type, blob)
+    if err:
+        log_fetch_decision(err, check, http_status, content_type, len(blob))
+        return err, b""
     return "", blob
 
 
@@ -792,12 +841,21 @@ class Capture:
                 job["tries"] = int(job.get("tries") or 0) + 1
             job["last_error"] = code
             job["lease_until"] = 0
-            if terminal or (code not in ("stt-unconfigured", "no-key") and int(job["tries"]) >= MAX_TRIES):
+            tries = int(job.get("tries") or 0)
+            is_terminal = terminal
+            if code == "bad-type" and not is_terminal:
+                is_terminal = tries >= BAD_TYPE_TRIES
+            if is_terminal or (code not in ("stt-unconfigured", "no-key") and tries >= MAX_TRIES):
                 job["state"] = "dead"
                 job["done_at"] = clock
             else:
                 step = int(job.get("tries") or 1)
-                delay = 300 if code in ("stt-unconfigured", "no-key") else min(30 * (2 ** max(0, step - 1)), 1800)
+                if code == "bad-type":
+                    delay = BAD_TYPE_DELAYS[min(step, len(BAD_TYPE_DELAYS)) - 1]
+                elif code in ("stt-unconfigured", "no-key"):
+                    delay = 300
+                else:
+                    delay = min(30 * (2 ** max(0, step - 1)), 1800)
                 job["next_at"] = clock + delay
         self._update(jid, fn)
         log.info("recording %s from=%s", code, "none")
@@ -1340,25 +1398,27 @@ class HttpNet:
 
         try:
             async with self.session.get(url, allow_redirects=False, timeout=ClientTimeout(total=60)) as resp:
+                ctype = resp.headers.get("Content-Type") or "application/octet-stream"
                 if resp.status in (301, 302, 303, 307, 308):
                     await _discard(resp)
-                    return {"error": "redirect"}
+                    return {"error": "redirect", "http_status": resp.status, "content_type": ctype, "bytes": 0}
                 if resp.status != 200:
-                    log.warning("recording fetch http %s", resp.status)
+                    log.warning("recording fetch http %s type=%s", resp.status, content_type_for_log(ctype))
                     await _discard(resp)
-                    return {"error": "download"}
-                if not content_type_ok(resp.headers.get("Content-Type") or "application/octet-stream"):
-                    await _discard(resp)
-                    return {"error": "bad-type"}
+                    return {"error": "download", "http_status": resp.status, "content_type": ctype, "bytes": 0}
                 declared = resp.headers.get("Content-Length") or ""
                 if declared.isdigit() and int(declared) > MAX_AUDIO:
-                    return {"error": "oversize"}
+                    return {"error": "oversize", "http_status": resp.status, "content_type": ctype, "bytes": 0}
                 buf = bytearray()
                 async for chunk in resp.content.iter_chunked(65536):
                     buf += chunk
                     if len(buf) > MAX_AUDIO:
-                        return {"error": "oversize"}
-                return bytes(buf)
+                        return {"error": "oversize", "http_status": resp.status, "content_type": ctype, "bytes": len(buf)}
+                blob = bytes(buf)
+                err, check = classify_audio(ctype, blob)
+                if err:
+                    return {"error": err, "check": check, "http_status": resp.status, "content_type": ctype, "bytes": len(blob)}
+                return blob
         except Exception as exc:  # noqa: BLE001
             log.warning("recording fetch %s", type(exc).__name__)
             return {"error": "download"}
