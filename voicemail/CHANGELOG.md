@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.2 — 2026-11-21
+
+- **Recording download: accept audio by magic, retry `bad-type`.**  A 200 body whose bytes are a valid RIFF/WAVE, ID3, or MPEG frame is kept even when the Content-Type is unexpected.  `text/html`, `application/json`, and `application/xml` are still rejected (`check=header`), even if the bytes look like audio.  A wrong type whose bytes are also not audio still fails (`check=magic`).  `bad-type` is no longer terminal on the first try: three attempts, waiting about 5 s then 15 s between them; the third failure is terminal.  The log records the Content-Type, which check failed, the HTTP status, and the byte count.  It never logs the body or the URL.
+
 ## 0.8.1 — 2026-11-20
 
 - **Connection allowlist for carrier recordings (fail closed).**  New option `telnyx_connection_ids`: the Telnyx connection ids (comma or space separated, digits only, up to 10) whose recordings CallCatch may read.  Blank, too many, or any bad token means capture stays off: no poll, no job, no download, no transcript, no email, and no remote delete.  Capture now needs both API keys **and** a valid allowlist; with the keys set and the list blank, CallCatch logs one warning and does not hold email for a recording.

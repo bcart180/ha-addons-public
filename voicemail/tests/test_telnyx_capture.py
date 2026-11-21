@@ -838,3 +838,103 @@ def test_failure_after_email_is_not_a_details_change(tmp_path):
     assert row["capture_failed"] is True and row["capture_error"] == "stt"
     assert "could not be transcribed" not in (row.get("transcript") or "")
     assert row["telnyx_recording"] == REC
+
+
+
+def test_classify_audio_accepts_unexpected_type_with_valid_magic():
+    blob = wav_bytes()
+    err, check = telnyx_capture.classify_audio("binary/octet-stream", blob)
+    assert err == "" and check == ""
+    err, blob_out = telnyx_capture.interpret_fetch(blob, content_type="binary/octet-stream")
+    assert err == "" and blob_out == blob
+    err, blob_out = telnyx_capture.interpret_fetch(blob, content_type="audio/wav; charset=binary")
+    assert err == "" and blob_out == blob
+
+
+def test_classify_audio_rejects_html_json_xml_even_with_valid_magic():
+    blob = wav_bytes()
+    for ctype in ("text/html", "text/html; charset=utf-8", "application/json", "application/xml"):
+        err, check = telnyx_capture.classify_audio(ctype, blob)
+        assert err == "bad-type" and check == "header", ctype
+
+
+def test_classify_audio_rejects_wrong_type_and_wrong_magic():
+    blob = b"NOT-AUDIO-XXXX"
+    err, check = telnyx_capture.classify_audio("binary/octet-stream", blob)
+    assert err == "bad-type" and check == "magic"
+    err, check = telnyx_capture.classify_audio("audio/wav", blob)
+    assert err == "bad-type" and check == "magic"
+
+
+def test_bad_type_log_has_type_check_status_and_bytes_but_not_body_or_url(caplog):
+    caplog.set_level(logging.INFO)
+    marker = b"RIFF????SECRET_BODY_MARKER_SHOULD_NEVER_BE_LOGGED"
+    # Force a non-audio payload that is long enough to be distinct in a log.
+    blob = marker + b"\x00" * 16
+    telnyx_capture.interpret_fetch(blob, content_type="binary/octet-stream", http_status=200)
+    text = " ".join(caplog.messages)
+    assert "check=magic" in text
+    assert "http=200" in text
+    assert "type=binary/octet-stream" in text
+    assert f"bytes={len(blob)}" in text
+    assert "SECRET_BODY_MARKER_SHOULD_NEVER_BE_LOGGED" not in text
+    assert "telephony-recorder-prod" not in text
+    assert "https://" not in text
+    assert URL not in text
+
+
+def test_header_reject_log_names_check_header(caplog):
+    caplog.set_level(logging.INFO)
+    blob = wav_bytes()
+    err, out = telnyx_capture.interpret_fetch(
+        {"error": "bad-type", "check": "header", "http_status": 200,
+         "content_type": "application/json; charset=utf-8", "bytes": len(blob)},
+    )
+    assert err == "bad-type" and out == b""
+    text = " ".join(caplog.messages)
+    assert "check=header" in text and "http=200" in text
+    assert "type=application/json" in text
+    assert f"bytes={len(blob)}" in text
+    assert "https://" not in text
+
+
+@pytest.mark.asyncio
+async def test_bad_type_is_retried_three_times_then_terminal(mod):
+    async with TestClient(TestServer(mod.make_app())) as client:
+        app = client.server.app
+        await _post(client, saved_event())
+        net = FakeNet([{"text": "nope"}], blob=b"NOT-AUDIO-XXXX!!!!")
+        cap = mod.ensure_capture(app)
+        t0 = 1_700_000_000.0
+        await _advance(mod, app, net, now=t0)
+        job = next(iter(cap.jobs().values()))
+        assert job["last_error"] == "bad-type" and job["state"] == "download"
+        assert job["tries"] == 1
+        assert job["next_at"] == pytest.approx(t0 + 5)
+        await _advance(mod, app, net, now=float(job["next_at"]) + 0.01)
+        job = next(iter(cap.jobs().values()))
+        assert job["last_error"] == "bad-type" and job["state"] == "download"
+        assert job["tries"] == 2
+        assert job["next_at"] == pytest.approx(t0 + 5 + 15, abs=0.1)
+        await _advance(mod, app, net, now=float(job["next_at"]) + 0.01)
+        job = next(iter(cap.jobs().values()))
+        assert job["state"] == "dead" and job["last_error"] == "bad-type"
+        assert job["tries"] == 3
+        assert not job.get("file")
+        assert len(net.fetched) == 3
+        assert net.deleted == []
+
+
+@pytest.mark.asyncio
+async def test_unexpected_type_with_valid_magic_is_saved(mod):
+    async with TestClient(TestServer(mod.make_app())) as client:
+        app = client.server.app
+        await _post(client, saved_event())
+        # FakeNet returns raw wav bytes (no Content-Type).  interpret_fetch
+        # treats a missing type plus valid magic as acceptable, which is the
+        # same path as an unexpected but non-rejected type.
+        net = FakeNet([{"text": "heard after odd type", "duration": 2}], blob=wav_bytes())
+        await _advance(mod, app, net)
+        job = next(iter(mod.ensure_capture(app).jobs().values()))
+        assert job["state"] in ("transcribe", "attach", "delete", "done") or job.get("file")
+        assert job.get("file")
