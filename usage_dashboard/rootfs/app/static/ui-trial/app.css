@@ -15,20 +15,20 @@
 
 /* Dark surfaces and the blue control color are sampled from the UI-4 references. */
 :root {
-  --bg: #101010;
+  --bg: #000000;
   --card: #414141;
   --field: #2b2b2b;
   --line: #5a5a5a;
   --text: #ffffff;
   --muted: #d0d0d0;
-  --blue: #005aff;
+  --blue: #3e6ae1;
   --blue-hover: #206fff;
   --blue-press: #004ad6;
   --gray-button: #757575;
-  --chats: #005aff;
+  --chats: #3e6ae1;
   --routines: #25cb55;
   --b2b: #9747ff;
-  --donut-0: #005aff;
+  --donut-0: #3e6ae1;
   --donut-1: #25cb55;
   --donut-2: #9747ff;
   --donut-3: #2ec8ff;

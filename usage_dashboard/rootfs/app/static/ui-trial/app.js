@@ -3,8 +3,8 @@
   "use strict";
 
   var NS = "http://www.w3.org/2000/svg";
-  var DONUT = ["#005aff", "#25cb55", "#9747ff", "#2ec8ff"];
-  var FLOW = ["#005aff", "#25cb55", "#9747ff"];
+  var DONUT = ["#3e6ae1", "#25cb55", "#9747ff", "#2ec8ff"];
+  var FLOW = ["#3e6ae1", "#25cb55", "#9747ff"];
   var CARD = "#414141";
   var INK = "#ffffff";
   var MUTED = "#d0d0d0";
@@ -279,7 +279,7 @@
     svg.appendChild(svgEl("text", { x: "560", y: "18", fill: MUTED, "font-size": "12", "letter-spacing": "1.4" })).textContent = "ACTIVITY";
 
     svg.appendChild(svgEl("rect", {
-      x: String(sourceX), y: String(sourceY), width: "8", height: String(sourceH), fill: "#005aff"
+      x: String(sourceX), y: String(sourceY), width: "8", height: String(sourceH), fill: "#3e6ae1"
     }));
     svg.appendChild(svgEl("text", {
       x: "8", y: String(Math.max(16, sourceY - 8)), fill: INK, "font-size": "13", "font-weight": "300"
@@ -288,7 +288,7 @@
     nodes.forEach(function (node) {
       var path = svgEl("path", {
         d: ribbon(sourceX + 8, node.sy, botX, node.y, node.h),
-        fill: "#005aff",
+        fill: "#3e6ae1",
         opacity: "0.34"
       });
       var title = document.createElementNS(NS, "title");
