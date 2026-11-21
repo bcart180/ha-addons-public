@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.4 — 2026-11-21
+
+- **Recording transcripts no longer label the assistant as the caller.**  Telnyx dual-channel audio puts the first call leg on channel A (index 0) and the rest on channel B, but on a bridged SIP call that first leg is not always the inbound caller.  CallCatch no longer assumes channel 0 is the caller.  When exactly one channel looks like the assistant opening, that channel is labeled Assistant and the other is Caller, including when the opening is on channel A.  If the roles cannot be told apart, or the STT result has no per-channel split, the transcript is left unlabeled rather than given a wrong speaker.
+
 ## 0.8.3 — 2026-11-21
 
 - **Follow-up to 0.8.2: Security Audit M-1, L-1, L-2, and I-1.**  Hard-reject types now also include any `text/*` type, any `+json` or `+xml` suffix, `application/xhtml+xml`, and any comma-joined Content-Type, in addition to `text/html`, `application/json`, and `application/xml` (M-1).  A hard-reject type is discarded at the headers, without reading the body past the usual discard cap (L-1).  `bad-type` uses its own try counter, so earlier download failures do not spend its budget: three backoffs of about 5 s, then 15 s, then 45 s, and the failure after the 45 s wait is terminal (L-2).  Unused `ALLOWED_TYPES` and `content_type_ok` are removed (I-1).
