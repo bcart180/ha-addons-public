@@ -391,10 +391,11 @@ def _assistant_role_index(chans: list) -> int | None:
     """Assistant channel index when the dual-channel role rule is fully met.
 
     Returns None (unlabeled) unless every check holds: exactly two dict
-    channels with explicit, distinct integer indexes; the English
-    assistant-opening match is in that channel's first ~15 words; that
-    channel speaks first when both have word timings; and the other
-    channel does not match anywhere.
+    channels with explicit, distinct integer indexes; both channels have
+    speech tokens (an empty other channel is not a non-match); both have
+    word timings or neither does; the English assistant-opening match is
+    in that channel's first ~15 words; that channel speaks first when
+    both have word timings; and the other channel does not match anywhere.
     """
     dicts = [ch for ch in chans if isinstance(ch, dict)]
     if len(dicts) != 2:
@@ -405,6 +406,12 @@ def _assistant_role_index(chans: list) -> int | None:
         return None
     tokens0 = _detection_tokens(dicts[0])
     tokens1 = _detection_tokens(dicts[1])
+    if not tokens0 or not tokens1:
+        return None
+    has_words0 = bool(_channel_words(dicts[0]))
+    has_words1 = bool(_channel_words(dicts[1]))
+    if has_words0 != has_words1:
+        return None
     if _opening_match(tokens0) and not _any_match(tokens1):
         assistant, other, idx = dicts[0], dicts[1], i0
     elif _opening_match(tokens1) and not _any_match(tokens0):
@@ -421,7 +428,7 @@ def _assistant_role_index(chans: list) -> int | None:
 def _neutralize_leading_roles(text: str) -> str:
     """Stop a literal leading role word plus colon from looking like a label."""
     lines: list[str] = []
-    for line in text.split("\n"):
+    for line in re.split(r"\r\n|\n|\r", text):
         m = _LEADING_ROLE.match(line)
         if not m:
             lines.append(line)
@@ -504,7 +511,7 @@ def turns_from_stt(result: dict, channels: str) -> str:
     for ch in chans:
         if not isinstance(ch, dict):
             continue
-        text = str(ch.get("text") or "").strip()
+        text = re.sub(r"[\r\n]+", " ", str(ch.get("text") or "")).strip()
         if text:
             idx = _explicit_index(ch)
             if idx is None:

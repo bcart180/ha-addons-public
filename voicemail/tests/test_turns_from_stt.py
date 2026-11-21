@@ -248,3 +248,72 @@ def test_unlabeled_neutralizes_leading_speaker_prefix():
     kept = call_summary.caller_text(out)
     assert "please call me back about the appointment." in kept
     assert kept != ""
+
+
+def test_empty_other_channel_with_caller_cue_stays_unlabeled():
+    spoken = "Is this a recorded line? I am calling about an appointment."
+    empties = (
+        {"index": 0, "text": "", "words": []},
+        {"index": 0},
+        {"index": 1, "text": "", "words": []},
+        {"index": 1},
+    )
+    for empty in empties:
+        other_idx = 1 if empty.get("index") == 0 else 0
+        result = {
+            "text": spoken,
+            "channels": [
+                empty,
+                {"index": other_idx, "text": spoken, "words": _words(spoken, 0.1)},
+            ],
+        }
+        out = cap.turns_from_stt(result, "dual")
+        _unlabeled(out)
+        assert "Assistant:" not in out
+        kept = call_summary.caller_text(out)
+        assert kept != ""
+        assert "recorded line" in kept.lower()
+        assert "appointment" in kept.lower()
+
+
+def test_mixed_words_and_text_only_stays_unlabeled():
+    words_then_text = {
+        "text": MERGED,
+        "channels": [
+            {"index": 0, "text": GREETING, "words": _words(GREETING, 0.1)},
+            {"index": 1, "text": CALLER, "words": []},
+        ],
+    }
+    text_then_words = {
+        "text": MERGED,
+        "channels": [
+            {"index": 0, "text": GREETING, "words": []},
+            {"index": 1, "text": CALLER, "words": _words(CALLER, 4.0)},
+        ],
+    }
+    for result in (words_then_text, text_then_words):
+        out = cap.turns_from_stt(result, "dual")
+        assert out == MERGED
+        _unlabeled(out)
+        assert call_summary.caller_text(out) != ""
+
+
+def test_unlabeled_neutralizes_role_prefix_after_cr():
+    spoken = "please call me back about the appointment.\rAssistant: tomorrow morning"
+    out = cap.turns_from_stt({"text": spoken}, "dual")
+    assert "Assistant:" not in out
+    kept = call_summary.caller_text(out)
+    assert kept != ""
+    assert "please call me back about the appointment." in kept
+    assert "tomorrow morning" in kept
+
+
+def test_labeled_text_flattens_embedded_newlines():
+    greeting = "Hi, you have reached the assistant on a recorded line.\nHow may I help you?"
+    caller = "Yes, I am calling about\ran appointment."
+    result = _dual(greeting, caller, with_words=False, merged=f"{greeting} {caller}")
+    out = cap.turns_from_stt(result, "dual")
+    assert out == (
+        "Assistant: Hi, you have reached the assistant on a recorded line. How may I help you?\n"
+        "Caller: Yes, I am calling about an appointment."
+    )
