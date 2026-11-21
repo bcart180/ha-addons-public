@@ -59,10 +59,6 @@ EVENTS = (
     "call.recording.error",
 )
 EXTS = ("wav", "mp3")
-ALLOWED_TYPES = frozenset({
-    "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/wave", "audio/vnd.wave",
-    "application/octet-stream",
-})
 URL_TTL_S = 540
 GIVE_UP_S = 6 * 3600
 MAX_TRIES = 8
@@ -72,7 +68,8 @@ LOOKBACK_S = 6 * 3600
 POLL_OVERLAP_S = 120
 LEASE_S = 90
 TRANSCRIPT_MAX = 60_000
-# bad-type is retried (0.8.2): three attempts, then terminal.
+# bad-type is retried (0.8.2) on its own counter: three backoffs
+# (about 5 s, then 15 s, then 45 s), then terminal on the next failure.
 BAD_TYPE_TRIES = 3
 BAD_TYPE_DELAYS = (5, 15, 45)
 TERMINAL_DOWNLOAD = frozenset({"oversize", "ssrf"})
@@ -215,13 +212,21 @@ def content_type_base(value: str) -> str:
     return str(value or "").split(";", 1)[0].strip().lower()
 
 
-def content_type_ok(value: str) -> bool:
-    return content_type_base(value) in ALLOWED_TYPES
-
-
 def content_type_hard_reject(value: str) -> bool:
-    """HTML, JSON, or XML is never accepted, even if the bytes look like audio."""
-    return content_type_base(value) in HARD_REJECT_TYPES
+    """HTML, JSON, XML, any text/*, or a comma-joined type is never accepted, even if the bytes look like audio."""
+    raw = str(value or "")
+    if "," in raw:
+        return True
+    base = content_type_base(raw)
+    if base in HARD_REJECT_TYPES:
+        return True
+    if base.startswith("text/"):
+        return True
+    if base.endswith(("+json", "+xml")):
+        return True
+    if base == "application/xhtml+xml":
+        return True
+    return False
 
 
 def content_type_for_log(value: str) -> str:
@@ -242,9 +247,10 @@ def classify_audio(content_type: str, blob: bytes) -> tuple[str, str]:
     """Return (error, check).  Empty error means the bytes are acceptable audio.
 
     A valid RIFF/WAVE, ID3, or MPEG frame is accepted even when the Content-Type
-    is unexpected, unless the type is text/html, application/json, or
-    application/xml (those fail as check=header).  Wrong type and wrong magic
-    is still a failure (check=magic).
+    is unexpected, unless the type is a hard reject (check=header): text/html,
+    application/json, application/xml, application/xhtml+xml, any text/* type,
+    any +json or +xml suffix, or a comma-joined type.  Wrong type and wrong
+    magic is still a failure (check=magic).
     """
     if content_type_hard_reject(content_type):
         return "bad-type", "header"
@@ -415,6 +421,7 @@ def _blank_job(jid: str, now: float) -> dict:
         "ref": "",
         "deleted": "",
         "tries": 0,
+        "bad_type_tries": 0,
         "next_at": 0.0,
         "last_error": "",
         "lease": 0,
@@ -839,22 +846,28 @@ class Capture:
         def fn(job: dict) -> None:
             if code not in ("stt-unconfigured", "no-key"):
                 job["tries"] = int(job.get("tries") or 0) + 1
+            if code == "bad-type":
+                job["bad_type_tries"] = int(job.get("bad_type_tries") or 0) + 1
             job["last_error"] = code
             job["lease_until"] = 0
             tries = int(job.get("tries") or 0)
+            bad_type_tries = int(job.get("bad_type_tries") or 0)
             is_terminal = terminal
             if code == "bad-type" and not is_terminal:
-                is_terminal = tries >= BAD_TYPE_TRIES
-            if is_terminal or (code not in ("stt-unconfigured", "no-key") and tries >= MAX_TRIES):
+                # Three backoffs (5, 15, 45), then terminal on the following failure.
+                is_terminal = bad_type_tries > BAD_TYPE_TRIES
+            elif code not in ("stt-unconfigured", "no-key") and tries >= MAX_TRIES:
+                is_terminal = True
+            if is_terminal:
                 job["state"] = "dead"
                 job["done_at"] = clock
             else:
-                step = int(job.get("tries") or 1)
                 if code == "bad-type":
-                    delay = BAD_TYPE_DELAYS[min(step, len(BAD_TYPE_DELAYS)) - 1]
+                    delay = BAD_TYPE_DELAYS[min(bad_type_tries, len(BAD_TYPE_DELAYS)) - 1]
                 elif code in ("stt-unconfigured", "no-key"):
                     delay = 300
                 else:
+                    step = int(job.get("tries") or 1)
                     delay = min(30 * (2 ** max(0, step - 1)), 1800)
                 job["next_at"] = clock + delay
         self._update(jid, fn)
@@ -1406,6 +1419,9 @@ class HttpNet:
                     log.warning("recording fetch http %s type=%s", resp.status, content_type_for_log(ctype))
                     await _discard(resp)
                     return {"error": "download", "http_status": resp.status, "content_type": ctype, "bytes": 0}
+                if content_type_hard_reject(ctype):
+                    await _discard(resp)
+                    return {"error": "bad-type", "check": "header", "http_status": resp.status, "content_type": ctype, "bytes": 0}
                 declared = resp.headers.get("Content-Length") or ""
                 if declared.isdigit() and int(declared) > MAX_AUDIO:
                     return {"error": "oversize", "http_status": resp.status, "content_type": ctype, "bytes": 0}
