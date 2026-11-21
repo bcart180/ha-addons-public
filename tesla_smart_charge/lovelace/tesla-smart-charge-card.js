@@ -78,8 +78,8 @@ export function battery(soc, target, charging) {
 }
 
 export const CSS = `
-:host{--bg:#0b0c0e;--panel:#16181b;--text:#f5f6f7;--dim:#8d9399;--line:#2a2e33;--green:#3ddc84;--blue:#3e6ae1;
- --red:#e82127;--amber:#f2a33a}
+:host{--bg:#000000;--panel:#000000;--text:#f5f6f7;--dim:#8d9399;--line:#2a2e33;--green:#3ddc84;--blue:#3e6ae1;
+ --red:#e82127;--warn:#ff5d73}
 ha-card{display:block;background:var(--panel);color:var(--text);border-radius:16px;padding:20px;border:1px solid var(--line);
  font-family:"Gotham SSm","Gotham","Helvetica Neue",-apple-system,system-ui,sans-serif;letter-spacing:.01em}
 .hd{display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -99,7 +99,7 @@ ha-card{display:block;background:var(--panel);color:var(--text);border-radius:16
 .chip{min-height:44px;border-radius:10px;border:0;background:#24272b;color:var(--text);font:inherit;font-size:14px;cursor:pointer}
 .chip.on{background:var(--blue);color:#fff}.chip:disabled{opacity:.35;cursor:default}
 .al{margin-top:10px;padding:10px 12px;border-radius:10px;font-size:13px;background:#1f2226;border-left:3px solid var(--dim)}
-.al.warn{border-color:var(--amber)}.al.bad{border-color:var(--red)}.al.info{border-color:var(--blue)}
+.al.warn{border-color:var(--warn)}.al.bad{border-color:var(--red)}.al.info{border-color:var(--blue)}
 @media (max-width:420px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.chips{grid-template-columns:repeat(2,1fr)}}`;
 
 export function render(vm, title = "Tesla Smart Charge", now = new Date()) {

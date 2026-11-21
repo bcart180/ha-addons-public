@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2 — 2026-11-20
+
+- Style only. Lovelace card page and panel are `#000000`. The amber warning token is now `#ff5d73`. Accent stays `#3e6ae1`.
+- Charging logic, options, safety stops, and schema are unchanged.
+
 ## 0.3.1
 - Hot-handle hysteresis: a `handle_too_hot` stop stays latched until the handle is `handle_temp_margin_f`
   (default 20 F) below `handle_temp_max_f`, or the car is unplugged. Unknown readings keep the latch.
