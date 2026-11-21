@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.7 — 2026-11-20
+
+- Style only. Production page, cards, and theme-color are `#000000`. Warning gold is gone; warnings use `#ff5d73`. Asset-mix and desk-chart accents use `#3e6ae1` with cool Schwab / violet Bitcoin segments.
+- Options, keys, schema, feeds, and routes are unchanged. Still GET and EventSource only.
+
 ## 0.3.6 — 2026-11-12
 
 - Main tab bubble charts. Gain/Loss plots unrealized dollars against percent of cost. Positions plots today's dollar change against percent price change. One bubble per open Schwab account row, Alpaca position, and Trezor Bitcoin when that helper has a value. The same symbol in two books stays two bubbles. Bubble area follows market value. Green and red stay on gain and loss.
