@@ -86,9 +86,9 @@ def test_legacy_shell_is_the_previous_page():
 
 def test_version_bump_and_schema():
     cfg = _read(ROOT / "config.yaml")
-    assert 'version: "0.3.6"' in cfg
+    assert 'version: "0.3.7"' in cfg
     assert 'version: "0.3.5"' not in cfg
-    assert server.VERSION == "0.3.6"
+    assert server.VERSION == "0.3.7"
     for key in SCHEMA_KEYS:
         assert re.search(r"^  %s:" % re.escape(key), cfg, re.M), key
     schema = cfg.split("schema:", 1)[1]

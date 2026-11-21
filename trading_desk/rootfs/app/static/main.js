@@ -92,7 +92,7 @@
       (u.ex.length ? " Left out because the purchase price isn't known (basis n/a): " + esc(u.ex.join(", ")) + "." : "") + "</div></div>";
     h += '<div class="mv-card"><h2>Everything you own</h2><div class="mv-total">' + money(p.total) + "</div>" +
       '<div class="mv-asof">Schwab + Alpaca + Bitcoin on your Trezor · updated ' + esc(etStamp(S.ts_ms)) + "</div>";
-    var tot = p.total || 1, seg = [["Schwab", p.schwab, "#2a9d8f"], ["Alpaca", p.alpaca, "#5a6b7c"], ["Bitcoin", p.btc, "#c9892b"]];
+    var tot = p.total || 1, seg = [["Schwab", p.schwab, "#9aa3ad"], ["Alpaca", p.alpaca, "#3e6ae1"], ["Bitcoin", p.btc, "#c084fc"]];
     h += '<div class="mv-bar">' + seg.map(function (s) { return ok(s[1]) ? '<i style="width:' + (s[1] / tot * 100).toFixed(2) + "%;background:" + s[2] + '"></i>' : ""; }).join("") + "</div>";
     h += '<div class="mv-split">' + seg.map(function (s) {
       return "<div><span><i style=\"display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;background:" + s[2] + '"></i>' + s[0] + "</span><b>" + money(s[1]) + "</b></div>"; }).join("") + "</div>";
@@ -132,7 +132,7 @@
         scales: { x: { time: true } },
         axes: [{ stroke: "#9aa6b4", grid: { stroke: "#262b31" }, ticks: { stroke: "#262b31" } },
                { stroke: "#9aa6b4", grid: { stroke: "#262b31" }, ticks: { stroke: "#262b31" }, size: 70, values: function (u, v) { return v.map(function (x) { return "$" + Math.round(x).toLocaleString(); }); } }],
-        series: [{}, { stroke: "#2a9d8f", width: 2.5, fill: "rgba(42,157,143,.12)" }] }, [t, e], el);
+        series: [{}, { stroke: "#3e6ae1", width: 2.5, fill: "rgba(62,106,225,.16)" }] }, [t, e], el);
     }
     if (RANGE === "1D") { var cv = S.curve || {}; paint(cv.t, cv.equity); return; }
     var cached = seriesCache[RANGE];
