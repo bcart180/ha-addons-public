@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2 — 2026-11-20
+
+- Style only. Production page and cards are `#000000`, accent `#3e6ae1`, and the tan warning token is `#ff5d73`. The `/ui-trial` shell uses the same page and accent tokens (replacing `#101010` / `#005aff`).
+- Snapshot file, re-read behavior, and routes are unchanged. There is still no usage API and no countdown.
+
 ## 0.1.1
 
 - Trial path `/ui-trial` serves a BRYSON-UI-4 presentation of the same snapshot page.

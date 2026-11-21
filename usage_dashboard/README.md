@@ -1,6 +1,6 @@
 # Usage
 
-Read-only Home Assistant sidebar panel for a weekly Grok Bot usage snapshot. Version 0.1.1.
+Read-only Home Assistant sidebar panel for a weekly Grok Bot usage snapshot. Version 0.1.2.
 
 Canonical source: https://github.com/bcart180/ha-usage-dashboard
 

@@ -205,7 +205,7 @@ class SnapshotTests(unittest.TestCase):
 
     def test_version_matches_config(self):
         config = (ROOT / "config.yaml").read_text(encoding="utf-8")
-        self.assertEqual(snapshot.ADDON_VERSION, "0.1.1")
+        self.assertEqual(snapshot.ADDON_VERSION, "0.1.2")
         self.assertIn(f'version: "{snapshot.ADDON_VERSION}"', config)
         self.assertIn("slug: usage_dashboard", config)
         self.assertIn("ingress: true", config)
@@ -215,11 +215,11 @@ class SnapshotTests(unittest.TestCase):
         self.assertIn("panel_admin: true", config)
         self.assertIn("homeassistant_api: false", config)
         self.assertNotIn("ports:", config)
-        self.assertIn("## 0.1.1", (ROOT / "CHANGELOG.md").read_text(encoding="utf-8"))
+        self.assertIn("## 0.1.2", (ROOT / "CHANGELOG.md").read_text(encoding="utf-8"))
         self.assertIn("/ui-trial", (ROOT / "README.md").read_text(encoding="utf-8"))
         data = snapshot.validate(snapshot.load_json(str(BUNDLED)))
         view = snapshot.build_view(data, "bundled")
-        self.assertIn("Add-on 0.1.1 · schema version 1.", view["context"])
+        self.assertIn("Add-on 0.1.2 · schema version 1.", view["context"])
 
 
 def trial_ingress_root(pathname: str) -> str:
@@ -361,16 +361,16 @@ class ServerTests(unittest.TestCase):
     def test_health(self):
         self.assertEqual(json.loads(self.get("/api/health")[2]), {"ok": True})
 
-    def test_root_stays_010_and_trial_serves_ui4(self):
+    def test_root_is_ui4_and_trial_serves_ui4(self):
         root_body = self.get("/")[2]
         index_body = self.get("/index.html")[2]
         css_body = self.get("/app.css")[2]
         js_body = self.get("/app.js")[2]
         self.assertEqual(root_body, index_body)
         self.assertEqual(len(root_body), 2192)
-        self.assertEqual(hashlib.sha256(root_body).hexdigest(), "dc92887525dff53769f3d4518f955c8de30568c74ddf36e411924fa62a755786")
+        self.assertEqual(hashlib.sha256(root_body).hexdigest(), "f8d722cbae21d846db493138e95b71dad1c84de5c98bdf3c5dc99727830ff38a")
         self.assertEqual(len(css_body), 6286)
-        self.assertEqual(hashlib.sha256(css_body).hexdigest(), "c7decfc47eed68c746fb9d2fea87e1161c4a7ddb8c654a57a1186eacee78e5f8")
+        self.assertEqual(hashlib.sha256(css_body).hexdigest(), "fe4fe7d6d573d1136cf685a37b0d21563c6b4f956fff17d7901df3891ddb99cd")
         self.assertEqual(len(js_body), 16672)
         self.assertEqual(hashlib.sha256(js_body).hexdigest(), "bef447f8c4872abd83994804b98a1178c74b7bcdde00e9b9348de51e52aab0f5")
         self.assertIn(b'href="app.css"', root_body)
@@ -427,7 +427,10 @@ class ServerTests(unittest.TestCase):
         self.assertNotIn(b"setInterval", trial_js)
         trial_css = self.get("/ui-trial/app.css")[2]
         self.assertNotIn(b"#d9c7a2", trial_css.lower())
-        self.assertIn(b"#d9c7a2", css_body)
+        self.assertNotIn(b"#d9c7a2", css_body.lower())
+        self.assertIn(b"#ff5d73", css_body)
+        self.assertIn(b"#3e6ae1", css_body)
+        self.assertIn(b"#000000", css_body)
 
         request = urllib.request.Request(self.base + "/ui-trial", data=b"{}", method="POST")
         with self.assertRaises(urllib.error.HTTPError) as caught:
@@ -493,8 +496,8 @@ class StaticTests(unittest.TestCase):
                     self.fail(f"{name} warm hue {match.group(0)} h={hue:.1f} s={sat:.2f}")
         css = (trial / "app.css").read_text(encoding="utf-8")
         self.assertIn("min-height: 48px", css)
-        self.assertIn("#005aff", css)
-        self.assertIn("#101010", css)
+        self.assertIn("#3e6ae1", css)
+        self.assertIn("#000000", css)
         self.assertIn("#414141", css)
         server_text = (APP / "server.py").read_text(encoding="utf-8")
         self.assertIn('files["/ui-trial"]', server_text)
