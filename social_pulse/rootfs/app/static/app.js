@@ -74,8 +74,8 @@
     }
     var area = line("requests") + " L" + (W - P) + " " + (H - P) + " L" + P + " " + (H - P) + " Z";
     return '<svg class="chart" viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none"><path d="' + area + '" fill="rgba(255,158,74,.16)"/><path d="' + line("requests") +
-      '" fill="none" stroke="#ff9e4a" stroke-width="2.5"/><path d="' + line("page_views") + '" fill="none" stroke="#d7b4ff" stroke-width="2" stroke-dasharray="5 4"/></svg>' +
-      '<div class="legend"><span><i style="background:#ff9e4a"></i>Edge requests</span><span><i style="background:#d7b4ff"></i>Edge page views</span><span>' + esc(d[0].date) + " → " + esc(d[d.length - 1].date) + "</span></div>";
+      '" fill="none" stroke="#3e6ae1" stroke-width="2.5"/><path d="' + line("page_views") + '" fill="none" stroke="#d7b4ff" stroke-width="2" stroke-dasharray="5 4"/></svg>' +
+      '<div class="legend"><span><i style="background:#3e6ae1"></i>Edge requests</span><span><i style="background:#d7b4ff"></i>Edge page views</span><span>' + esc(d[0].date) + " → " + esc(d[d.length - 1].date) + "</span></div>";
   }
   function shareLine(row) {
     if (!row || !row.available) return "";

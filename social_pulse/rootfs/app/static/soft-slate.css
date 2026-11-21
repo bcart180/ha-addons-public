@@ -1,20 +1,20 @@
 /* Social Pulse surfaces. The file name stays soft-slate.css so the existing link does not change.
    Pure-black page (#000000), Trading Desk type size and 16px cards.
-   Category colors span purple, orange, yellow, red, pink, green, and cyan.
+   Category colors span purple, blue, indigo, red, pink, green, and cyan.
    Each category also has a written label. Status is not color alone.
    Trading Desk charts are a different add-on and are not restyled here. */
 :root {
   --bg: #000000;
-  --bg-elevated: #111417;
-  --panel: #171a1e;
-  --panel2: #111417;
+  --bg-elevated: #000000;
+  --panel: #000000;
+  --panel2: #000000;
   --line: #262b31;
   --line-strong: #262b31;
   --text: #e8eef4;
   --dim: #9aa6b4;
   --purple: #d7b4ff;
-  --orange: #ff9e4a;
-  --yellow: #ffe566;
+  --blue: #3e6ae1;
+  --indigo: #9aa6ff;
   --red: #ff7a7a;
   --pink: #ffb3d9;
   --green: #7dffb3;
@@ -24,7 +24,7 @@
   --accent-soft: rgba(215, 180, 255, .18);
   --good: var(--green);
   --bad: var(--red);
-  --warn: var(--yellow);
+  --warn: #ff5d73;
   --focus: #ffffff;
   --radius: 16px;
   --radius-sm: 14px;
@@ -77,19 +77,19 @@ a:hover { color: #fff; }
   border: 1px solid var(--line); border-radius: 999px;
   padding: 10px 18px; min-height: 44px; cursor: pointer; font: inherit; font-weight: 500;
 }
-.btn:hover { border-color: var(--yellow); }
-.btn.primary { background: var(--orange); border-color: var(--orange); color: #000; }
+.btn:hover { border-color: var(--indigo); }
+.btn.primary { background: var(--blue); border-color: var(--blue); color: #000; }
 .btn.danger { border-color: var(--red); color: var(--red); }
 input, select, textarea {
   background: var(--bg-elevated); color: var(--text);
   border: 1px solid var(--line); border-radius: var(--radius-sm);
   padding: 10px 14px; min-height: 44px; font: inherit;
 }
-input:focus, select:focus, textarea:focus { border-color: var(--yellow); outline: none; }
+input:focus, select:focus, textarea:focus { border-color: var(--indigo); outline: none; }
 .dim { color: var(--dim); }
 .good { color: var(--good); }
 .bad { color: var(--bad); }
-.warn { color: var(--yellow); }
+.warn { color: var(--indigo); }
 .notice {
   border: 1px solid var(--line);
   background: var(--bg-elevated);
