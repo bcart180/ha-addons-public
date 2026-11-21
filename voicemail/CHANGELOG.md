@@ -1,8 +1,12 @@
 # Changelog
 
+## 0.8.3 — 2026-11-21
+
+- **Follow-up to 0.8.2: Security Audit M-1, L-1, L-2, and I-1.**  Hard-reject types now also include any `text/*` type, any `+json` or `+xml` suffix, `application/xhtml+xml`, and any comma-joined Content-Type, in addition to `text/html`, `application/json`, and `application/xml` (M-1).  A hard-reject type is discarded at the headers, without reading the body past the usual discard cap (L-1).  `bad-type` uses its own try counter, so earlier download failures do not spend its budget: three backoffs of about 5 s, then 15 s, then 45 s, and the failure after the 45 s wait is terminal (L-2).  Unused `ALLOWED_TYPES` and `content_type_ok` are removed (I-1).
+
 ## 0.8.2 — 2026-11-21
 
-- **Recording download: accept audio by magic, retry `bad-type`.**  A 200 body whose bytes are a valid RIFF/WAVE, ID3, or MPEG frame is kept even when the Content-Type is unexpected.  `text/html`, `application/json`, `application/xml`, `application/xhtml+xml`, any `text/*` type, any `+json` or `+xml` suffix, and any comma-joined type are still rejected (`check=header`), even if the bytes look like audio.  A wrong type whose bytes are also not audio still fails (`check=magic`).  A hard-reject type is dropped at the headers, without reading the body past the usual discard cap.  `bad-type` uses its own try counter, so earlier download failures do not spend its budget: three backoffs of about 5 s, then 15 s, then 45 s, and the failure after the 45 s wait is terminal.  The log records the Content-Type, which check failed, the HTTP status, and the byte count.  It never logs the body or the URL.
+- **Recording download: accept audio by magic, retry `bad-type`.**  A 200 body whose bytes are a valid RIFF/WAVE, ID3, or MPEG frame is kept even when the Content-Type is unexpected.  `text/html`, `application/json`, and `application/xml` are still rejected (`check=header`), even if the bytes look like audio.  A wrong type whose bytes are also not audio still fails (`check=magic`).  `bad-type` is no longer terminal on the first try: three attempts, waiting about 5 s then 15 s between them; the third failure is terminal.  The log records the Content-Type, which check failed, the HTTP status, and the byte count.  It never logs the body or the URL.
 
 ## 0.8.1 — 2026-11-20
 
