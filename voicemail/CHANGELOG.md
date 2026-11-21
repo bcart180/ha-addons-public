@@ -3,6 +3,7 @@
 ## 0.8.4 — 2026-11-21
 
 - **Recording transcripts no longer label the assistant as the caller.**  Telnyx dual-channel audio puts the first call leg on channel A (index 0) and the rest on channel B, but on a bridged SIP call that first leg is not always the inbound caller.  CallCatch no longer assumes channel 0 is the caller.  When exactly one channel looks like the assistant opening, that channel is labeled Assistant and the other is Caller, including when the opening is on channel A.  If the roles cannot be told apart, or the STT result has no per-channel split, the transcript is left unlabeled rather than given a wrong speaker.
+- **Security Audit M-1, I-1, and I-2.**  Role assignment now requires exactly two channels with explicit, distinct integer indexes, an English assistant-opening match in that channel's first ~15 words, that channel speaking first when word timings exist, and no match anywhere on the other channel.  `recorded line` is word-bounded.  Detection uses the same tokens as the labels (words when present).  Otherwise the transcript stays unlabeled.  A leading `Assistant:` or `Caller:` (or house/agent) on an unlabeled line is neutralized so it is not treated as a speaker label.  The rule is documented in DOCS.md; the phrase list is English-only.
 
 ## 0.8.3 — 2026-11-21
 

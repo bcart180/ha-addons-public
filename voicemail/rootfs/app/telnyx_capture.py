@@ -320,20 +320,29 @@ def empty_notice(seconds: int) -> str:
 # Assistant-opening cues used to map Telnyx dual-channel legs to roles.
 # Channel index is not enough: Telnyx puts the first call leg on channel A,
 # and on a bridged SIP call that leg is not always the inbound caller.
+# The phrase list is English-only.
 _ASSISTANT_OPENING = re.compile(
     r"you(?:['\u2019]ve| have) reached"
-    r"|recorded line"
+    r"|\brecorded line"
     r"|how may i\b"
     r"|this (?:call|line) is recorded",
     re.IGNORECASE,
 )
+_OPENING_WORDS = 15
+_LEADING_ROLE = re.compile(
+    r"^(\s*)(house|assistant|agent|caller)\s*:",
+    re.IGNORECASE,
+)
 
 
-def _channel_index(ch: dict) -> int:
-    try:
-        return int(ch.get("index"))
-    except (TypeError, ValueError):
-        return 0
+def _explicit_index(ch: dict) -> int | None:
+    """Integer channel index, or None when missing, bool, or non-int."""
+    if "index" not in ch:
+        return None
+    raw = ch["index"]
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return None
+    return raw
 
 
 def _channel_words(ch: dict) -> list[tuple[float, str]]:
@@ -352,47 +361,99 @@ def _channel_words(ch: dict) -> list[tuple[float, str]]:
     return words
 
 
-def _channel_text(ch: dict) -> str:
+def _detection_tokens(ch: dict) -> list[str]:
+    """Same tokens used for labels: words when present, otherwise the text field."""
+    words = _channel_words(ch)
+    if words:
+        return [token for _start, token in words]
     text = str(ch.get("text") or "").strip()
-    if text:
-        return text
-    return " ".join(token for _start, token in _channel_words(ch)).strip()
+    return text.split() if text else []
+
+
+def _first_word_start(ch: dict) -> float | None:
+    words = _channel_words(ch)
+    if not words:
+        return None
+    return min(start for start, _token in words)
+
+
+def _opening_match(tokens: list[str]) -> bool:
+    if not tokens:
+        return False
+    return bool(_ASSISTANT_OPENING.search(" ".join(tokens[:_OPENING_WORDS])))
+
+
+def _any_match(tokens: list[str]) -> bool:
+    return bool(tokens) and bool(_ASSISTANT_OPENING.search(" ".join(tokens)))
 
 
 def _assistant_role_index(chans: list) -> int | None:
-    """The one channel that looks like the assistant opening, or None."""
-    hits: list[int] = []
-    seen: set[int] = set()
-    for ch in chans:
-        if not isinstance(ch, dict):
+    """Assistant channel index when the dual-channel role rule is fully met.
+
+    Returns None (unlabeled) unless every check holds: exactly two dict
+    channels with explicit, distinct integer indexes; the English
+    assistant-opening match is in that channel's first ~15 words; that
+    channel speaks first when both have word timings; and the other
+    channel does not match anywhere.
+    """
+    dicts = [ch for ch in chans if isinstance(ch, dict)]
+    if len(dicts) != 2:
+        return None
+    i0 = _explicit_index(dicts[0])
+    i1 = _explicit_index(dicts[1])
+    if i0 is None or i1 is None or i0 == i1:
+        return None
+    tokens0 = _detection_tokens(dicts[0])
+    tokens1 = _detection_tokens(dicts[1])
+    if _opening_match(tokens0) and not _any_match(tokens1):
+        assistant, other, idx = dicts[0], dicts[1], i0
+    elif _opening_match(tokens1) and not _any_match(tokens0):
+        assistant, other, idx = dicts[1], dicts[0], i1
+    else:
+        return None
+    a_start = _first_word_start(assistant)
+    o_start = _first_word_start(other)
+    if a_start is not None and o_start is not None and a_start > o_start:
+        return None
+    return idx
+
+
+def _neutralize_leading_roles(text: str) -> str:
+    """Stop a literal leading role word plus colon from looking like a label."""
+    lines: list[str] = []
+    for line in text.split("\n"):
+        m = _LEADING_ROLE.match(line)
+        if not m:
+            lines.append(line)
             continue
-        text = _channel_text(ch)
-        if not text or not _ASSISTANT_OPENING.search(text):
-            continue
-        idx = _channel_index(ch)
-        if idx not in seen:
-            hits.append(idx)
-            seen.add(idx)
-    if len(hits) == 1:
-        return hits[0]
-    return None
+        rest = line[m.end():].lstrip()
+        prefix = f"{m.group(1)}{m.group(2)}"
+        lines.append(f"{prefix} {rest}" if rest else prefix)
+    return "\n".join(lines)
 
 
 def _unlabeled_transcript(result: dict, chans: list) -> str:
     """Merged text with no speaker prefix, rather than a guessed label."""
     text = str(result.get("text") or "").strip()
-    if text:
-        return text[:TRANSCRIPT_MAX]
-    words: list[tuple[float, str]] = []
-    for ch in chans:
-        if not isinstance(ch, dict):
-            continue
-        words.extend(_channel_words(ch))
-    if words:
-        words.sort()
-        return " ".join(token for _start, token in words)[:TRANSCRIPT_MAX]
-    parts = [_channel_text(ch) for ch in chans if isinstance(ch, dict) and _channel_text(ch)]
-    return "\n".join(parts)[:TRANSCRIPT_MAX]
+    if not text:
+        words: list[tuple[float, str]] = []
+        for ch in chans:
+            if not isinstance(ch, dict):
+                continue
+            words.extend(_channel_words(ch))
+        if words:
+            words.sort()
+            text = " ".join(token for _start, token in words)
+        else:
+            parts = []
+            for ch in chans:
+                if not isinstance(ch, dict):
+                    continue
+                tokens = _detection_tokens(ch)
+                if tokens:
+                    parts.append(" ".join(tokens))
+            text = "\n".join(parts)
+    return _neutralize_leading_roles(text)[:TRANSCRIPT_MAX]
 
 
 def turns_from_stt(result: dict, channels: str) -> str:
@@ -401,11 +462,13 @@ def turns_from_stt(result: dict, channels: str) -> str:
     Telnyx dual-channel audio puts the first call leg on channel A (index 0)
     and the remaining legs on channel B.  Which leg is the inbound caller
     depends on how the bridge is recorded, so index 0 is not assumed to be
-    the caller.  If exactly one channel looks like the assistant opening,
-    that channel is Assistant and the other is Caller.  Otherwise the
-    unlabeled merged transcript is returned rather than a wrong label.
+    the caller.  Roles are assigned only when `_assistant_role_index`
+    returns an index; otherwise the unlabeled merged transcript is
+    returned rather than a wrong label.
     """
-    unlabeled = str(result.get("text") or "").strip()[:TRANSCRIPT_MAX]
+    unlabeled = _neutralize_leading_roles(
+        str(result.get("text") or "").strip()
+    )[:TRANSCRIPT_MAX]
     if str(channels).lower() != "dual":
         return unlabeled
     chans = result.get("channels") if isinstance(result.get("channels"), list) else []
@@ -422,7 +485,9 @@ def turns_from_stt(result: dict, channels: str) -> str:
     for ch in chans:
         if not isinstance(ch, dict):
             continue
-        idx = _channel_index(ch)
+        idx = _explicit_index(ch)
+        if idx is None:
+            return _unlabeled_transcript(result, chans)
         for start, token in _channel_words(ch):
             words.append((start, idx, token))
     if words:
@@ -441,7 +506,9 @@ def turns_from_stt(result: dict, channels: str) -> str:
             continue
         text = str(ch.get("text") or "").strip()
         if text:
-            idx = _channel_index(ch)
+            idx = _explicit_index(ch)
+            if idx is None:
+                return _unlabeled_transcript(result, chans)
             texts.append((idx, f"{role_for(idx)}: {text}"))
     texts.sort()
     if texts:
