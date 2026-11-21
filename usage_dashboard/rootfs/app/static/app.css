@@ -14,16 +14,16 @@
 }
 
 :root {
-  --bg: #0b0d10;
-  --card: #16191d;
+  --bg: #000000;
+  --card: #000000;
   --line: #262b31;
   --text: #f4f6f8;
   --muted: #b7c0c8;
-  --accent: #8eafc4;
+  --accent: #3e6ae1;
   --chats: #d5dbe2;
   --routines: #8eafc4;
   --b2b: #6a7c8c;
-  --warn: #d9c7a2;
+  --warn: #ff5d73;
   color-scheme: dark;
 }
 

@@ -44,7 +44,7 @@ def check_static() -> None:
     for token in ("box-shadow", "gradient", "drop-shadow"):
         if token in css:
             raise SystemExit(f"app.css: decorative {token} is not part of this panel")
-    for color in ("#0b0d10", "#16191d", "#262b31"):
+    for color in ("#000000", "#3e6ae1", "#262b31"):
         if color not in css:
             raise SystemExit(f"app.css: missing surface color {color}")
 
