@@ -853,7 +853,13 @@ def test_classify_audio_accepts_unexpected_type_with_valid_magic():
 
 def test_classify_audio_rejects_html_json_xml_even_with_valid_magic():
     blob = wav_bytes()
-    for ctype in ("text/html", "text/html; charset=utf-8", "application/json", "application/xml"):
+    for ctype in (
+        "text/html", "text/html; charset=utf-8", "application/json", "application/xml",
+        "text/xml", "application/xhtml+xml", "application/problem+json",
+        "application/vnd.api+json", "image/svg+xml", "application/soap+xml",
+        "text/plain", "text/html,application/json",
+        "TEXT/XML", " text/plain ", "text/xml; charset=utf-8",
+    ):
         err, check = telnyx_capture.classify_audio(ctype, blob)
         assert err == "bad-type" and check == "header", ctype
 
@@ -909,19 +915,26 @@ async def test_bad_type_is_retried_three_times_then_terminal(mod):
         await _advance(mod, app, net, now=t0)
         job = next(iter(cap.jobs().values()))
         assert job["last_error"] == "bad-type" and job["state"] == "download"
-        assert job["tries"] == 1
+        assert job["bad_type_tries"] == 1 and job["tries"] == 1
         assert job["next_at"] == pytest.approx(t0 + 5)
         await _advance(mod, app, net, now=float(job["next_at"]) + 0.01)
         job = next(iter(cap.jobs().values()))
         assert job["last_error"] == "bad-type" and job["state"] == "download"
-        assert job["tries"] == 2
-        assert job["next_at"] == pytest.approx(t0 + 5 + 15, abs=0.1)
-        await _advance(mod, app, net, now=float(job["next_at"]) + 0.01)
+        assert job["bad_type_tries"] == 2
+        t2 = float(job["next_at"])
+        assert t2 == pytest.approx(t0 + 5 + 15, abs=0.1)
+        await _advance(mod, app, net, now=t2 + 0.01)
+        job = next(iter(cap.jobs().values()))
+        assert job["last_error"] == "bad-type" and job["state"] == "download"
+        assert job["bad_type_tries"] == 3
+        t3 = float(job["next_at"])
+        assert t3 == pytest.approx(t2 + 0.01 + 45, abs=0.1)
+        await _advance(mod, app, net, now=t3 + 0.01)
         job = next(iter(cap.jobs().values()))
         assert job["state"] == "dead" and job["last_error"] == "bad-type"
-        assert job["tries"] == 3
+        assert job["bad_type_tries"] == 4
         assert not job.get("file")
-        assert len(net.fetched) == 3
+        assert len(net.fetched) == 4
         assert net.deleted == []
 
 
@@ -938,3 +951,115 @@ async def test_unexpected_type_with_valid_magic_is_saved(mod):
         job = next(iter(mod.ensure_capture(app).jobs().values()))
         assert job["state"] in ("transcribe", "attach", "delete", "done") or job.get("file")
         assert job.get("file")
+
+
+
+class _SeqNet(FakeNet):
+    def __init__(self, seq, **kw):
+        super().__init__([{"text": "x", "duration": 2}], **kw)
+        self.seq = list(seq)
+
+    async def fetch(self, url: str):
+        self.fetched.append(url)
+        return self.seq.pop(0) if self.seq else wav_bytes()
+
+
+@pytest.mark.asyncio
+async def test_bad_type_budget_ignores_prior_download_failures(mod):
+    async with TestClient(TestServer(mod.make_app())) as client:
+        app = client.server.app
+        await _post(client, saved_event())
+        bad = {"error": "bad-type", "check": "magic", "http_status": 200,
+               "content_type": "binary/octet-stream", "bytes": 8}
+        net = _SeqNet([{"error": "download"}, {"error": "download"}, bad, bad, bad, wav_bytes()])
+        cap = mod.ensure_capture(app)
+        t = 1_700_000_000.0
+        await _advance(mod, app, net, now=t)
+        job = next(iter(cap.jobs().values()))
+        assert job["last_error"] == "download" and job["state"] == "download" and job["tries"] == 1
+        t = float(job["next_at"]) + 0.01
+        await _advance(mod, app, net, now=t)
+        job = next(iter(cap.jobs().values()))
+        assert job["last_error"] == "download" and job["tries"] == 2
+        t = float(job["next_at"]) + 0.01
+        await _advance(mod, app, net, now=t)
+        job = next(iter(cap.jobs().values()))
+        assert job["last_error"] == "bad-type" and job["state"] == "download"
+        assert job["bad_type_tries"] == 1 and job["tries"] == 3
+        assert job["next_at"] == pytest.approx(t + 5)
+        t = float(job["next_at"]) + 0.01
+        await _advance(mod, app, net, now=t)
+        job = next(iter(cap.jobs().values()))
+        assert job["bad_type_tries"] == 2 and job["state"] == "download"
+        assert job["next_at"] == pytest.approx(t + 15, abs=0.1)
+        t = float(job["next_at"]) + 0.01
+        await _advance(mod, app, net, now=t)
+        job = next(iter(cap.jobs().values()))
+        assert job["bad_type_tries"] == 3 and job["state"] == "download"
+        assert job["next_at"] == pytest.approx(t + 45, abs=0.1)
+        t = float(job["next_at"]) + 0.01
+        await _advance(mod, app, net, now=t)
+        # Fourth bad-type would be terminal; the sequence's last item is a good body, so it saves.
+        job = next(iter(cap.jobs().values()))
+        assert job["bad_type_tries"] == 3
+        assert job.get("file")
+        assert len(net.fetched) == 6
+        assert net.deleted == [] or job.get("file")
+
+
+@pytest.mark.asyncio
+async def test_hard_reject_discards_body_without_full_read(monkeypatch):
+    body = b"RIFF" + b"A" * 200 + b"WAVE" + b"X" * (telnyx_capture.DISCARD_LIMIT + 2048)
+    # A polyglot-sized payload bigger than the discard cap.
+
+    class Body:
+        def __init__(self, payload):
+            self.payload = payload
+            self.got = None
+            self.iterated = False
+
+        async def read(self, n=-1):
+            self.got = n
+            if n is None or n < 0:
+                return self.payload
+            return self.payload[:n]
+
+        async def iter_chunked(self, n):
+            self.iterated = True
+            yield self.payload
+
+    class Resp:
+        def __init__(self, payload):
+            self.status = 200
+            self.headers = {"Content-Type": "text/xml; charset=utf-8"}
+            self.content = Body(payload)
+            self.released = False
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        def release(self):
+            self.released = True
+
+    class Sess:
+        def __init__(self, resp):
+            self.resp = resp
+            self.calls = []
+
+        def get(self, url, **kw):
+            self.calls.append(url)
+            return self.resp
+
+    resp = Resp(body)
+    monkeypatch.setattr(telnyx_capture, "host_is_public", lambda h: True)
+    net = telnyx_capture.HttpNet(Sess(resp), TELNYX_KEY, XAI_KEY)
+    out = await net.fetch(URL)
+    assert isinstance(out, dict) and out["error"] == "bad-type" and out["check"] == "header"
+    assert out["bytes"] == 0
+    assert resp.content.iterated is False
+    assert resp.content.got == telnyx_capture.DISCARD_LIMIT
+    assert resp.released
+    assert "await resp.read()" not in pathlib.Path(telnyx_capture.__file__).read_text(encoding="utf-8")
