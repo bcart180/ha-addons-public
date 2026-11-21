@@ -328,6 +328,8 @@ Verify without changing anything: `GET /api/diag` (ingress) returns
 "dry_run": {"work_forward_dry_run": "on", "push_owner": "pyscript", "blueprint_default_input": "on"}
 ```
 
+`input_boolean.callcatch_paused` belongs to the legacy pyscript inbox (`pyscript/inbound_voicemail.py` returns early from its crons and its email-event handler while it is on).  CallCatch does not read it.  The CallCatch send and delete gate is `input_boolean.callcatch_notify_dry_run`, and the recording gate is the `telnyx_connection_ids` allowlist.
+
 `blueprint_default_input` is a hard-coded constant: the blueprint's `dry_run` input default. It does not read or verify any live automation built from the blueprint. `unknown` means the entity could not be read (outside HA, or the entity is missing). The add-on options contain no dry_run value.
 
 
@@ -417,7 +419,7 @@ Two paths write the same job, deduped by recording id, then call session id, the
 1. CallCatch Line `POST /telnyx/events` checks the Telnyx Ed25519 signature and relays a reduced event to `POST /api/agent/telnyx`.
 2. A poller calls `GET /v2/recordings` (`filter[created_at][gte]`) so a missed webhook or a restart mid-call is still captured.
 
-Audio is saved under `/data/callcatch/recordings` (directory 0700, files 0600, excluded from add-on backups). The job index (`jobs.json`) is in that same folder, so a backup does not keep transcripts, caller numbers, or download URLs. Deleting the inbox row blanks those three fields on the job. The download URL must be https, port 443, with no userinfo. The host must be a Telnyx name, or the recording bucket Telnyx documents (`telephony-recorder-prod` on `s3.amazonaws.com`, path-style or virtual-hosted). Resolved addresses in CGNAT (`100.64.0.0/10`) or any other non-public range are rejected. Bodies over 32 MB, or a content type that is not audio, are rejected. Speech-to-text is `POST https://api.x.ai/v1/stt` (model `grok-voice-transcribe-2.0` unless `xai_stt_model` is set). Capture stays off unless both `telnyx_api_key` and `xai_api_key` are set; with only one of them, CallCatch logs a warning and does not hold email for a recording. The key is the option, or the matching environment variable when the option is blank. It is never logged.
+Audio is saved under `/data/callcatch/recordings` (directory 0700, files 0600, excluded from add-on backups). The job index (`jobs.json`) is in that same folder, so a backup does not keep transcripts, caller numbers, or download URLs. Deleting the inbox row blanks those three fields on the job. The download URL must be https, port 443, with no userinfo. The host must be a Telnyx name, or the recording bucket Telnyx documents (`telephony-recorder-prod` on `s3.amazonaws.com`, path-style or virtual-hosted). Resolved addresses in CGNAT (`100.64.0.0/10`) or any other non-public range are rejected. Bodies over 32 MB, or a content type that is not audio, are rejected. Speech-to-text is `POST https://api.x.ai/v1/stt` (model `grok-voice-transcribe-2.0` unless `xai_stt_model` is set). Capture stays off unless `telnyx_api_key`, `xai_api_key`, and a valid `telnyx_connection_ids` allowlist are all set (0.8.1).  A recording or event from a connection that is not on the list is dropped before a job is written, and a stored job from such a connection closes as `skipped` without a download, transcript, row, email, or remote delete.  With the keys set but no valid list, capture is off; with only one of them, CallCatch logs a warning and does not hold email for a recording. The key is the option, or the matching environment variable when the option is blank. It is never logged.
 
 Telnyx's copy is deleted (`DELETE /v2/recordings/{id}`) only after the local file and the transcript have been read back and match what was written, only when `telnyx_delete_remote` is on (the default), and only when `input_boolean.callcatch_notify_dry_run` is explicitly `off` (the same gate as the email). An explicit `on` does not delete. Missing, unavailable, or unknown does not delete. A failed download, a failed transcript, or a failed persist does not delete the remote copy. Failures retry with backoff, then stay `dead` on `/api/diag` with a failed flag and an error code. That failure is not stored as the transcript. A second recording of the same call is downloaded, transcribed, and deleted on its own. The call is still one row and one email, and the transcripts are combined in time order.
 
@@ -431,12 +433,14 @@ The recording is the same call as the agent turns when the caller and the start 
 - Webhook API version 2. Webhook URL is the tunnel path `/telnyx/events` on CallCatch Line.
 - Copy the account public key (portal: Keys & Credentials → Public Key) into Line `telnyx_public_key`.
 - In CallCatch, set `telnyx_api_key` and `xai_api_key`. Leave `telnyx_delete_remote` on.
+- In CallCatch and in CallCatch Line, set `telnyx_connection_ids` to the id of the connection the CallCatch number uses (Telnyx portal: Voice → SIP Connections, or `GET /v2/connections`).  Only recordings and events from these connections are read, transcribed, emailed, or deleted.  Blank keeps capture off.
 
 ### New options
 
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `telnyx_api_key` | blank | List and delete recordings. Password. Never logged. |
+| `telnyx_connection_ids` | blank | Allowlist of Telnyx connection ids (digits, comma or space separated, up to 10).  Blank or invalid: capture off.  Recordings from any other connection on the account are never downloaded, transcribed, emailed, or deleted. |
 | `telnyx_delete_remote` | on | Delete the Telnyx copy only after a verified local save. |
 | `telnyx_poll_s` | 30 | Seconds between recordings-list polls (15–300). |
 | `xai_api_key` | blank | Speech-to-text key. Password. Never logged. |

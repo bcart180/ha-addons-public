@@ -84,3 +84,10 @@ configuration:
       CallCatch Line verifies every POST /telnyx/events with it. A value that
       is set and does not verify is rejected. Blank turns the webhook off.
       Never logged.
+  telnyx_connection_ids:
+    name: Telnyx connection allowlist
+    description: >-
+      Telnyx connection ids (digits, comma or space separated, up to 10) whose
+      events are relayed to CallCatch. Use the same value as in CallCatch.
+      Events from any other connection are acknowledged and dropped. Blank keeps
+      the webhook off.

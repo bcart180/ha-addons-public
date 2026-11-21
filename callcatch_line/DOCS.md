@@ -34,6 +34,8 @@ Tool name, result code, reference, milliseconds, caller last 4.  No headers, bod
 
 `POST /telnyx/events` takes the call-lifecycle and recording-saved webhooks for the Telnyx number. Telnyx signs the raw body: header `telnyx-timestamp`, header `telnyx-signature-ed25519`, signed string `{timestamp}|{raw body}`, Ed25519, the account public key in `telnyx_public_key`. A timestamp more than 5 minutes from the clock is rejected. If the option is set, a bad or missing signature is rejected (the path does not accept unsigned events). If the option is blank, the path is off.
 
+`telnyx_connection_ids` (0.2.1) lists the Telnyx connection ids whose events are relayed (digits, comma or space separated, up to 10; use the same value as in CallCatch).  The path stays off (503) until this list and the public key are both set.  A signed event from any other connection, or with no connection id, gets 200 and is not relayed.
+
 `telnyx_public_key` is the raw 32-byte Ed25519 public key, standard base64 (44 characters, no PEM headers and no whitespace). That is the value shown in the Telnyx portal under Keys & Credentials → Public Key. A value that is set but is not 32 bytes after decoding rejects every webhook.
 
 Line relays ids, times, the caller, channel count, and the short-lived recording URL to CallCatch. It does not log the URL, the key, or the body. The log line is the event name, the upstream status, and the caller's last 4 digits. CallCatch downloads, transcribes, and deletes the remote copy. See CallCatch's docs for the go-live recording settings.

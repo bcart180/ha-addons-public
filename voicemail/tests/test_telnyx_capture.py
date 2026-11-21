@@ -30,6 +30,10 @@ SESSION = "11111111-1111-4111-8111-111111111111"
 LEG = "33333333-3333-4333-8333-333333333333"
 REC = "22222222-2222-4222-8222-222222222222"
 CONTROL = "v3:test-control"
+# Fake Telnyx connection ids.  CONN is the allowlisted inbound connection; OTHER_CONN
+# stands in for another app on the same account (for example an outbound-only TeXML app).
+CONN = "1000000000000000001"
+OTHER_CONN = "1000000000000000002"
 URL = "https://s3.amazonaws.com/telephony-recorder-prod/test.wav?sig=placeholder"
 HDR = {"Authorization": f"Bearer {AGENT}"}
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -56,6 +60,7 @@ def saved_event(event_id: str = "44444444-4444-4444-8444-444444444444", url: str
         "call_session_id": SESSION,
         "call_leg_id": LEG,
         "call_control_id": CONTROL,
+        "connection_id": CONN,
         "recording_id": recording_id,
         "from": CALLER,
         "channels": "dual",
@@ -72,6 +77,7 @@ def hangup_event() -> dict:
         "call_session_id": SESSION,
         "call_leg_id": LEG,
         "call_control_id": CONTROL,
+        "connection_id": CONN,
         "from": CALLER,
         "start_time": stamp(-4),
         "end_time": stamp(-2),
@@ -82,6 +88,7 @@ def api_record(url: str = URL) -> dict:
     return {
         "id": REC,
         "status": "completed",
+        "connection_id": CONN,
         "call_session_id": SESSION,
         "call_leg_id": LEG,
         "call_control_id": CONTROL,
@@ -134,6 +141,7 @@ def mod(monkeypatch, tmp_path):
         monkeypatch, tmp_path, agent_token=AGENT, push_service="mobile_app_test_phone",
         mail_to="callcatch-test@proton.me", agentmail_inbox="callcatch-test@agentmail.to",
         telnyx_api_key=TELNYX_KEY, xai_api_key=XAI_KEY, telnyx_delete_remote=True,
+        telnyx_connection_ids=CONN,
     )
 
 
@@ -368,6 +376,7 @@ async def test_delete_off_keeps_the_remote(monkeypatch, tmp_path):
         monkeypatch, tmp_path, agent_token=AGENT, telnyx_api_key=TELNYX_KEY, xai_api_key=XAI_KEY,
         telnyx_delete_remote=False, push_service="mobile_app_test_phone",
         mail_to="callcatch-test@proton.me", agentmail_inbox="callcatch-test@agentmail.to",
+        telnyx_connection_ids=CONN,
     )
     async with TestClient(TestServer(mod.make_app())) as client:
         app = client.server.app
@@ -450,6 +459,7 @@ async def test_restart_mid_call_recovered_by_poller(mod):
         answered = {
             "event_id": "66666666-6666-4666-8666-666666666666",
             "event_type": "call.answered",
+            "connection_id": CONN,
             "call_session_id": SESSION,
             "call_leg_id": LEG,
             "call_control_id": CONTROL,
@@ -629,7 +639,7 @@ def test_capture_requires_both_keys(monkeypatch, tmp_path, caplog):
 
 def test_job_cap_evicts_finished_and_never_drops_a_new_call(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr(telnyx_capture, "MAX_JOBS", 2)
-    cap = telnyx_capture.Capture(tmp_path)
+    cap = telnyx_capture.Capture(tmp_path, allowed_connections={CONN})
     for n, state in ((1, "done"), (2, "dead")):
         rid = f"22222222-2222-4222-8222-22222222220{n}"
         cap.ingest_webhook(saved_event(event_id=rid, recording_id=rid))
@@ -644,7 +654,7 @@ def test_job_cap_evicts_finished_and_never_drops_a_new_call(tmp_path, monkeypatc
         rid = f"22222222-2222-4222-8222-22222222221{n}"
         # these stay open (download), so the cap cannot evict them
         cap.ingest_webhook({
-            "event_id": rid, "event_type": "call.hangup",
+            "event_id": rid, "event_type": "call.hangup", "connection_id": CONN,
             "call_session_id": f"11111111-1111-4111-8111-11111111110{n}",
             "from": CALLER,
         })
@@ -658,7 +668,7 @@ def test_job_cap_evicts_finished_and_never_drops_a_new_call(tmp_path, monkeypatc
 
 
 def test_inbox_delete_blanks_job_secrets_and_jobs_are_unbacked(tmp_path):
-    cap = telnyx_capture.Capture(tmp_path)
+    cap = telnyx_capture.Capture(tmp_path, allowed_connections={CONN})
     assert cap.path.parent == cap.dir
     assert cap.path.name == "jobs.json"
     cap.ingest_webhook(saved_event())
@@ -675,7 +685,7 @@ def test_inbox_delete_blanks_job_secrets_and_jobs_are_unbacked(tmp_path):
 @pytest.mark.asyncio
 async def test_poll_watermark_waits_for_unread_pages(tmp_path, monkeypatch):
     monkeypatch.setattr(telnyx_capture, "MAX_POLL_PAGES", 2)
-    cap = telnyx_capture.Capture(tmp_path)
+    cap = telnyx_capture.Capture(tmp_path, allowed_connections={CONN})
     seen: list[int] = []
 
     class Pages:
@@ -683,7 +693,7 @@ async def test_poll_watermark_waits_for_unread_pages(tmp_path, monkeypatch):
             seen.append(page)
             rid = f"22222222-2222-4222-8222-2222222200{page:02d}"
             return {"data": [{
-                "id": rid, "status": "completed", "call_session_id": SESSION,
+                "id": rid, "status": "completed", "call_session_id": SESSION, "connection_id": CONN,
                 "download_urls": {"wav": URL}, "from": CALLER,
             }], "pages": 3}
 
@@ -706,7 +716,7 @@ async def test_poll_watermark_waits_for_unread_pages(tmp_path, monkeypatch):
 async def test_partial_poll_resume_does_not_skip_a_shifted_item(tmp_path, monkeypatch):
     """A new row inserted above the boundary must not hide the item that slid back a page."""
     monkeypatch.setattr(telnyx_capture, "MAX_POLL_PAGES", 1)
-    cap = telnyx_capture.Capture(tmp_path)
+    cap = telnyx_capture.Capture(tmp_path, allowed_connections={CONN})
     shifted = {"on": False}
 
     class Pages:
@@ -720,7 +730,7 @@ async def test_partial_poll_resume_does_not_skip_a_shifted_item(tmp_path, monkey
                        2: "22222222-2222-4222-8222-222222220013"}.get(page, "")
             data = []
             if rid:
-                data = [{"id": rid, "status": "completed", "call_session_id": SESSION,
+                data = [{"id": rid, "status": "completed", "call_session_id": SESSION, "connection_id": CONN,
                          "download_urls": {"wav": URL}, "from": CALLER}]
             return {"data": data, "pages": 2}
 
@@ -760,7 +770,7 @@ async def test_error_body_is_capped():
 
 def test_eviction_keeps_audio_the_inbox_still_has(tmp_path, monkeypatch):
     monkeypatch.setattr(telnyx_capture, "MAX_JOBS", 1)
-    cap = telnyx_capture.Capture(tmp_path)
+    cap = telnyx_capture.Capture(tmp_path, allowed_connections={CONN})
     cap.dir.mkdir(parents=True, exist_ok=True)
     name = "ab" * 16 + ".wav"
     audio = cap.dir / name
@@ -775,7 +785,7 @@ def test_eviction_keeps_audio_the_inbox_still_has(tmp_path, monkeypatch):
 
 
 def test_job_files_are_private_before_any_audio(tmp_path):
-    cap = telnyx_capture.Capture(tmp_path)
+    cap = telnyx_capture.Capture(tmp_path, allowed_connections={CONN})
     # A pre-existing loose directory and lock must be tightened on the first write.
     cap.dir.mkdir(parents=True, exist_ok=True)
     os.chmod(cap.dir, 0o755)
@@ -789,7 +799,7 @@ def test_job_files_are_private_before_any_audio(tmp_path):
 
 
 def test_retention_sweep_leaves_the_job_index(tmp_path):
-    cap = telnyx_capture.Capture(tmp_path)
+    cap = telnyx_capture.Capture(tmp_path, allowed_connections={CONN})
     cap.retention_s = 10
     cap.ingest_webhook(saved_event())
     old = time.time() - 3600

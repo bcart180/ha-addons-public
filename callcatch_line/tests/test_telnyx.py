@@ -1,4 +1,7 @@
-"""0.2.0 Telnyx webhooks: Ed25519, replay window, fail closed.  Placeholder key only."""
+"""0.2.0 Telnyx webhooks: Ed25519, replay window, fail closed.  Placeholder key only.
+
+0.2.1: the path also needs a connection allowlist; CONN is a fake id.
+"""
 from __future__ import annotations
 
 import base64
@@ -11,6 +14,8 @@ from aiohttp.test_utils import TestClient, TestServer
 from conftest import AGENT_TOKEN
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+CONN = "1000000000000000001"
 
 
 def _signed(priv, body: bytes, ts: str | None = None) -> tuple[bytes, dict]:
@@ -40,6 +45,7 @@ def _body() -> bytes:
                 "call_session_id": "11111111-1111-4111-8111-111111111111",
                 "call_leg_id": "33333333-3333-4333-8333-333333333333",
                 "call_control_id": "v3:test-control",
+                "connection_id": CONN,
                 "from": "+15555550100",
                 "start_time": "2026-11-19T22:00:00Z",
                 "end_time": "2026-11-19T22:00:02Z",
@@ -68,6 +74,7 @@ async def test_invalid_and_stale_signatures_are_rejected(line_mod, keys):
         "mcp_token": "m" * 32,
         "callcatch_agent_token": AGENT_TOKEN,
         "telnyx_public_key": _pub(keys),
+        "telnyx_connection_ids": CONN,
     })
     raw = _body()
     async with TestClient(TestServer(app)) as client:
@@ -97,6 +104,7 @@ async def test_bad_configured_key_fails_closed(line_mod):
         "mcp_token": "m" * 32,
         "callcatch_agent_token": AGENT_TOKEN,
         "telnyx_public_key": "not-a-key",
+        "telnyx_connection_ids": CONN,
     })
     raw, headers = _signed(Ed25519PrivateKey.generate(), _body())
     async with TestClient(TestServer(app)) as client:
@@ -112,6 +120,7 @@ async def test_valid_signature_is_not_rejected(line_mod, keys):
         "callcatch_agent_token": AGENT_TOKEN,
         "callcatch_url": "http://localhost:8099",
         "telnyx_public_key": _pub(keys),
+        "telnyx_connection_ids": CONN,
     })
     raw, headers = _signed(keys, _body())
     async with TestClient(TestServer(app)) as client:

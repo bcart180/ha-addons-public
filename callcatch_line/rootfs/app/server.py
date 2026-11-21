@@ -34,7 +34,7 @@ import ratelimit
 import tools
 from aiohttp import ClientSession, ClientTimeout, web
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 PROTOCOLS = ("2025-06-18", "2025-03-26", "2024-11-05")
 OPTIONS_PATH = os.environ.get("LINE_OPTIONS", "/data/options.json")
 MCP_BODY_MAX = 16 * 1024
@@ -43,6 +43,8 @@ TELNYX_PATH = "/telnyx/events"
 TELNYX_TOLERANCE_S = 300  # Telnyx: reject telnyx-timestamp more than 5 minutes off
 TELNYX_EVENTS = ("call.initiated", "call.answered", "call.hangup", "call.recording.saved", "call.recording.error")
 _TELNYX_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
+_TELNYX_CONN_RE = re.compile(r"^[0-9]{1,32}$")
+TELNYX_MAX_CONNECTIONS = 10
 _TELNYX_ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T[0-9:.]+(Z|[+-]\d{2}:?\d{2})$")
 SESSION_TTL_S = 2 * 3600
 SESSIONS_MAX = 200
@@ -128,6 +130,23 @@ def _telnyx_public_key(raw: Any) -> tuple[bool, Any]:
         return True, None
 
 
+def _telnyx_connections(raw: Any) -> frozenset:
+    """Allowlisted Telnyx connection ids.  Blank, too many, or any bad token gives an empty set (fail closed)."""
+    tokens = [t for t in re.split(r"[\s,]+", str(raw or "").strip()) if t]
+    if not tokens or len(tokens) > TELNYX_MAX_CONNECTIONS:
+        return frozenset()
+    if any(not _TELNYX_CONN_RE.fullmatch(t) for t in tokens):
+        return frozenset()
+    return frozenset(tokens)
+
+
+def _telnyx_connection_of(value: Any) -> str:
+    if isinstance(value, bool):
+        return ""
+    text = str(value if value is not None else "").strip()
+    return text if _TELNYX_CONN_RE.fullmatch(text) else ""
+
+
 class Config:
     def __init__(self, opts: dict):
         self.mcp_token = _secret(opts.get("mcp_token"))
@@ -152,6 +171,8 @@ class Config:
             if len(self.hook_key) < 16:
                 self.hook_key = b""
         self.telnyx_configured, self.telnyx_key = _telnyx_public_key(opts.get("telnyx_public_key"))
+        # 0.2.1: events from any other connection are never relayed.  Empty keeps the path off.
+        self.telnyx_connections = _telnyx_connections(opts.get("telnyx_connection_ids"))
         self.rate_per_min = _int(opts, "rate_per_min", 60, 5, 600)
         self.tool_calls_per_min = _int(opts, "tool_calls_per_min", 30, 5, 300)
         self.finals_per_call = _int(opts, "finals_per_call", 6, 1, 50)
@@ -739,6 +760,7 @@ def _telnyx_event(body: dict) -> dict | None:
         "call_session_id": _telnyx_clean_id(payload.get("call_session_id")),
         "call_leg_id": _telnyx_clean_id(payload.get("call_leg_id")),
         "call_control_id": _telnyx_clean_id(payload.get("call_control_id")),
+        "connection_id": _telnyx_connection_of(payload.get("connection_id")),
     }
     caller = re.sub(r"[\s()\-.]", "", str(payload.get("from") or ""))
     out["from"] = caller if _NUM_RE.fullmatch(caller) else ""
@@ -771,7 +793,7 @@ async def telnyx_post(request: web.Request) -> web.Response:
     cfg: Config = st["cfg"]
     if not peer_allowed(request):
         return _json(403, {"error": "forbidden"})
-    if not cfg.telnyx_configured or not cfg.agent_token or not cfg.upstream:
+    if not cfg.telnyx_configured or not cfg.telnyx_connections or not cfg.agent_token or not cfg.upstream:
         return _json(503, {"error": "telnyx-disabled"})
     if request.headers.get("Origin"):
         return _json(403, {"error": "forbidden"})
@@ -793,6 +815,10 @@ async def telnyx_post(request: web.Request) -> web.Response:
         return _json(400, {"error": "bad-request"})
     event = _telnyx_event(body)
     if event is None:
+        return _json(200, {"ok": True, "ignored": True})
+    if event.get("connection_id") not in cfg.telnyx_connections:
+        # Another connection on the account (or none): acknowledged, never relayed.
+        log.info("telnyx %s ignored connection not allowed", event["event_type"])
         return _json(200, {"ok": True, "ignored": True})
     seen = st["telnyx_seen"]
     if event["event_id"] in seen:
