@@ -511,6 +511,22 @@
     $("icon-pause").classList.toggle("hidden", !on);
   }
 
+  function openFromHash() {
+    const raw = (location.hash || "").replace(/^#/, "").trim();
+    if (!raw) return false;
+    const key = raw.toLowerCase();
+    const idx = items.findIndex((v) =>
+      [v.voicemail_id, v.agent_ref, v.short_id, v.call_id].some((x) => String(x || "").toLowerCase() === key)
+    );
+    if (idx < 0) return false;
+    openDetail(idx);
+    return true;
+  }
+
+  window.addEventListener("hashchange", () => {
+    if (!openFromHash() && location.hash) showList();
+  });
+
   async function refresh() {
     try {
       const data = await api("api/voicemails");
@@ -522,6 +538,8 @@
         const again = items.find((x) => x.voicemail_id === current.voicemail_id);
         if (!again) showList();
         else { current = again; renderCallback(current); renderSummary(current); }
+      } else {
+        openFromHash();
       }
     } catch (e) {
       subEl.textContent = `Error: ${e.message}`;

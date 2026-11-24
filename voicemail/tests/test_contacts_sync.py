@@ -453,3 +453,42 @@ def test_get_not_blocked_by_sec_fetch_site(monkeypatch):
     mod = _load_server(monkeypatch, tempfile.mkdtemp())
     h = {**INGRESS, "Sec-Fetch-Site": "cross-site"}
     assert mod.deny_mutation(_Req(None, "172.30.32.2", h, method="GET")) is None
+
+
+# ----------------------------------------------------- lookup / drop folder --
+
+def test_lookup_display_prefers_contact_then_cnam():
+    directory = {"+15555550101": "Testy McTestface"}
+    name, source = cs.lookup_display("+1 555-555-0101", directory, "Telnyx Cnam")
+    assert (name, source) == ("Testy McTestface", "contact")
+    name, source = cs.lookup_display("5555550199", {}, "Avery Example")
+    assert (name, source) == ("Avery Example", "cnam")
+    name, source = cs.lookup_display("5555550199", {}, "555 555 0199")
+    assert (name, source) == ("", "none")
+    name, source = cs.lookup_display("not-a-number", {}, "")
+    assert (name, source) == ("", "none")
+
+
+@pytest.mark.asyncio
+async def test_drop_folder_imports_vcf_and_deletes_file(tmp_path):
+    folder = tmp_path / "import"
+    priv = tmp_path / "private"
+    sync = cs.ContactsSync(
+        cs.Directory(priv),
+        tmp_path / "contacts_status.json",
+        enabled=False,
+        apple_id="",
+        app_password="",
+        import_dir=folder,
+    )
+    folder.mkdir()
+    (folder / "export.vcf").write_text(VCF, encoding="utf-8")
+    snap = await sync.import_drop_folder()
+    assert snap["state"] == "ok"
+    assert snap["source"] == "drop"
+    assert snap["numbers"] >= 1
+    assert not (folder / "export.vcf").exists()
+    assert cs.lookup_display("5555550101", sync.directory.loaded())[1] == "contact"
+    # mode 600 on the private map
+    mode = (priv / cs.DIRECTORY_NAME).stat().st_mode
+    assert mode & 0o777 == 0o600
