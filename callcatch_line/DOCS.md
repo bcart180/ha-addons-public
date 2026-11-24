@@ -38,7 +38,7 @@ Tool name, result code, reference, milliseconds, caller last 4.  No headers, bod
 
 `telnyx_public_key` is the raw 32-byte Ed25519 public key, standard base64 (44 characters, no PEM headers and no whitespace). That is the value shown in the Telnyx portal under Keys & Credentials → Public Key. A value that is set but is not 32 bytes after decoding rejects every webhook.
 
-Line relays ids, times, the caller, channel count, and the short-lived recording URL to CallCatch. It does not log the URL, the key, or the body. The log line is the event name, the upstream status, and the caller's last 4 digits. CallCatch downloads, transcribes, and deletes the remote copy. See CallCatch's docs for the go-live recording settings.
+Line relays ids, times, the caller, a sanitized CNAM (`from_display`, 0.2.2), channel count, and the short-lived recording URL to CallCatch. A CNAM is never logged. It does not log the URL, the key, or the body. The log line is the event name, the upstream status, and the caller's last 4 digits. CallCatch downloads, transcribes, and deletes the remote copy. See CallCatch's docs for the go-live recording settings.
 
 ## Agent-written transcript (0.1.2, CallCatch 0.7.2)
 

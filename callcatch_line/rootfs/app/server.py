@@ -762,8 +762,18 @@ def _telnyx_event(body: dict) -> dict | None:
         "call_control_id": _telnyx_clean_id(payload.get("call_control_id")),
         "connection_id": _telnyx_connection_of(payload.get("connection_id")),
     }
-    caller = re.sub(r"[\s()\-.]", "", str(payload.get("from") or ""))
+    raw_from = payload.get("from")
+    if isinstance(raw_from, dict):
+        caller_src = raw_from.get("phone_number") or raw_from.get("from") or raw_from.get("number") or ""
+        display_src = raw_from.get("display_name") or raw_from.get("caller_id_name") or raw_from.get("name") or ""
+    else:
+        caller_src = raw_from
+        display_src = payload.get("caller_id_name") or payload.get("from_display_name") or ""
+    caller = re.sub(r"[\s()\-.]", "", str(caller_src or ""))
     out["from"] = caller if _NUM_RE.fullmatch(caller) else ""
+    display = " ".join(str(display_src or "").split())[:80]
+    if display and re.search(r"[A-Za-z]", display) and len(re.sub(r"\D", "", display)) < 7:
+        out["from_display"] = display
     if etype == "call.recording.saved":
         out["recording_id"] = _telnyx_clean_id(payload.get("recording_id"))
     if not out["event_id"] or not (

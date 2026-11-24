@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2 — 2026-11-24
+
+- **Telnyx CNAM passthrough.**  A reduced call event may include `from_display` when Telnyx sent a caller name (`caller_id_name`, `from_display_name`, or a `from.display_name` object).  A name that looks like a number is dropped.  The name is never logged; the caller is still logged as last-4 only.  The allowlist, signature checks, and other reduced fields are unchanged.
+
 ## 0.2.1 — 2026-11-20
 
 - **Connection allowlist (fail closed).**  New option `telnyx_connection_ids` (comma or space separated Telnyx connection ids, digits only, up to 10).  `POST /telnyx/events` stays off (503) until both `telnyx_public_key` and a valid list are set.  A signed event from any other connection, or with no connection id, is acknowledged (200) and never relayed to CallCatch.  The reduced event now carries `connection_id` so CallCatch applies the same list.
