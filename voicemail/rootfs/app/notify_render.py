@@ -1,4 +1,4 @@
-"""Email and push content for a finalized phone-agent call (0.8.5).
+"""Email and push content for a finalized phone-agent call (0.8.6).
 
 System notification to Bryson's own mailbox.  Prose uses two spaces after
 periods and has no sign-off.  The push is masked: caller name and reference
@@ -343,4 +343,49 @@ def push(row: dict, update: bool = False) -> dict:
         "title": f"CallCatch: {name}",
         "message": msg,
         "data": {"url": PUSH_PANEL, "tag": f"callcatch-{ref}", "group": "callcatch"},
+    }
+
+
+
+def gdit_display_name(row: dict) -> str:
+    """Contact name only.  CNAM, spoken, and unusable names become "A caller"."""
+    import contacts_sync
+
+    if str(row.get("caller_name_source") or "") != "contact":
+        return "A caller"
+    name = str((row.get("fields") or {}).get("caller_name") or "").strip()
+    if not contacts_sync.name_is_usable(name):
+        return "A caller"
+    return name
+
+
+def gdit_email(row: dict) -> dict:
+    """Redacted work-hours copy.  No transcript, summary, number, audio, or link."""
+    from gdit_copy import GDIT_RECIPIENT
+
+    name = gdit_display_name(row)
+    when = time_et_short(row.get("created_at") or 0)
+    subject = f"{name} called at {when}"[:SUBJECT_MAX]
+    text = f"{name} called at {when}.\n\nSee Proton for the full message."
+    safe_name = html.escape(name)
+    safe_when = html.escape(when)
+    body_html = (
+        '<!DOCTYPE html><html><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1"></head>'
+        '<body style="margin:0;background:#ffffff;color:#111111;'
+        "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif\">"
+        '<div style="max-width:520px;margin:0 auto;padding:24px 18px">'
+        f'<p style="margin:0 0 14px;font-size:16px;line-height:1.45">{safe_name} called at {safe_when}.&nbsp;</p>'
+        '<p style="margin:0;font-size:16px;line-height:1.45">See Proton for the full message.</p>'
+        "</div></body></html>"
+    )
+    ref = str(row.get("ref") or "")
+    return {
+        "id": f"callcatch-gdit-{ref}",
+        "to": [GDIT_RECIPIENT],
+        "from": "",
+        "subject": subject,
+        "text": text,
+        "html": body_html,
+        "category": "callcatch_gdit_notice",
     }
