@@ -37,6 +37,8 @@ STATUS_NAME = "contacts_status.json"
 NAME_MAX = 80
 MAX_DIRECTORY_BYTES = 4_000_000
 UPLOAD_MAX_BYTES = 5 * 1024 * 1024
+DROP_INTERVAL_S = 30
+DEFAULT_IMPORT_DIR = pathlib.Path("/share/callcatch/import")
 MIN_INTERVAL_MIN = 15
 DEFAULT_INTERVAL_MIN = 30
 ICLOUD_ROOT = "https://contacts.icloud.com/"
@@ -103,6 +105,37 @@ def clean_name(raw: Any) -> str:
     s = _CTRL.sub(" ", str(raw or ""))
     s = re.sub(r"\s+", " ", s).strip()
     return s[:NAME_MAX].strip()
+
+
+
+def name_is_usable(raw: Any) -> bool:
+    """True when a label is a person or org name, not a number."""
+    s = clean_name(raw)
+    if not s or not re.search(r"[A-Za-z]", s):
+        return False
+    if set(s) <= set("•0123456789+()-. "):
+        return False
+    if len(re.sub(r"\D", "", s)) >= 7:
+        return False
+    return True
+
+
+def lookup_display(number: Any, directory: dict[str, str] | None, cnam: Any = "") -> tuple[str, str]:
+    """Map a caller number to a display name.
+
+    Preference: contact directory, then Telnyx CNAM, otherwise no name.
+    Returns (name, source) where source is contact, cnam, or none.
+    Never logs the name or number.
+    """
+    key = normalize_e164(number)
+    if key and isinstance(directory, dict):
+        name = clean_name(directory.get(key) or "")
+        if name_is_usable(name):
+            return name, "contact"
+    cnam_name = clean_name(cnam)
+    if name_is_usable(cnam_name):
+        return cnam_name, "cnam"
+    return "", "none"
 
 
 # ------------------------------------------------------------------ vCards --
@@ -313,6 +346,10 @@ class Directory:
         log.info("contacts: manual directory preserved entries=%d", len(current))
         return current
 
+    def loaded(self) -> dict[str, str]:
+        data = _read_map(self.path)
+        return data or {}
+
     def write(self, contacts: dict[str, str]) -> dict[str, str]:
         manual = self.ensure_manual()
         merged = merge(manual, contacts)
@@ -478,8 +515,10 @@ class ContactsSync:
         app_password: str,
         interval_min: Any = DEFAULT_INTERVAL_MIN,
         transport_factory: Callable[[], Transport] | None = None,
+        import_dir: pathlib.Path | None = None,
     ):
         self.directory = directory
+        self.import_dir = pathlib.Path(import_dir) if import_dir else DEFAULT_IMPORT_DIR
         self.status_path = pathlib.Path(status_path) if status_path else None
         self.enabled = bool(enabled)
         self._apple_id = str(apple_id or "").strip()
@@ -614,20 +653,112 @@ class ContactsSync:
             cards = parse_vcards(text)
             return self._apply("upload", cards)
 
+    def _prepare_import_dir(self) -> pathlib.Path | None:
+        path = self.import_dir
+        try:
+            new = not path.exists()
+            path.mkdir(parents=True, exist_ok=True, mode=0o700)
+            if new:
+                os.chmod(path, 0o700)
+            return path
+        except OSError:
+            log.warning("contacts: drop import folder unavailable")
+            return None
+
+    def _drop_files(self, folder: pathlib.Path) -> list[pathlib.Path]:
+        out: list[pathlib.Path] = []
+        try:
+            entries = list(folder.iterdir())
+        except OSError:
+            return out
+        for item in entries:
+            try:
+                if not item.is_file():
+                    continue
+                if item.suffix.lower() not in (".vcf", ".vcard"):
+                    continue
+                out.append(item)
+            except OSError:
+                continue
+        out.sort(key=lambda p: p.name.lower())
+        return out
+
+    async def import_drop_folder(self) -> dict[str, Any]:
+        """Re-import any .vcf dropped in the import folder.  Files are deleted after a successful parse.
+
+        Filenames are never logged (they can be a contact name).  Counts and reason codes only.
+        """
+        folder = self._prepare_import_dir()
+        if folder is None:
+            return self.snapshot()
+        files = self._drop_files(folder)
+        if not files:
+            return self.snapshot()
+        last = self.snapshot()
+        imported = 0
+        for path in files:
+            try:
+                size = path.stat().st_size
+            except OSError:
+                continue
+            if size > UPLOAD_MAX_BYTES:
+                log.warning("contacts: drop import too_large")
+                continue
+            try:
+                raw = path.read_bytes()
+            except OSError:
+                log.warning("contacts: drop import read failed")
+                continue
+            last = await self.import_vcf(raw)
+            # Re-tag a successful upload as a drop so status names the source.
+            if last.get("state") == "ok" and self.status.get("source") == "upload":
+                self.status["source"] = "drop"
+                self._save_status()
+                last = self.snapshot()
+            if last.get("state") == "ok":
+                try:
+                    path.unlink()
+                except OSError:
+                    log.warning("contacts: drop import cleanup failed")
+                else:
+                    imported += 1
+            elif last.get("state") in ("bad_upload", "empty"):
+                log.warning("contacts: drop import %s", last.get("state"))
+        if imported:
+            log.info("contacts: drop import ok files=%d", imported)
+        return last
+
     async def run_forever(self) -> None:
         if not self.enabled or not self.configured:
             log.info("contacts: iCloud sync %s", "not configured" if self.enabled else "disabled")
-            return
+        else:
+            log.info("contacts: iCloud sync on")
         await asyncio.sleep(5)
+        last_icloud = 0.0
         while True:
             try:
-                await self.sync_icloud()
+                await self.import_drop_folder()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 - keep the loop alive, log type only
-                self.status["state"] = "http"
-                log.warning("contacts: sync crashed (%s)", type(exc).__name__)
-            await asyncio.sleep(self.interval_min * 60)
+                log.warning("contacts: drop import crashed (%s)", type(exc).__name__)
+            now = time.time()
+            icloud_due = (
+                self.enabled
+                and self.configured
+                and (last_icloud == 0.0 or now - last_icloud >= self.interval_min * 60)
+            )
+            if icloud_due:
+                try:
+                    await self.sync_icloud()
+                    last_icloud = time.time()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 - keep the loop alive, log type only
+                    self.status["state"] = "http"
+                    last_icloud = time.time()
+                    log.warning("contacts: sync crashed (%s)", type(exc).__name__)
+            await asyncio.sleep(DROP_INTERVAL_S)
 
 
 PUBLIC_KEYS = (
@@ -655,7 +786,7 @@ def public_status(status: dict) -> dict[str, Any]:
         if k == "state":
             v = v if v in REASONS else "http"
         elif k == "source":
-            v = v if v in ("icloud", "upload") else None
+            v = v if v in ("icloud", "upload", "drop") else None
         elif k in ("enabled", "configured"):
             v = bool(v)
         elif v is not None and not isinstance(v, int):

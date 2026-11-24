@@ -282,7 +282,39 @@ def _id(value: Any) -> str:
     return text if ID_RE.fullmatch(text) else ""
 
 
+def _cnam(value: Any) -> str:
+    """Display name only.  Empty when the value looks like a number.  Never logged."""
+    import contacts_sync
+    name = contacts_sync.clean_name(value)
+    return name if contacts_sync.name_is_usable(name) else ""
+
+
+def _event_cnam(event: Any) -> str:
+    if not isinstance(event, dict):
+        return ""
+    raw_from = event.get("from")
+    candidates = [
+        event.get("from_display"),
+        event.get("caller_id_name"),
+        event.get("from_display_name"),
+        event.get("cnam"),
+    ]
+    if isinstance(raw_from, dict):
+        candidates.extend([
+            raw_from.get("display_name"),
+            raw_from.get("caller_id_name"),
+            raw_from.get("name"),
+        ])
+    for item in candidates:
+        name = _cnam(item)
+        if name:
+            return name
+    return ""
+
+
 def _caller(value: Any) -> str:
+    if isinstance(value, dict):
+        value = value.get("phone_number") or value.get("from") or value.get("number") or ""
     raw = re.sub(r"[\s()\-.]", "", str(value or ""))[:20]
     digits = re.sub(r"\D", "", raw)
     if len(digits) == 10:
@@ -565,6 +597,7 @@ def _blank_job(jid: str, now: float) -> dict:
         "recording_id": "",
         "connection_id": "",
         "from": "",
+        "cnam": "",
         "start_ts": 0.0,
         "end_ts": 0.0,
         "duration_s": 0,
@@ -715,7 +748,7 @@ class Capture:
     @staticmethod
     def _fill(dst: dict, src: dict) -> None:
         for field in (
-            "call_session_id", "call_leg_id", "call_control_id", "recording_id", "connection_id", "from",
+            "call_session_id", "call_leg_id", "call_control_id", "recording_id", "connection_id", "from", "cnam",
             "channels", "format", "file", "sha256", "transcript", "ref", "deleted", "last_error",
         ):
             if not dst.get(field) and src.get(field):
@@ -773,6 +806,9 @@ class Capture:
             caller = _caller(event.get("from"))
             if caller and not job.get("from"):
                 job["from"] = caller
+            cnam = _event_cnam(event)
+            if cnam and not job.get("cnam"):
+                job["cnam"] = cnam
             start = _epoch(event.get("start_time") or event.get("recording_started_at"))
             end = _epoch(event.get("end_time") or event.get("recording_ended_at"))
             if start and not job.get("start_ts"):
@@ -835,6 +871,9 @@ class Capture:
             caller = _caller(record.get("from"))
             if caller and not job.get("from"):
                 job["from"] = caller
+            cnam = _event_cnam(record)
+            if cnam and not job.get("cnam"):
+                job["cnam"] = cnam
             start = _epoch(record.get("recording_started_at") or record.get("start_time"))
             end = _epoch(record.get("recording_ended_at") or record.get("end_time"))
             if start and not job.get("start_ts"):
