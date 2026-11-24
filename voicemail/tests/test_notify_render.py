@@ -85,3 +85,29 @@ def test_agent_label_is_shown_as_assistant():
     mail = notify_render.email(row, ["callcatch-test@proton.me"], "callcatch-test@agentmail.to")
     assert "Assistant" in mail["html"]
     assert "Agent:" not in mail["html"]
+
+
+def test_cnam_name_is_marked_caller_id():
+    row = {
+        "ref": "CC-CNAM",
+        "created_at": TS,
+        "duration_s": 12,
+        "fields": {
+            "caller_name": "Pat Testcaller",
+            "caller_name_source": "cnam",
+            "caller_id": "+15550104472",
+        },
+        "transcript": "unlabeled speech",
+    }
+    mail = notify_render.email(row, ["callcatch-test@proton.me"], "callcatch-test@agentmail.to")
+    assert mail["subject"] == "Pat Testcaller (caller ID) called at 5:15 PM ET"
+    assert "Pat Testcaller (caller ID)" in mail["text"]
+    assert "Pat Testcaller (caller ID)" in mail["html"]
+    note = notify_render.push(row)
+    assert note["title"] == "CallCatch: Pat Testcaller (caller ID)"
+    contact = dict(FAKE_ROW)
+    contact["fields"] = {**FAKE_ROW["fields"], "caller_name_source": "contact"}
+    mail = notify_render.email(contact, ["callcatch-test@proton.me"], "callcatch-test@agentmail.to")
+    assert mail["subject"] == "Jordan Hale called at 5:15 PM ET"
+    assert "(caller ID)" not in mail["subject"]
+    assert "(caller ID)" not in notify_render.push(contact)["title"]

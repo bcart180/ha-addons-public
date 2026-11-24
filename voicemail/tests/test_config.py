@@ -24,6 +24,7 @@ NEW_OPTIONS = (
     "icloud_apple_id",
     "icloud_app_password",
     "contacts_sync_interval_min",
+    "contacts_drop_import",
 )
 
 
@@ -57,6 +58,8 @@ def test_password_options_and_translations():
     assert "contacts_sync_enabled: false" in CONFIG
     assert "contacts_sync_interval_min: 30" in CONFIG
     assert "contacts_sync_interval_min: int(15," in CONFIG
+    assert "contacts_drop_import: false" in CONFIG
+    assert "contacts_drop_import: bool" in CONFIG
     assert "storage_backend: list(local|google_drive)" in CONFIG
     assert "legacy_pyscript: list(auto|on|off)" in CONFIG
     for name in NEW_OPTIONS:
