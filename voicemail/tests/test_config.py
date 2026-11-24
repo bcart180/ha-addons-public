@@ -25,12 +25,13 @@ NEW_OPTIONS = (
     "icloud_app_password",
     "contacts_sync_interval_min",
     "contacts_drop_import",
+    "gdit_work_copy",
 )
 
 
 def test_slug_version_and_blank_player():
     assert "\nslug: voicemail\n" in CONFIG
-    assert 'version: "0.8.5"' in CONFIG
+    assert 'version: "0.8.6"' in CONFIG
     assert 'media_player: ""' in CONFIG
     assert "bedroom_homepod" not in CONFIG
     assert "HomePod" not in CONFIG
@@ -60,6 +61,8 @@ def test_password_options_and_translations():
     assert "contacts_sync_interval_min: int(15," in CONFIG
     assert "contacts_drop_import: false" in CONFIG
     assert "contacts_drop_import: bool" in CONFIG
+    assert "gdit_work_copy: false" in CONFIG
+    assert "gdit_work_copy: bool" in CONFIG
     assert "storage_backend: list(local|google_drive)" in CONFIG
     assert "legacy_pyscript: list(auto|on|off)" in CONFIG
     for name in NEW_OPTIONS:
