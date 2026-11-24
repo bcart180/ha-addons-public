@@ -409,7 +409,7 @@ async def test_followup_http_and_callback_list_are_admin_reads(mod):
         listed = await client.get("/api/callback_requests", headers=USER)
         payload = await listed.json()
         assert listed.status == 200
-        assert payload["ok"] is True and payload["v"] == "0.8.4"
+        assert payload["ok"] is True and payload["v"] == "0.8.5"
         assert payload["count"] == 1
         assert [row["voicemail_id"] for row in payload["callbacks"]] == [vid]
         assert set(payload["callbacks"][0]) == QUEUE_KEYS
