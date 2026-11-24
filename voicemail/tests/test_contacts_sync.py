@@ -66,6 +66,20 @@ def test_normalize_matches_pyscript_keys():
         assert cs.normalize_e164(raw) == "+15555550101"
 
 
+
+def test_normalize_caps_long_whitespace_run():
+    # A long internal whitespace run would stall the extension-split regex
+    # without the 64-character cap (Security Audit M1).
+    import time
+
+    raw = "1" + (" " * 50_000) + "ext=1"
+    start = time.perf_counter()
+    assert cs.normalize_e164(raw) == ""
+    assert time.perf_counter() - start < 0.25
+    # Leading spaces are stripped before the cap, so a valid number still maps.
+    assert cs.normalize_e164((" " * 50_000) + "5555550101") == "+15555550101"
+
+
 # ---------------------------------------------------------------- parse --
 
 def test_parse_vcards_edge_cases():
@@ -480,6 +494,7 @@ async def test_drop_folder_imports_vcf_and_deletes_file(tmp_path):
         apple_id="",
         app_password="",
         import_dir=folder,
+        drop_import=True,
     )
     folder.mkdir()
     (folder / "export.vcf").write_text(VCF, encoding="utf-8")
@@ -492,3 +507,101 @@ async def test_drop_folder_imports_vcf_and_deletes_file(tmp_path):
     # mode 600 on the private map
     mode = (priv / cs.DIRECTORY_NAME).stat().st_mode
     assert mode & 0o777 == 0o600
+
+
+def _drop_sync(tmp_path, *, drop_import=True):
+    folder = tmp_path / "import"
+    priv = tmp_path / "private"
+    sync = cs.ContactsSync(
+        cs.Directory(priv),
+        tmp_path / "contacts_status.json",
+        enabled=False,
+        apple_id="",
+        app_password="",
+        import_dir=folder,
+        drop_import=drop_import,
+    )
+    return sync, folder, priv
+
+
+@pytest.mark.asyncio
+async def test_drop_folder_off_does_not_read(tmp_path):
+    sync, folder, priv = _drop_sync(tmp_path, drop_import=False)
+    folder.mkdir()
+    target = folder / "export.vcf"
+    target.write_bytes(VCF.encode("utf-8"))
+    before = target.read_bytes()
+    os.chmod(folder, 0o755)
+    snap = await sync.import_drop_folder()
+    assert target.exists()
+    assert target.read_bytes() == before
+    assert not (priv / cs.DIRECTORY_NAME).exists()
+    assert snap.get("source") in (None, "upload", "drop") or snap.get("numbers", 0) == 0
+    assert stat.S_IMODE(folder.stat().st_mode) == 0o755
+
+
+@pytest.mark.asyncio
+async def test_drop_folder_merges_without_wiping_icloud_only(tmp_path):
+    sync, folder, priv = _drop_sync(tmp_path, drop_import=True)
+    # Simulate an earlier iCloud sync: directory has a number that is not in manual.
+    directory = cs.Directory(priv)
+    directory.write({"+15555550199": "Avery Example"})
+    assert json.loads((priv / cs.MANUAL_NAME).read_text()) == {}
+    folder.mkdir()
+    (folder / "export.vcf").write_text(
+        "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Testy McTestface\r\nTEL:5555550101\r\nEND:VCARD\r\n",
+        encoding="utf-8",
+    )
+    snap = await sync.import_drop_folder()
+    assert snap["state"] == "ok"
+    loaded = sync.directory.loaded()
+    assert loaded["+15555550199"] == "Avery Example"
+    assert loaded["+15555550101"] == "Testy McTestface"
+    # A later iCloud write still keeps the drop-only number (now in the manual map).
+    later = directory.write({"+15555550199": "Avery Example"})
+    assert later["+15555550199"] == "Avery Example"
+    assert later["+15555550101"] == "Testy McTestface"
+
+
+@pytest.mark.asyncio
+async def test_drop_folder_skips_symlinks(tmp_path):
+    sync, folder, priv = _drop_sync(tmp_path, drop_import=True)
+    outside = tmp_path / "outside.vcf"
+    outside.write_text(VCF, encoding="utf-8")
+    folder.mkdir()
+    (folder / "link.vcf").symlink_to(outside)
+    snap = await sync.import_drop_folder()
+    assert outside.exists()
+    assert (folder / "link.vcf").is_symlink()
+    assert not (priv / cs.DIRECTORY_NAME).exists() or sync.directory.loaded() == {}
+    assert snap.get("state") != "ok" or snap.get("numbers", 0) == 0
+
+
+@pytest.mark.asyncio
+async def test_drop_folder_rejects_bad_file_once(tmp_path, caplog):
+    sync, folder, _priv = _drop_sync(tmp_path, drop_import=True)
+    folder.mkdir()
+    bad = folder / "bad.vcf"
+    bad.write_text("not a vcard", encoding="utf-8")
+    with caplog.at_level(logging.WARNING, logger="callcatch.contacts"):
+        first = await sync.import_drop_folder()
+        await sync.import_drop_folder()
+    assert first.get("state") == "bad_upload"
+    assert not bad.exists()
+    rejected = folder / "bad.vcf.rejected"
+    assert rejected.exists()
+    assert rejected.read_text(encoding="utf-8") == "not a vcard"
+    warnings = [r.message for r in caplog.records if "drop import" in r.message]
+    assert warnings.count("contacts: drop import bad_upload") == 1
+    assert rejected.exists()
+    assert not any("bad.vcf" in str(r.message) for r in caplog.records)
+
+
+def test_prepare_import_dir_always_chmods_0700(tmp_path):
+    sync, folder, _priv = _drop_sync(tmp_path, drop_import=True)
+    folder.mkdir()
+    os.chmod(folder, 0o755)
+    assert stat.S_IMODE(folder.stat().st_mode) == 0o755
+    out = sync._prepare_import_dir()
+    assert out == folder
+    assert stat.S_IMODE(folder.stat().st_mode) == 0o700

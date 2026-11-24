@@ -414,25 +414,31 @@ appleid.apple.com.
 - Logs show only counts and a status, for example
   `contacts: synced 412 numbers from 380 contacts`.
 
-### .vcf drop folder (0.8.5)
-
-A second fallback, for a one-step import without the admin upload form: copy a
-`.vcf` or `.vcard` export into `/share/callcatch/import/` on the Home Assistant
-host (the folder is created at mode 0700 if needed).  CallCatch reads the file
-in memory, merges it into the private directory, and deletes the file on
-success.  It checks the folder about every 30 seconds, including when iCloud
-sync is off.  Filenames, names and numbers are never logged.
-
-### .vcf upload (fallback)
+### .vcf upload (normal import)
 
 Numbers view (sidebar) → **Contacts** → **Upload .vcf**. Export contacts from
 iCloud.com or the iPhone Contacts app as a `.vcf`. Limit 5 MB. The file is
-parsed in memory, merged the same way and discarded; it is never stored. Only
-signed-in Home Assistant ingress sessions can upload (the panel is admin-only).
+parsed in memory, merged into the private directory (existing iCloud-only
+entries are kept) and discarded; it is never stored. Only signed-in Home
+Assistant ingress sessions can upload (the panel is admin-only).  This is the
+usual import route when iCloud sync is off.
+
+### .vcf drop folder (0.8.5, off by default)
+
+A second, optional fallback.  Turn on `contacts_drop_import` in the add-on
+options (it defaults to off), then copy a `.vcf` or `.vcard` export into
+`/share/callcatch/import/` on the Home Assistant host.  When the option is off,
+that folder is not read at all.  When it is on, the folder is created or
+tightened to mode 0700, checked about every 30 seconds, and each file is read
+in memory, merged into the private directory (iCloud-only entries are kept;
+new numbers are also stored in the manual map so a later iCloud sync does not
+drop them), and deleted on success.  Symlinks are skipped.  A file that fails
+to parse is renamed with a `.rejected` suffix after the first attempt and
+logged once (reason code only).  Filenames, names and numbers are never logged.
 
 ### Status
 
-The same card shows last sync time, source (iCloud or upload), number and
+The same card shows last sync time, source (iCloud, upload, or drop), number and
 contact counts, directory size and a status code (`ok`, `disabled`,
 `not_configured`, `auth`, `network`, `http`, `parse`, `no_addressbook`,
 `empty`, `write`). `/api/diag` carries the same fields under `contacts`.

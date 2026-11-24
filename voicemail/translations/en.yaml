@@ -97,6 +97,14 @@ configuration:
   contacts_sync_interval_min:
     name: Contacts sync interval (minutes)
     description: How often to re-read iCloud contacts. Default 30, minimum 15.
+  contacts_drop_import:
+    name: Import contacts from the share drop folder
+    description: >-
+      Off by default. When on, CallCatch reads .vcf files placed in
+      /share/callcatch/import/, merges them into the private directory, and
+      deletes the file on success. The usual import route is the admin
+      Upload .vcf button, which stays available either way. Only counts are
+      logged.
   agent_token:
     name: Phone agent token (CallCatch Line)
     description: >-
