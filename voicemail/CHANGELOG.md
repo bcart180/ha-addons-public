@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.6 — 2026-11-24
+
+- **Optional GDIT work-hours copy.**  New option `gdit_work_copy` (default `false`).  When on, a redacted copy is considered only after the Proton notice has been sent, or would have been sent while `input_boolean.callcatch_notify_dry_run` is on (would-send is logged, nothing is sent).  The recipient is pinned in code to `bryson.carter@gdit.com` on `@gdit.com` only; the existing Proton pin is unchanged.
+- **At-work gate, fail closed.**  The copy is sent only when `binary_sensor.bryson_at_work` is explicitly `on`.  There is no clock fallback.  If the sensor is `off`, `unknown`, `unavailable`, or Home Assistant is unreachable, no GDIT copy is sent.
+- **Redacted template.**  The copy names the contact (or "A caller" for CNAM, spoken, or unusable names), the time in America/New_York, and "See Proton for the full message."  It has no transcript, summary, number or last-4, audio, or link.
+- **Sensitive-caller skip.**  VA, medical, or financial callers are skipped entirely, matched on the contact name or label and on a conservative, documented keyword list in the summary or transcript.  Reason codes only are logged (`disabled`, `no_proton`, `work_unknown`, `not_at_work`, `sensitive`, `dry_run`, plus send success).  Names and numbers are never logged.
+
 ## 0.8.5 — 2026-11-24
 
 - **Post-call email format.**  The Proton notice subject is `{caller} called at {time} ET`.  The body is black-friendly (`#000` background, `#3E6AE1` accent) and shows the caller name (or a last-4 fallback), last-4, time, duration, and early hangup yes/no, then a short summary, the verbatim transcript with 0.8.4 `Assistant` / `Caller` labels, a note that the recording lives in CallCatch (it is not attached), and a home-network link to that inbox row when `panel_base_url` is set.  Two spaces after periods are preserved in HTML.  Caller-supplied sections still follow the untrusted-text notice.  Test mode (`dry_run`) and Telnyx delete settings are unchanged.

@@ -255,6 +255,16 @@ class AgentCalls:
             row = self._read()["calls"].get(key)
             return copy.deepcopy(row) if isinstance(row, dict) else None
 
+    def by_ref(self, ref: str) -> dict | None:
+        want = str(ref or "")
+        if not want:
+            return None
+        with exclusive_lock(self.lock_path):
+            for row in self._read()["calls"].values():
+                if isinstance(row, dict) and str(row.get("ref") or "") == want:
+                    return copy.deepcopy(row)
+        return None
+
     def all(self) -> list[dict]:
         with exclusive_lock(self.lock_path):
             return [copy.deepcopy(v) for v in self._read()["calls"].values()]
