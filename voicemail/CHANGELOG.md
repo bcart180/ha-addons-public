@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.5 — 2026-11-24
+
+- **Post-call email format.**  The Proton notice subject is `{caller} called at {time} ET`.  The body is black-friendly (`#000` background, `#3E6AE1` accent) and shows the caller name (or a last-4 fallback), last-4, time, duration, and early hangup yes/no, then a short summary, the verbatim transcript with 0.8.4 `Assistant` / `Caller` labels, a note that the recording lives in CallCatch (it is not attached), and a home-network link to that inbox row when `panel_base_url` is set.  Two spaces after periods are preserved in HTML.  Caller-supplied sections still follow the untrusted-text notice.  Test mode (`dry_run`) and Telnyx delete settings are unchanged.
+- **Caller names on notices and the inbox.**  A number is normalized to E.164 and looked up in the private directory (`/share/callcatch/private/caller_names.json`, mode 0600) first, then Telnyx CNAM if one was provided, then a usable spoken name.  Logs still print last-4 only.  Contact names, numbers, and CNAM are never logged.
+- **Drop-folder re-import.**  A `.vcf` or `.vcard` placed in `/share/callcatch/import/` (mode 0700) is parsed in memory, merged into the private directory, and deleted on success.  The folder is polled about every 30 seconds even when iCloud sync is off.  Filenames are never logged.  The existing admin `.vcf` upload and optional iCloud CardDAV sync still work.
+
 ## 0.8.4 — 2026-11-21
 
 - **Recording transcripts no longer label the assistant as the caller.**  Telnyx dual-channel audio puts the first call leg on channel A (index 0) and the rest on channel B, but on a bridged SIP call that first leg is not always the inbound caller.  CallCatch no longer assumes channel 0 is the caller.  When exactly one channel looks like the assistant opening, that channel is labeled Assistant and the other is Caller, including when the opening is on channel A.  If the roles cannot be told apart, or the STT result has no per-channel split, the transcript is left unlabeled rather than given a wrong speaker.

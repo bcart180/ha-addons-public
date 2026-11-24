@@ -346,6 +346,26 @@ Each voicemail gets a short structured summary: **caller name** (only if the cal
 
 When this add-on is moved to another add-on store, its `/data` does not move with it. The new install imports allow-listed files once, on its first start, from `/share/.migrate-2026-11-01/<slug>/` (`voicemail` or `twilio_house_voice`). The folder must be owned by root with mode 700 (`chmod 700`). Anything unexpected (a symlink, a file not on the allow-list, a file over 8 MB, invalid JSON) stops the import with nothing written, and the log names only the reason. After a successful import the add-on writes an import marker in `/data` and deletes the staged files. It never imports twice.
 
+## Post-call email (0.8.5)
+
+When a call is finalized, CallCatch queues one email (still gated by the notify
+dry-run switch).  The subject is the caller name, or a last-4 fallback, plus
+the time in America/New_York: `Jordan Hale called at 5:15 PM ET`.  The HTML body
+is black-friendly for Proton on iPhone (`#000` background, `#3E6AE1` links) and
+includes:
+
+- header: name, last-4, time, duration, early hangup yes/no
+- short summary, when one exists
+- verbatim transcript with 0.8.4 `Assistant` / `Caller` labels (unlabeled when
+  the roles cannot be told apart)
+- a note that the recording is in CallCatch, not attached to the email
+- a home-network link to that inbox row when `panel_base_url` is set
+  (`http://ha.home.arpa:8123` plus the ingress path and `#` plus the call
+  reference)
+
+`email_full_number` still adds a call-back line with the full number when it is
+on.  The header last-4 is always shown.  Prose uses two spaces after periods.
+
 ## Contacts → caller names (0.5.0)
 
 Missed-call and voicemail alerts show a contact's name when the caller's
@@ -393,6 +413,15 @@ appleid.apple.com.
   alone. The pyscript picks up changes within seconds (mtime check); no restart.
 - Logs show only counts and a status, for example
   `contacts: synced 412 numbers from 380 contacts`.
+
+### .vcf drop folder (0.8.5)
+
+A second fallback, for a one-step import without the admin upload form: copy a
+`.vcf` or `.vcard` export into `/share/callcatch/import/` on the Home Assistant
+host (the folder is created at mode 0700 if needed).  CallCatch reads the file
+in memory, merges it into the private directory, and deletes the file on
+success.  It checks the folder about every 30 seconds, including when iCloud
+sync is off.  Filenames, names and numbers are never logged.
 
 ### .vcf upload (fallback)
 
