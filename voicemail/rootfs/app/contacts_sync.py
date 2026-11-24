@@ -80,7 +80,7 @@ def normalize_e164(raw: Any) -> str:
     Extensions (x123, ;ext=, ext.) are dropped. Returns "" when the value is not
     a dialable number.
     """
-    s = str(raw or "").strip()
+    s = str(raw or "").strip()[:64]
     if s.lower().startswith("tel:"):
         s = s[4:]
     s = re.split(r"(?i)\s*(?:;ext=|;|,|\bext\.?|\bx(?=\s*\d)|#)", s, maxsplit=1)[0]
@@ -356,6 +356,21 @@ class Directory:
         atomic_write_json(self.path, merged)
         return merged
 
+    def merge_in(self, contacts: dict[str, str]) -> dict[str, str]:
+        """Overlay an incremental import onto the current directory and manual map.
+
+        iCloud-only entries already in the directory are kept.  New numbers are
+        written into the manual file so a later iCloud sync does not drop them.
+        """
+        manual = self.ensure_manual()
+        current = self.loaded()
+        updated_manual = merge(manual, contacts)
+        if updated_manual != manual:
+            atomic_write_json(self.manual_path, updated_manual)
+        merged = merge(merge(current, updated_manual), contacts)
+        atomic_write_json(self.path, merged)
+        return merged
+
 
 # ----------------------------------------------------------------- CardDAV --
 
@@ -516,11 +531,13 @@ class ContactsSync:
         interval_min: Any = DEFAULT_INTERVAL_MIN,
         transport_factory: Callable[[], Transport] | None = None,
         import_dir: pathlib.Path | None = None,
+        drop_import: bool = False,
     ):
         self.directory = directory
         self.import_dir = pathlib.Path(import_dir) if import_dir else DEFAULT_IMPORT_DIR
         self.status_path = pathlib.Path(status_path) if status_path else None
         self.enabled = bool(enabled)
+        self.drop_import = bool(drop_import)
         self._apple_id = str(apple_id or "").strip()
         self._app_password = str(app_password or "").strip()
         self.interval_min = clamp_interval(interval_min)
@@ -584,7 +601,10 @@ class ContactsSync:
             log.warning("contacts: %s returned no numbers; directory left unchanged", source)
             return self.snapshot()
         try:
-            merged = self.directory.write(mapping)
+            if source in ("upload", "drop"):
+                merged = self.directory.merge_in(mapping)
+            else:
+                merged = self.directory.write(mapping)
             manual = len(self.directory.ensure_manual())
         except SyncError:
             self.status["state"] = "write"
@@ -656,10 +676,8 @@ class ContactsSync:
     def _prepare_import_dir(self) -> pathlib.Path | None:
         path = self.import_dir
         try:
-            new = not path.exists()
             path.mkdir(parents=True, exist_ok=True, mode=0o700)
-            if new:
-                os.chmod(path, 0o700)
+            os.chmod(path, 0o700)
             return path
         except OSError:
             log.warning("contacts: drop import folder unavailable")
@@ -673,7 +691,7 @@ class ContactsSync:
             return out
         for item in entries:
             try:
-                if not item.is_file():
+                if item.is_symlink() or not item.is_file():
                     continue
                 if item.suffix.lower() not in (".vcf", ".vcard"):
                     continue
@@ -683,11 +701,27 @@ class ContactsSync:
         out.sort(key=lambda p: p.name.lower())
         return out
 
+    def _reject_drop(self, path: pathlib.Path, reason: str) -> None:
+        """Rename a bad drop file so it is not retried.  Never log the filename."""
+        try:
+            dest = path.with_name(path.name + ".rejected")
+            if dest.exists():
+                path.unlink()
+            else:
+                path.rename(dest)
+        except OSError:
+            log.warning("contacts: drop import reject failed (%s)", reason)
+            return
+        log.warning("contacts: drop import %s", reason)
+
     async def import_drop_folder(self) -> dict[str, Any]:
         """Re-import any .vcf dropped in the import folder.  Files are deleted after a successful parse.
 
-        Filenames are never logged (they can be a contact name).  Counts and reason codes only.
+        Off unless contacts_drop_import is on.  Filenames are never logged
+        (they can be a contact name).  Counts and reason codes only.
         """
+        if not self.drop_import:
+            return self.snapshot()
         folder = self._prepare_import_dir()
         if folder is None:
             return self.snapshot()
@@ -698,16 +732,18 @@ class ContactsSync:
         imported = 0
         for path in files:
             try:
+                if path.is_symlink() or not path.is_file():
+                    continue
                 size = path.stat().st_size
             except OSError:
                 continue
             if size > UPLOAD_MAX_BYTES:
-                log.warning("contacts: drop import too_large")
+                self._reject_drop(path, "too_large")
                 continue
             try:
                 raw = path.read_bytes()
             except OSError:
-                log.warning("contacts: drop import read failed")
+                self._reject_drop(path, "unreadable")
                 continue
             last = await self.import_vcf(raw)
             # Re-tag a successful upload as a drop so status names the source.
@@ -723,7 +759,7 @@ class ContactsSync:
                 else:
                     imported += 1
             elif last.get("state") in ("bad_upload", "empty"):
-                log.warning("contacts: drop import %s", last.get("state"))
+                self._reject_drop(path, str(last.get("state")))
         if imported:
             log.info("contacts: drop import ok files=%d", imported)
         return last
@@ -737,7 +773,8 @@ class ContactsSync:
         last_icloud = 0.0
         while True:
             try:
-                await self.import_drop_folder()
+                if self.drop_import:
+                    await self.import_drop_folder()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 - keep the loop alive, log type only

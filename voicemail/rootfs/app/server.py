@@ -43,7 +43,7 @@ import telnyx_capture
 APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC = APP_DIR / "static"
 EXAMPLE = APP_DIR / "example_voicemails.json"
-VERSION = "0.8.4"
+VERSION = "0.8.5"
 AUDIO_LIMIT = 25 * 1024 * 1024
 SENSOR_RE = re.compile(r"sensor\.[a-z0-9_]+")
 RT = web.AppKey("rt", dict)
@@ -2453,6 +2453,7 @@ def ensure_contacts(app: web.Application) -> contacts_sync.ContactsSync:
             interval_min=OPTS.get("contacts_sync_interval_min", contacts_sync.DEFAULT_INTERVAL_MIN),
             transport_factory=_factory,
             import_dir=pathlib.Path(import_override) if import_override else None,
+            drop_import=bool(OPTS.get("contacts_drop_import")),
         )
         box["contacts"] = sync
     return sync

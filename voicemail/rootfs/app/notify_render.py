@@ -81,10 +81,21 @@ def _nbsp_sentences(text: str) -> str:
     return out
 
 
+def _caller_id_mark(name: str, row: dict) -> str:
+    """When the name came from carrier CNAM, mark it as caller ID."""
+    if (row.get("fields") or {}).get("caller_name_source") != "cnam":
+        return name
+    if not name or name in ("Unknown caller",) or name.startswith("Number ending "):
+        return name
+    if name.endswith(" (caller ID)"):
+        return name
+    return f"{name} (caller ID)"
+
+
 def header_name(row: dict, include_number: bool = True) -> str:
     name = display_name(row, masked=not include_number)
     if name != "Unknown caller":
-        return name
+        return _caller_id_mark(name, row)
     num = (row.get("fields") or {}).get("callback_number") or (row.get("fields") or {}).get("caller_id") or ""
     tail = last4(num)
     return f"Number ending {tail}" if tail else "Unknown caller"
@@ -318,7 +329,7 @@ def email(row: dict, to: list[str], sender: str, include_number: bool = True,
 
 def push(row: dict, update: bool = False) -> dict:
     ref = str(row.get("ref") or "")
-    name = display_name(row, masked=True)
+    name = _caller_id_mark(display_name(row, masked=True), row)
     if update:
         msg = f"More details were added to {ref}.  Open CallCatch."
     else:
