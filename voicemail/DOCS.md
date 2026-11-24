@@ -346,6 +346,26 @@ Each voicemail gets a short structured summary: **caller name** (only if the cal
 
 When this add-on is moved to another add-on store, its `/data` does not move with it. The new install imports allow-listed files once, on its first start, from `/share/.migrate-2026-11-01/<slug>/` (`voicemail` or `twilio_house_voice`). The folder must be owned by root with mode 700 (`chmod 700`). Anything unexpected (a symlink, a file not on the allow-list, a file over 8 MB, invalid JSON) stops the import with nothing written, and the log names only the reason. After a successful import the add-on writes an import marker in `/data` and deletes the staged files. It never imports twice.
 
+## Post-call email (0.8.5)
+
+When a call is finalized, CallCatch queues one email (still gated by the notify
+dry-run switch).  The subject is the caller name, or a last-4 fallback, plus
+the time in America/New_York: `Jordan Hale called at 5:15 PM ET`.  The HTML body
+is black-friendly for Proton on iPhone (`#000` background, `#3E6AE1` links) and
+includes:
+
+- header: name, last-4, time, duration, early hangup yes/no
+- short summary, when one exists
+- verbatim transcript with 0.8.4 `Assistant` / `Caller` labels (unlabeled when
+  the roles cannot be told apart)
+- a note that the recording is in CallCatch, not attached to the email
+- a home-network link to that inbox row when `panel_base_url` is set
+  (`http://ha.home.arpa:8123` plus the ingress path and `#` plus the call
+  reference)
+
+`email_full_number` still adds a call-back line with the full number when it is
+on.  The header last-4 is always shown.  Prose uses two spaces after periods.
+
 ## Contacts → caller names (0.5.0)
 
 Missed-call and voicemail alerts show a contact's name when the caller's
@@ -394,16 +414,31 @@ appleid.apple.com.
 - Logs show only counts and a status, for example
   `contacts: synced 412 numbers from 380 contacts`.
 
-### .vcf upload (fallback)
+### .vcf upload (normal import)
 
 Numbers view (sidebar) → **Contacts** → **Upload .vcf**. Export contacts from
 iCloud.com or the iPhone Contacts app as a `.vcf`. Limit 5 MB. The file is
-parsed in memory, merged the same way and discarded; it is never stored. Only
-signed-in Home Assistant ingress sessions can upload (the panel is admin-only).
+parsed in memory, merged into the private directory (existing iCloud-only
+entries are kept) and discarded; it is never stored. Only signed-in Home
+Assistant ingress sessions can upload (the panel is admin-only).  This is the
+usual import route when iCloud sync is off.
+
+### .vcf drop folder (0.8.5, off by default)
+
+A second, optional fallback.  Turn on `contacts_drop_import` in the add-on
+options (it defaults to off), then copy a `.vcf` or `.vcard` export into
+`/share/callcatch/import/` on the Home Assistant host.  When the option is off,
+that folder is not read at all.  When it is on, the folder is created or
+tightened to mode 0700, checked about every 30 seconds, and each file is read
+in memory, merged into the private directory (iCloud-only entries are kept;
+new numbers are also stored in the manual map so a later iCloud sync does not
+drop them), and deleted on success.  Symlinks are skipped.  A file that fails
+to parse is renamed with a `.rejected` suffix after the first attempt and
+logged once (reason code only).  Filenames, names and numbers are never logged.
 
 ### Status
 
-The same card shows last sync time, source (iCloud or upload), number and
+The same card shows last sync time, source (iCloud, upload, or drop), number and
 contact counts, directory size and a status code (`ok`, `disabled`,
 `not_configured`, `auth`, `network`, `http`, `parse`, `no_addressbook`,
 `empty`, `write`). `/api/diag` carries the same fields under `contacts`.

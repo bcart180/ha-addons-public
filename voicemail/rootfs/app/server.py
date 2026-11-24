@@ -43,7 +43,7 @@ import telnyx_capture
 APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC = APP_DIR / "static"
 EXAMPLE = APP_DIR / "example_voicemails.json"
-VERSION = "0.8.4"
+VERSION = "0.8.5"
 AUDIO_LIMIT = 25 * 1024 * 1024
 SENSOR_RE = re.compile(r"sensor\.[a-z0-9_]+")
 RT = web.AppKey("rt", dict)
@@ -1943,6 +1943,35 @@ async def notify_dry_run(app: web.Application) -> bool:
     return (await notify_gate(app)) != "send"
 
 
+
+def apply_caller_identity(app: web.Application, row: dict) -> None:
+    """Set fields.caller_name from the private directory, then CNAM, then a usable spoken name.
+
+    Names and numbers are never logged here.
+    """
+    if not isinstance(row, dict):
+        return
+    f = row.setdefault("fields", {})
+    if not isinstance(f, dict):
+        row["fields"] = {}
+        f = row["fields"]
+    number = f.get("caller_id") or f.get("callback_number") or ""
+    existing = f.get("caller_name") or ""
+    cnam = f.get("cnam") or row.get("cnam") or ""
+    try:
+        directory = ensure_contacts(app).directory.loaded()
+    except Exception:  # noqa: BLE001 - a directory read must not block the notice
+        directory = {}
+    name, source = contacts_sync.lookup_display(number, directory, cnam)
+    if not name and contacts_sync.name_is_usable(existing):
+        name, source = contacts_sync.clean_name(existing), "spoken"
+    if name:
+        f["caller_name"] = name
+        f["caller_name_source"] = source
+    elif not contacts_sync.name_is_usable(existing):
+        f["caller_name"] = ""
+
+
 async def deliver_final(app: web.Application, row: dict) -> None:
     """First finalization of a call: store, queue callback, enqueue email + push once."""
     store = ensure_runtime(app)
@@ -1956,6 +1985,7 @@ async def deliver_final(app: web.Application, row: dict) -> None:
         # Nothing at all was captured (no caller id either): not a real call.
         _log_safe(f"agent final ref={ref} empty, not notified")
         return
+    apply_caller_identity(app, row)
     item = agent_item(row)
     saved = store.upsert(item, preserve_heard=True)
     if (row.get("fields") or {}).get("callback_requested"):
@@ -1984,6 +2014,7 @@ async def deliver_late(app: web.Application, row: dict) -> None:
     most one masked "details added" push.  The email is never sent twice."""
     store = ensure_runtime(app)
     _calls, outbox = ensure_agent(app)
+    apply_caller_identity(app, row)
     store.upsert(agent_item(row), preserve_heard=True)
     if LATE_UPDATE_PUSH:
         outbox.enqueue("push_update", str(row.get("ref") or ""), notify_render.push(row, update=True))
@@ -2140,6 +2171,7 @@ def _capture_info(job: dict) -> dict:
         "leg": job.get("call_leg_id") or "",
         "control": job.get("call_control_id") or "",
         "caller": job.get("from") or "",
+        "cnam": job.get("cnam") or "",
         "start_ts": job.get("start_ts") or 0,
         "end_ts": job.get("end_ts") or 0,
         "duration_s": job.get("duration_s") or 0,
@@ -2411,6 +2443,7 @@ def ensure_contacts(app: web.Application) -> contacts_sync.ContactsSync:
                 box["session"], str(OPTS.get("icloud_apple_id") or ""), str(OPTS.get("icloud_app_password") or "")
             )
 
+        import_override = (os.environ.get("VM_CONTACTS_IMPORT_DIR") or "").strip()
         sync = contacts_sync.ContactsSync(
             contacts_sync.Directory(caller_dir(), legacy_caller_file()),
             data_dir() / contacts_sync.STATUS_NAME,
@@ -2419,6 +2452,8 @@ def ensure_contacts(app: web.Application) -> contacts_sync.ContactsSync:
             app_password=str(OPTS.get("icloud_app_password") or ""),
             interval_min=OPTS.get("contacts_sync_interval_min", contacts_sync.DEFAULT_INTERVAL_MIN),
             transport_factory=_factory,
+            import_dir=pathlib.Path(import_override) if import_override else None,
+            drop_import=bool(OPTS.get("contacts_drop_import")),
         )
         box["contacts"] = sync
     return sync

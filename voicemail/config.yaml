@@ -1,5 +1,5 @@
 name: CallCatch
-version: "0.8.4"
+version: "0.8.5"
 slug: voicemail
 description: Your Personalized Voicemail. iPhone-style house inbox (list + detail) via Supervisor ingress
 url: https://github.com/bcart180/ha-addons-public/tree/main/voicemail
@@ -44,6 +44,7 @@ options:
   icloud_apple_id: ""
   icloud_app_password: ""
   contacts_sync_interval_min: 30
+  contacts_drop_import: false
   agent_token: ""
   agent_inactivity_s: 180
   hook_expected: false
@@ -87,6 +88,7 @@ schema:
   icloud_apple_id: str?
   icloud_app_password: password?
   contacts_sync_interval_min: int(15,1440)
+  contacts_drop_import: bool
   agent_token: password?
   agent_inactivity_s: int(60,1800)
   hook_expected: bool

@@ -128,4 +128,4 @@ def test_config_schema_has_the_option_and_defaults_blank():
     config = (root / "config.yaml").read_text(encoding="utf-8")
     assert '  telnyx_connection_ids: ""\n' in config
     assert "  telnyx_connection_ids: match(^[0-9, ]{0,400}$)?\n" in config
-    assert 'version: "0.2.1"' in config
+    assert 'version: "0.2.2"' in config

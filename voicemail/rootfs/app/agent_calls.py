@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import call_summary
+import contacts_sync
 from inbox_store import atomic_write_bytes, exclusive_lock
 
 VERSION = 1
@@ -731,6 +732,10 @@ class AgentCalls:
                 changed = True
             if caller and not row["fields"].get("caller_id"):
                 row["fields"]["caller_id"] = caller
+                changed = True
+            cnam = contacts_sync.clean_name(info.get("cnam") or "")
+            if contacts_sync.name_is_usable(cnam) and not row["fields"].get("cnam"):
+                row["fields"]["cnam"] = cnam
                 changed = True
             if start_ts and not row.get("telnyx_start_ts"):
                 row["telnyx_start_ts"] = start_ts

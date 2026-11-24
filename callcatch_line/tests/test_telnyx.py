@@ -153,3 +153,22 @@ def test_public_key_format_is_documented_and_library_is_pinned():
     assert "32-byte" in docs and "base64" in docs
     assert "py3-cryptography>=46.0.7" in docker
     assert "py3-cryptography=46.0.7-r0" not in docker
+
+
+def test_telnyx_event_forwards_cnam_and_skips_numeric_names(line_mod):
+    body = json.loads(_body())
+    body["data"]["payload"]["caller_id_name"] = "Avery Example"
+    event = line_mod._telnyx_event(body)
+    assert event["from"] == "+15555550100"
+    assert event["from_display"] == "Avery Example"
+    body["data"]["payload"]["caller_id_name"] = "555 555 0100"
+    event = line_mod._telnyx_event(body)
+    assert "from_display" not in event
+    body["data"]["payload"]["from"] = {
+        "phone_number": "+15555550100",
+        "display_name": "Sample Plumbing Co",
+    }
+    body["data"]["payload"].pop("caller_id_name", None)
+    event = line_mod._telnyx_event(body)
+    assert event["from"] == "+15555550100"
+    assert event["from_display"] == "Sample Plumbing Co"

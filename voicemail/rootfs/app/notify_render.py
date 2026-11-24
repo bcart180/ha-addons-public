@@ -1,10 +1,11 @@
-"""Email and push content for a finalized phone-agent call (0.7.0).
+"""Email and push content for a finalized phone-agent call (0.8.5).
 
 System notification to Bryson's own mailbox.  Prose uses two spaces after
 periods and has no sign-off.  The push is masked: caller name and reference
-only, never the reason, notes, transcript, or number.  The email links to the
-panel only when the panel_base_url option is set (a local HA address);
-otherwise it names the sidebar entry with no link.
+only, never the reason, notes, transcript, or number.  The email is black-
+friendly for Proton on iPhone and links to the panel only when the
+panel_base_url option is set (a local HA address); otherwise it names the
+sidebar entry with no link.
 """
 from __future__ import annotations
 
@@ -44,6 +45,60 @@ def pretty_number(num: str) -> str:
         return f"({d[1:4]}) {d[4:7]}-{d[7:]}"
     return str(num or "")
 
+
+
+def last4(num: str) -> str:
+    d = "".join(ch for ch in str(num or "") if ch.isdigit())
+    return d[-4:] if len(d) >= 4 else ""
+
+
+def duration_label(seconds) -> str:
+    try:
+        total = int(float(seconds or 0))
+    except (TypeError, ValueError):
+        total = 0
+    if total < 0:
+        total = 0
+    minutes, secs = divmod(total, 60)
+    parts = []
+    if minutes:
+        parts.append("1 minute" if minutes == 1 else f"{minutes} minutes")
+    if secs or not minutes:
+        parts.append("1 second" if secs == 1 else f"{secs} seconds")
+    return " ".join(parts)
+
+
+def time_et_short(ts: float) -> str:
+    dt = datetime.fromtimestamp(float(ts or 0), timezone.utc).astimezone(TZ)
+    return dt.strftime("%-I:%M %p ET")
+
+
+def _nbsp_sentences(text: str) -> str:
+    """Keep two spaces after sentence punctuation in HTML."""
+    out = str(text or "")
+    for mark in (".", "?", "!"):
+        out = out.replace(mark + "  ", mark + "  ")
+    return out
+
+
+def _caller_id_mark(name: str, row: dict) -> str:
+    """When the name came from carrier CNAM, mark it as caller ID."""
+    if (row.get("fields") or {}).get("caller_name_source") != "cnam":
+        return name
+    if not name or name in ("Unknown caller",) or name.startswith("Number ending "):
+        return name
+    if name.endswith(" (caller ID)"):
+        return name
+    return f"{name} (caller ID)"
+
+
+def header_name(row: dict, include_number: bool = True) -> str:
+    name = display_name(row, masked=not include_number)
+    if name != "Unknown caller":
+        return _caller_id_mark(name, row)
+    num = (row.get("fields") or {}).get("callback_number") or (row.get("fields") or {}).get("caller_id") or ""
+    tail = last4(num)
+    return f"Number ending {tail}" if tail else "Unknown caller"
 
 def _one_line(text: str, limit: int) -> str:
     return " ".join(str(text or "").split())[:limit]
@@ -116,100 +171,165 @@ def console_hint(row: dict) -> str:
     return f"Find it in the xAI console voice logs: caller number ending {caller.lstrip('•')}, call started {started}."
 
 
-def panel_link(base: str) -> str:
+def panel_link(base: str, ref: str = "") -> str:
     """Full panel URL from the panel_base_url option, or "" when unset or malformed."""
     b = str(base or "").strip().rstrip("/")
-    return f"{b}{PUSH_PANEL}" if _BASE_RE.match(b) else ""
+    if not _BASE_RE.match(b):
+        return ""
+    url = f"{b}{PUSH_PANEL}"
+    token = "".join(ch for ch in str(ref or "") if ch.isalnum() or ch in "-_")
+    return f"{url}#{token}" if token else url
+
+
+def _duration_of(row: dict) -> int:
+    for key in ("duration_s", "duration_sec"):
+        if row.get(key) not in (None, ""):
+            try:
+                return max(0, int(float(row[key])))
+            except (TypeError, ValueError):
+                return 0
+    return 0
+
+
+def _has_audio(row: dict) -> bool:
+    return bool(row.get("recording_file") or row.get("has_audio") or row.get("verbatim_at"))
 
 
 def email(row: dict, to: list[str], sender: str, include_number: bool = True,
           panel_base_url: str = "") -> dict:
-    link = panel_link(panel_base_url)
     f = row.get("fields") or {}
     ref = str(row.get("ref") or "")
-    name = display_name(row, masked=not include_number)  # a spoken number never lands in full (L4)
-    when = when_et(row.get("created_at") or 0)
-    tag = " (hung up early)" if row.get("hung_up_early") else ""
-    subject = _one_line(f"Phone message from {name}{tag} {ref}", SUBJECT_MAX)
-    number = f.get("callback_number") or f.get("caller_id") or ""
-    shown = pretty_number(number) if include_number else call_summary.mask_number(number)
-    best_time = f.get("best_time") or f.get("preferred_window") or ""
+    link = panel_link(panel_base_url, ref)
+    name = header_name(row, include_number=include_number)
+    when = when_et(row.get("created_at") or row.get("call_start_ts") or 0)
+    when_short = time_et_short(row.get("created_at") or row.get("call_start_ts") or 0)
+    subject = _one_line(f"{name} called at {when_short}", SUBJECT_MAX)
+    caller_num = f.get("caller_id") or ""
+    callback_num = f.get("callback_number") or ""
+    tail = last4(caller_num) or last4(callback_num)
+    shown = pretty_number(callback_num or caller_num) if include_number else ""
+    callback_tail = last4(callback_num)
+    early = "Yes" if row.get("hung_up_early") else "No"
+    length = duration_label(_duration_of(row))
     reason = f.get("reason") or ""
     notes = list(row.get("notes") or [])
+    best_time = f.get("best_time") or f.get("preferred_window") or ""
     if not include_number:
-        best_time = call_summary.mask_phone_runs(best_time)
         reason = call_summary.mask_phone_runs(reason)
         notes = [call_summary.mask_phone_runs(n) for n in notes]
-    details = [
-        ("Reference", ref),
-        ("Caller", name),
-        ("Call back", shown or "Not given"),
-        ("Caller ID", (pretty_number(f.get("caller_id")) if include_number else call_summary.mask_number(f.get("caller_id") or "")) or "Not shown"),
-        ("When", when),
-        ("Urgency", f.get("urgency") or "normal"),
-        ("Best time", best_time),
-        ("How it ended", SOURCE_LABEL.get(str(row.get("final_source") or ""), "")),
-        ("Call started", call_started(row)),
-        ("xAI conversation", _one_line(row.get("conversation_id") or "", 100)),
-    ]
-    details = [(k, v) for k, v in details if v]
+        best_time = call_summary.mask_phone_runs(best_time)
     tx_lines = transcript_lines(row, include_number)
-    transcript = "\n".join(tx_lines)
     summary = summary_text(row, include_number)
     status = status_line(row)
 
-    lines = ["Phone message", ""]
+    lines = ["CallCatch", "", name]
+    if not str(name).startswith("Number ending "):
+        lines.append(f"Number ending {tail}" if tail else "Number not shown")
+    lines += ["", f"Time: {when}", f"Duration: {length}", f"Early hangup: {early}"]
+    started = call_started(row)
+    if started:
+        lines.append(f"Call started: {started}")
+    conv = _one_line(row.get("conversation_id") or "", 100)
+    if conv:
+        lines.append(f"xAI conversation: {conv}")
+    if shown:
+        lines.append(f"Call back: {shown}")
+    elif callback_tail:
+        lines.append(f"Call back ending {callback_tail}")
+    if best_time:
+        lines.append(f"Best time: {best_time}")
     if status:
-        lines += [status, ""]
-    lines += [f"{k}: {v}" for k, v in details]
+        lines += ["", status]
     lines += ["", UNTRUSTED_NOTE]
-    lines += ["", "Reason", reason or "Not given"]
     if summary:
         lines += ["", "Summary", summary]
+    if reason:
+        lines += ["", "Reason", reason]
     if notes:
-        lines += ["", "Agent notes"] + [f"- {n}" for n in notes]
-    lines += ["", "Transcript", transcript or "Not received."]
+        lines += ["", "Notes"] + [f"- {n}" for n in notes]
+    lines += ["", "Transcript"]
+    lines += tx_lines or ["Not received."]
+    if _has_audio(row):
+        lines += ["", "The recording is saved in CallCatch.  It is not attached to this email."]
+    else:
+        lines += ["", "No recording was saved."]
     hint = console_hint(row)
     if hint:
         lines += ["", hint]
-    lines += ["", f"Open CallCatch (home network): {link}" if link
-              else "Open CallCatch from the Home Assistant sidebar.",
+    lines += ["", f"Open this call in CallCatch on the home network: {link}" if link
+              else "Open this call from the Home Assistant sidebar.",
               "Caller ID can be faked.  Check the number before calling back."]
-    text = "\n".join(lines)
+    text_body = "\n".join(lines)
 
     e = html.escape
-    rows = "".join(
-        f'<tr><td style="padding:4px 12px 4px 0;color:#5C5E62">{e(k)}</td><td style="padding:4px 0;color:#171A20">{e(v)}</td></tr>'
-        for k, v in details
-    )
+    def cell(k, v):
+        return (f'<tr><td style="padding:6px 12px 6px 0;color:#8a8a8a;width:42%;vertical-align:top">{e(k)}</td>'
+                f'<td style="padding:6px 0;color:#f2f2f2">{e(v)}</td></tr>')
+    rows = cell("Time", when) + cell("Duration", length) + cell("Early hangup", early)
+    if started:
+        rows += cell("Call started", started)
+    if conv:
+        rows += cell("xAI conversation", conv)
+    if shown:
+        rows += cell("Call back", shown)
+    elif callback_tail:
+        rows += cell("Call back", f"ending {callback_tail}")
+    if best_time:
+        rows += cell("Best time", best_time)
     notes_html = "".join(f"<li>{e(n)}</li>" for n in notes)
-    tx_html = "<br>".join(e(line) for line in tx_lines) or "Not received."
-    banner = f'<p style="margin:0 0 16px;color:#171A20;font-weight:600">{e(status)}</p>' if status else ""
+    tx_html = []
+    for line in tx_lines:
+        label, sep, rest = line.partition(": ")
+        if sep and label in ("Caller", "Assistant", "Agent", "House"):
+            shown_label = "Caller" if label == "Caller" else "Assistant"
+            color = "#f2f2f2" if shown_label == "Caller" else "#3E6AE1"
+            tx_html.append(
+                f'<p style="margin:0 0 14px;color:#f2f2f2;font-size:15px;line-height:1.45">'
+                f'<span style="color:{color};font-weight:600">{e(shown_label)}</span><br>'
+                f'{_nbsp_sentences(e(rest))}</p>'
+            )
+        else:
+            tx_html.append(
+                f'<p style="margin:0 0 14px;color:#f2f2f2;font-size:15px;line-height:1.45">'
+                f'{_nbsp_sentences(e(line))}</p>'
+            )
+    transcript_html = "".join(tx_html) or '<p style="margin:0;color:#f2f2f2">Not received.</p>'
+    banner = (f'<p style="margin:0 0 16px;color:#f2f2f2;font-size:14px">{e(status)}</p>' if status else "")
+    audio_note = ("The recording is saved in CallCatch.  It is not attached to this email."
+                  if _has_audio(row) else "No recording was saved.")
+    link_html = (f'<a href="{e(link)}" style="color:#3E6AE1;text-decoration:none">Open this call in CallCatch</a>'
+                 ' <span style="color:#8a8a8a">on the home network.</span>'
+                 if link else "Open this call from the Home Assistant sidebar.")
     body_html = (
-        '<!DOCTYPE html><html><body style="margin:0;background:#f4f4f4;font-family:Helvetica Neue,Arial,sans-serif">'
-        '<div style="max-width:560px;margin:24px auto;background:#ffffff;padding:24px">'
-        f'<h1 style="margin:0 0 4px;font-size:20px;color:#171A20">Phone message</h1>'
-        f'<p style="margin:0 0 16px;color:#5C5E62">{e(when)} · {e(ref)}</p>'
+        '<!DOCTYPE html><html><body style="margin:0;background:#000000;font-family:-apple-system,Helvetica Neue,Arial,sans-serif;color:#f2f2f2">'
+        '<div style="max-width:560px;margin:0 auto;background:#000000;padding:22px 20px 32px">'
+        '<div style="font-size:11px;color:#8a8a8a;letter-spacing:0.10em;text-transform:uppercase">CallCatch</div>'
+        f'<h1 style="margin:8px 0 4px;font-size:24px;line-height:1.25;color:#f2f2f2;font-weight:600">{e(name)}</h1>'
+        f'<p style="margin:0 0 18px;color:#c8c8c8;font-size:14px">{"Number ending " + e(tail) if tail else "Number not shown"}</p>'
+        f'<table role="presentation" style="border-collapse:collapse;width:100%;font-size:14px;margin:0 0 22px">{rows}</table>'
         f"{banner}"
-        f'<table style="border-collapse:collapse;font-size:14px">{rows}</table>'
-        f'<p style="margin:20px 0 0;color:#5C5E62;font-size:12px">{e(UNTRUSTED_NOTE)}</p>'
-        f'<h2 style="font-size:15px;color:#171A20;margin:20px 0 6px">Reason</h2><p style="margin:0;color:#171A20">{e(reason or "Not given")}</p>'
-        + (f'<h2 style="font-size:15px;color:#171A20;margin:20px 0 6px">Summary</h2><p style="margin:0;color:#171A20">{e(summary)}</p>' if summary else "")
-        + (f'<h2 style="font-size:15px;color:#171A20;margin:20px 0 6px">Agent notes</h2><ul style="margin:0;padding-left:18px;color:#171A20">{notes_html}</ul>' if notes else "")
-        + f'<h2 style="font-size:15px;color:#171A20;margin:20px 0 6px">Transcript</h2><p style="margin:0;color:#171A20;font-size:14px">{tx_html}</p>'
-        + (f'<p style="margin:20px 0 0;color:#5C5E62;font-size:12px">{e(hint)}</p>' if hint else "")
-        + (f'<p style="margin:24px 0 0;color:#5C5E62;font-size:12px">Open <a href="{e(link)}" style="color:#3E6AE1">CallCatch</a> on the home network.  '
-           if link else '<p style="margin:24px 0 0;color:#5C5E62;font-size:12px">Open CallCatch from the Home Assistant sidebar.  ')
-        + 'Caller ID can be faked.  Check the number before calling back.</p>'
+        f'<p style="margin:0 0 14px;color:#8a8a8a;font-size:12px;line-height:1.4">{e(UNTRUSTED_NOTE)}</p>'
+        + (f'<h2 style="margin:0 0 8px;font-size:13px;color:#8a8a8a;letter-spacing:0.08em;text-transform:uppercase;font-weight:600">Summary</h2>'
+           f'<p style="margin:0 0 22px;color:#f2f2f2;font-size:15px;line-height:1.45">{_nbsp_sentences(e(summary))}</p>' if summary else "")
+        + (f'<h2 style="margin:0 0 8px;font-size:13px;color:#8a8a8a;letter-spacing:0.08em;text-transform:uppercase;font-weight:600">Reason</h2>'
+           f'<p style="margin:0 0 22px;color:#f2f2f2;font-size:15px;line-height:1.45">{_nbsp_sentences(e(reason))}</p>' if reason else "")
+        + (f'<h2 style="margin:0 0 8px;font-size:13px;color:#8a8a8a;letter-spacing:0.08em;text-transform:uppercase;font-weight:600">Notes</h2>'
+           f'<ul style="margin:0 0 22px;padding-left:18px;color:#f2f2f2">{notes_html}</ul>' if notes else "")
+        + '<h2 style="margin:0 0 8px;font-size:13px;color:#8a8a8a;letter-spacing:0.08em;text-transform:uppercase;font-weight:600">Transcript</h2>'
+        + transcript_html
+        + f'<p style="margin:22px 0 10px;color:#c8c8c8;font-size:14px;line-height:1.45">{_nbsp_sentences(e(audio_note))}</p>'
+        + (f'<p style="margin:0 0 16px;color:#8a8a8a;font-size:12px;line-height:1.4">{e(hint)}</p>' if hint else "")
+        + f'<p style="margin:0 0 22px;font-size:14px;line-height:1.45">{link_html}</p>'
+        + '<p style="margin:0;color:#5a5a5a;font-size:12px;line-height:1.4">Caller ID can be faked.&nbsp; Check the number before calling back.</p>'
         "</div></body></html>"
     )
     return {"id": f"callcatch-{ref}", "to": list(to), "from": sender, "subject": subject,
-            "text": text, "html": body_html, "category": "callcatch_phone_message"}
+            "text": text_body, "html": body_html, "category": "callcatch_phone_message"}
 
 
 def push(row: dict, update: bool = False) -> dict:
     ref = str(row.get("ref") or "")
-    name = display_name(row, masked=True)
+    name = _caller_id_mark(display_name(row, masked=True), row)
     if update:
         msg = f"More details were added to {ref}.  Open CallCatch."
     else:
