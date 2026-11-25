@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.8 — 2026-11-25
+
+- **Content-free GDIT notice.**  The redacted-transcript work copy is retired.  Full transcripts still go only to the CallCatch inbox and Proton.  When `gdit_work_copy` is on, the pinned work address gets only a missed-call notice: voicemail left yes/no, and the 24-hour ET time.  No name, number, transcript, audio, or link.
+- **Presence gate.**  The notice is sent only when `person.bryson` is in the Home Assistant Work zone (`zone.work`).  `home`, `not_home`, and other zones are `not_at_work`.  `unknown`, `unavailable`, a missing entity, or an unreachable Home Assistant read is `work_unknown`.  Both fail closed.  The earlier `binary_sensor.bryson_at_work` gate is no longer used.
+- **Send-time re-check.**  The presence gate is checked again at send time, and a pending notice older than about 15 minutes is still dropped.  Dry-run behavior is unchanged.  The option still defaults to off.
+- **SA leftovers from 0.8.7.**  Tests derive work-address variants from the code constant (no local-part literals).  The unused Upload .vcf listener is removed from the inbox script.
+
 ## 0.8.7 — 2026-11-24
 
 - **Email last-4 once.**  An unknown-caller heading that is already "Number ending XXXX" no longer repeats that line in the HTML body.  The plain-text path already skipped it.
