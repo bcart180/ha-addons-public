@@ -219,22 +219,6 @@
     loadContacts();
   });
 
-  const contactsFile = $("contacts-file");
-  if (contactsFile) {
-    contactsFile.addEventListener("change", async (ev) => {
-      const f = ev.target.files && ev.target.files[0];
-      ev.target.value = "";
-      if (!f) return;
-      if (f.size > 5 * 1024 * 1024) { showToast("File too large (5 MB max)"); return; }
-      $("contacts-status").textContent = "Importing…";
-      try {
-        await api("api/contacts/upload", { method: "POST", body: f, headers: { "Content-Type": "text/vcard" } });
-        showToast("Contacts imported");
-      } catch (e) { showToast(CONTACT_STATE[e.message] || e.message); }
-      loadContacts();
-    });
-  }
-
   const shell = $("app");
 
   function showNumbers() {

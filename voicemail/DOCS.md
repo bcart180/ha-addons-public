@@ -368,12 +368,13 @@ on.  The last-4 is shown once: as the heading for an unknown caller, or as a
 subline under a name.  Times in the subject and body are 24-hour ET, like the
 inbox.  Prose uses two spaces after periods.
 
-## GDIT work-hours copy (0.8.6)
+## GDIT presence notice (0.8.8)
 
 Off by default (`gdit_work_copy: false`).  Do not turn this on until a later
-explicit go-live.  When the option is on, CallCatch may send a redacted copy of
-the post-call Proton notice to a pinned work address, only after the Proton
-notice, and only while Bryson is at work.
+explicit go-live.  Full transcripts still go only to the CallCatch inbox and
+Proton.  When the option is on, CallCatch may send a content-free missed-call
+notice to a pinned work address, only after the Proton notice, and only while
+Bryson is physically in the Home Assistant Work zone.
 
 ### Gates
 
@@ -381,72 +382,47 @@ notice, and only while Bryson is at work.
 - The Proton notice must already have been sent, or would have been sent while
   `input_boolean.callcatch_notify_dry_run` is explicitly on.  If no Proton
   notice goes out (no recipient, sender missing, or the job never sends), no
-  GDIT copy is sent (`reason=no_proton`).
-- `binary_sensor.bryson_at_work` must be explicitly `on`.  There is no clock
-  fallback.  `off` is `reason=not_at_work`.  `unknown`, `unavailable`, a
-  missing entity, or an unreachable Home Assistant read is `reason=work_unknown`.
-  All of those fail closed: no copy is sent.
-- VA, medical, or financial callers are skipped entirely (`reason=sensitive`).
-  Matching uses the contact name or label, and keywords in the summary or
-  transcript.  Notes are not scanned.  The keyword list is conservative: short
-  or ambiguous tokens such as bare `va`, `dr`, `bank`, or `doctor` are omitted
-  so everyday callers are not dropped by accident.
-- The same notify dry-run switch still applies.  With dry-run on, a copy that
-  would have been sent is logged as `reason=dry_run` and is not enqueued, so
-  turning the switch off later does not release a stored GDIT job.
+  work notice is sent (`reason=no_proton`).
+- `person.bryson` must be in `zone.work`.  The person state is compared
+  case-insensitively to `Work`, and `person.bryson` must also appear in
+  `zone.work`'s `persons` attribute, so a second zone named Work does not
+  pass.  `home`, `not_home`, and any other known zone, or a readable
+  `zone.work` that does not list the person, are `reason=not_at_work`.
+  `unknown`, `unavailable`, a missing entity, an unreachable Home
+  Assistant read, or an unreadable `persons` attribute is
+  `reason=work_unknown`.  All of those fail closed: no notice is sent.  There
+  is no clock fallback, and `binary_sensor.bryson_at_work` is not used.
+- The same notify dry-run switch still applies.  With dry-run on, a notice
+  that would have been sent is logged as `reason=dry_run` and is not
+  enqueued, so turning the switch off later does not release a stored job.
+- The presence gate is checked again when the job is sent.  A pending job
+  older than about 15 minutes is dropped and not retried.  When
+  `gdit_work_copy` is off at startup, pending GDIT jobs are cleared.
 
 ### Recipient pin
 
-The work copy goes only to a single exact-address pin kept in code (one
+The notice goes only to a single exact-address pin kept in code (one
 constant).  The address is not listed here.  The pin is a separate check from
 the Proton pin.  `mail_to` still accepts only `proton.me` and
 `protonmail.com`.  A distinct AgentMail category and Idempotency-Key
 (`callcatch-gdit-<ref>`) keep the two messages from crossing.
 
-### Redacted template
+### Content-free template
 
 The body carries only:
 
-- the contact name, when the name came from the private directory and is
-  usable; otherwise the wording is `A caller` (CNAM and spoken names included)
-- the time in America/New_York
-- the sentence `See Proton for the full message.`
+- the line `Missed call`
+- `Voicemail left: Yes` or `Voicemail left: No` (the same recording
+  rule as the Proton notice: a recording file, `has_audio`, or a verbatim
+  transcript timestamp)
+- the time in 24-hour America/New_York, for example `Tue Nov 24, 17:15 ET`
 
-It has no transcript, summary, number or last-4, audio, or link.
+The subject is `Missed call at {time} ET`.  It has no name, number or last-4,
+transcript, summary, audio, or link.  The earlier redacted-transcript work
+copy (contact name or "A caller", plus a Proton pointer) is retired.
 
-### Sensitive keyword list
-
-Matching runs on the resolved contact name and organization, and on the
-summary or transcript.  The haystack is normalized with NFKC, a look-alike
-fold, casefold, control-character strip, and punctuation/spacing collapse.
-Adjacent single-letter tokens are joined, so spaced or punctuated spellings
-(`V A`, `D.r.`) match.  The list fails toward skipping.
-
-Phrases (substring after that normalize): `veterans affairs`,
-`veteran's affairs`, `veterans administration`, `veterans health`, `the va`,
-`va hospital`, `va clinic`, `va medical`, `va appointment`, `va health`,
-`va benefits`, `va loan`, `va claim`, `va office`, `urgent care`,
-`emergency room`, `medical center`, `medical centre`, `medical group`,
-`health system`, `nursing home`, `lab results`, `internal revenue`,
-`credit union`, `credit card`, `navy federal`, `walter reed`,
-`bank of america`, `wells fargo`, `chase bank`, `capital one`,
-`american express`, `charles schwab`, `h&r block`, `hr block`,
-`loan servicer`, `collections agency`, `payday loan`, `roth ira`, `401(k)`,
-`401k`, `social security`, `quest diagnostics`.
-
-Word-bounded tokens (and compact forms of four or more letters): `va`,
-`vamc`, `claim`, `benefits`, `dr`, `doctor`, `md`, `dds`, `therapist`,
-`therapy`, `hospital`, `clinic`, `pharmacy`, `pharmacist`, `physician`,
-`dentist`, `dental`, `dermatology`, `oncology`, `pediatric`, `pediatrics`,
-`cardiology`, `radiology`, `hospice`, `medstar`, `medicaid`, `medicare`,
-`prescription`, `insurance`, `tricare`, `usaa`, `bank`, `cvs`, `walgreens`,
-`kaiser`, `citi`, `discover`, `paypal`, `brokerage`, `mortgage`, `loan`,
-`newrez`, `fidelity`, `vanguard`, `turbotax`, `irs`, `labcorp`.
-
-A pending GDIT job older than about 15 minutes is dropped and not retried.
-When `gdit_work_copy` is off at startup, pending GDIT jobs are cleared.
-
-Logs print a reason code only.  Names and numbers are never logged.
+Logs print a reason code only.  Names, numbers, and the work address are
+never logged.
 
 
 ## Contacts → caller names (0.5.0)

@@ -178,8 +178,29 @@ def build_agentmail_body(payload: dict, recipient: str) -> dict | None:
     return {"to": [recipient], "subject": subject, "text": text, "html": html, "labels": list(LABELS)}
 
 
+def gdit_notice_is_clean(subject: str, text: str, html: str) -> bool:
+    """True only for the content-free missed-call notice."""
+    import re
+
+    if not re.fullmatch(r"Missed call at [0-2]\d:[0-5]\d ET", subject):
+        return False
+    if not re.fullmatch(
+        r"Missed call\n\nVoicemail left: (Yes|No)\n\nTime: [A-Za-z]{3} [A-Za-z]{3} \d{1,2}, [0-2]\d:[0-5]\d ET",
+        text,
+    ):
+        return False
+    lowered = html.lower()
+    if "href=" in lowered or "http:" in lowered or "https:" in lowered or "tel:" in lowered:
+        return False
+    if "proton" in lowered or "@" in html or "number ending" in lowered:
+        return False
+    if "missed call" not in lowered or "voicemail left:" not in lowered:
+        return False
+    return True
+
+
 def build_gdit_agentmail_body(payload: dict, recipient: str) -> dict | None:
-    """The redacted GDIT body, or None if the payload does not match the pinned route."""
+    """The content-free GDIT notice, or None if the payload does not match the pinned route."""
     to = payload.get("to")
     if not isinstance(to, list) or to != [recipient] or not gdit_recipient_allowed(recipient):
         return None
@@ -191,6 +212,8 @@ def build_gdit_agentmail_body(payload: dict, recipient: str) -> dict | None:
     if not subject or len(subject) > SUBJECT_MAX or "\r" in subject or "\n" in subject:
         return None
     if len(text) > TEXT_MAX or len(html) > HTML_MAX:
+        return None
+    if not gdit_notice_is_clean(subject, text, html):
         return None
     return {"to": [GDIT_RECIPIENT], "subject": subject, "text": text, "html": html, "labels": list(LABELS_GDIT)}
 
@@ -228,12 +251,27 @@ def agentmail_sender(get_session: Callable[[], Any], inbox: str, api_key: str,
 
 
 def agentmail_gdit_sender(get_session: Callable[[], Any], inbox: str, api_key: str,
-                          recipient: str = GDIT_RECIPIENT) -> Callable[[dict], Awaitable[tuple[bool, str, bool]]]:
-    """Direct HTTPS POST to AgentMail for the pinned GDIT address.  No redirects."""
+                          presence_check: Callable[[], Awaitable[tuple[str | None, object | None]]] | None,
+                          recipient: str = GDIT_RECIPIENT,
+                          ) -> Callable[[dict], Awaitable[tuple[bool, str, bool]]]:
+    """Direct HTTPS POST to AgentMail for the pinned GDIT address.  No redirects.
+
+    ``presence_check`` is required and is re-run on every send attempt.  A
+    missing check, or a result that is not a ``(state, zone_persons)`` pair,
+    is fail-closed (``work_unknown``) and is not retried.
+    """
 
     async def send(job: dict) -> tuple[bool, str, bool]:
         if gdit_copy.job_is_stale(job):
             return False, "stale", False
+        if presence_check is None:
+            return False, "work_unknown", False
+        snapshot = await presence_check()
+        if not isinstance(snapshot, (tuple, list)) or len(snapshot) != 2:
+            return False, "work_unknown", False
+        reason = gdit_copy.work_gate(True, snapshot[0], snapshot[1])
+        if reason != "ok":
+            return False, reason, False
         if not sender_allowed(inbox) or parse_gdit_recipient(recipient) != GDIT_RECIPIENT:
             return False, "blocked-address", False
         body = build_gdit_agentmail_body(dict(job.get("payload") or {}), recipient)

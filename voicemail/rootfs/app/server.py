@@ -44,7 +44,7 @@ import telnyx_capture
 APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC = APP_DIR / "static"
 EXAMPLE = APP_DIR / "example_voicemails.json"
-VERSION = "0.8.7"
+VERSION = "0.8.8"
 AUDIO_LIMIT = 25 * 1024 * 1024
 SENSOR_RE = re.compile(r"sensor\.[a-z0-9_]+")
 RT = web.AppKey("rt", dict)
@@ -1787,7 +1787,12 @@ def build_senders(app: web.Application) -> dict:
     if mail_ready():
         senders["email"] = notify_send.agentmail_sender(session, AGENTMAIL_INBOX, AGENTMAIL_API_KEY, MAIL_TO)
         if GDIT_WORK_COPY:
-            senders["gdit"] = notify_send.agentmail_gdit_sender(session, AGENTMAIL_INBOX, AGENTMAIL_API_KEY)
+            async def presence_check():
+                return await read_work_presence(app)
+
+            senders["gdit"] = notify_send.agentmail_gdit_sender(
+                session, AGENTMAIL_INBOX, AGENTMAIL_API_KEY, presence_check=presence_check,
+            )
     if notify_send.NOTIFY_RE.fullmatch(PUSH_SERVICE or ""):
         async def call_service(domain, service, data):
             sess = session()
@@ -1905,8 +1910,8 @@ def _timeout_quota(app: web.Application) -> bool:
     return True
 
 
-async def read_entity_state(app: web.Application, entity_id: str) -> str | None:
-    """One HA state read through the Supervisor.  None when unavailable."""
+async def read_entity_payload(app: web.Application, entity_id: str) -> dict | None:
+    """One HA state payload through the Supervisor.  None when unavailable."""
     session = _box(app).get("session")
     if not _in_ha() or session is None:
         return None
@@ -1920,7 +1925,36 @@ async def read_entity_state(app: web.Application, entity_id: str) -> str | None:
     except Exception as exc:  # noqa: BLE001
         log.warning("state %s error: %s", entity_id, type(exc).__name__)
         return None
-    return str((body or {}).get("state", "")).lower() if isinstance(body, dict) else None
+    return body if isinstance(body, dict) else None
+
+
+async def read_entity_state(app: web.Application, entity_id: str) -> str | None:
+    """One HA state read through the Supervisor.  None when unavailable."""
+    body = await read_entity_payload(app, entity_id)
+    if body is None:
+        return None
+    return str(body.get("state", "")).lower()
+
+
+async def read_zone_persons(app: web.Application, entity_id: str) -> list[str] | None:
+    """Return a zone's persons attribute, or None when the read fails."""
+    body = await read_entity_payload(app, entity_id)
+    if body is None:
+        return None
+    attrs = body.get("attributes")
+    if not isinstance(attrs, dict) or "persons" not in attrs:
+        return None
+    persons = attrs.get("persons")
+    if not isinstance(persons, (list, tuple)):
+        return None
+    return [str(p) for p in persons]
+
+
+async def read_work_presence(app: web.Application) -> tuple[str | None, list[str] | None]:
+    """person.bryson state and zone.work persons.  None means the read failed."""
+    state = await read_entity_state(app, gdit_copy.WORK_PERSON)
+    persons = await read_zone_persons(app, gdit_copy.WORK_ZONE_ID)
+    return state, persons
 
 
 NOTIFY_HOLD_MAX_S = 6 * 3600
@@ -2269,18 +2303,18 @@ async def _capture_safe(app: web.Application) -> None:
 
 
 async def follow_gdit(app: web.Application, row: dict, proton: str) -> str:
-    """After a Proton notice is sent or would-send: maybe enqueue a GDIT copy.
+    """After a Proton notice is sent or would-send: maybe enqueue a GDIT notice.
 
-    Logs a reason code only.  Names and numbers are never logged.  When
-    ``gdit_work_copy`` is off this is a quiet no-op (reason ``disabled``).
+    Logs a reason code only.  Names, numbers, and the work address are never
+    logged.  When ``gdit_work_copy`` is off this is a quiet no-op
+    (reason ``disabled``).  The presence gate is ``person.bryson`` in
+    ``zone.work`` (person state and that zone's persons attribute) and is
+    fail-closed.
     """
     if not GDIT_WORK_COPY:
         return "disabled"
-    apply_caller_identity(app, row)
-    calls, _outbox = ensure_agent(app)
-    calls.patch_fields(str((row or {}).get("ref") or ""), (row or {}).get("fields") or {})
-    state = await read_entity_state(app, gdit_copy.WORK_SENSOR)
-    reason = gdit_copy.decide(True, proton, state, row)
+    state, zone_persons = await read_work_presence(app)
+    reason = gdit_copy.decide(True, proton, state, zone_persons)
     if reason == "dry_run":
         log.info("gdit would-send reason=dry_run")
         return reason

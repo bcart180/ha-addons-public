@@ -162,12 +162,14 @@ configuration:
       number in the email so it can be dialed.  The email leaves the house
       through the mail route, so turn this on only by explicit choice.
   gdit_work_copy:
-    name: GDIT work-hours copy
+    name: GDIT work presence notice
     description: >-
-      Off (default).  When on, a redacted copy of the Proton notice is sent
-      to the pinned GDIT address only after the Proton notice, and only when
-      binary_sensor.bryson_at_work is explicitly on.  VA, medical, and
-      financial callers are skipped.  Still honors the notify dry-run switch.
+      Off (default).  When on, a content-free missed-call notice (voicemail
+      left yes or no, and the 24-hour ET time; no name, number, transcript,
+      audio, or link) is sent to the pinned work address only after the
+      Proton notice, and only when person.bryson is in the Work zone.
+      Unknown or unavailable person state sends nothing.  Still honors the
+      notify dry-run switch.
   panel_base_url:
     name: Panel link base URL
     description: >-
