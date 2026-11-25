@@ -251,18 +251,27 @@ def agentmail_sender(get_session: Callable[[], Any], inbox: str, api_key: str,
 
 
 def agentmail_gdit_sender(get_session: Callable[[], Any], inbox: str, api_key: str,
+                          presence_check: Callable[[], Awaitable[tuple[str | None, object | None]]] | None,
                           recipient: str = GDIT_RECIPIENT,
-                          presence_check: Callable[[], Awaitable[str | None]] | None = None,
                           ) -> Callable[[dict], Awaitable[tuple[bool, str, bool]]]:
-    """Direct HTTPS POST to AgentMail for the pinned GDIT address.  No redirects."""
+    """Direct HTTPS POST to AgentMail for the pinned GDIT address.  No redirects.
+
+    ``presence_check`` is required and is re-run on every send attempt.  A
+    missing check, or a result that is not a ``(state, zone_persons)`` pair,
+    is fail-closed (``work_unknown``) and is not retried.
+    """
 
     async def send(job: dict) -> tuple[bool, str, bool]:
         if gdit_copy.job_is_stale(job):
             return False, "stale", False
-        if presence_check is not None:
-            reason = gdit_copy.work_gate(True, await presence_check())
-            if reason != "ok":
-                return False, reason, False
+        if presence_check is None:
+            return False, "work_unknown", False
+        snapshot = await presence_check()
+        if not isinstance(snapshot, (tuple, list)) or len(snapshot) != 2:
+            return False, "work_unknown", False
+        reason = gdit_copy.work_gate(True, snapshot[0], snapshot[1])
+        if reason != "ok":
+            return False, reason, False
         if not sender_allowed(inbox) or parse_gdit_recipient(recipient) != GDIT_RECIPIENT:
             return False, "blocked-address", False
         body = build_gdit_agentmail_body(dict(job.get("payload") or {}), recipient)

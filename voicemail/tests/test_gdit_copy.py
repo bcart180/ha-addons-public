@@ -25,6 +25,7 @@ AGENT = "agent-token-555-" + "x" * 24
 TS = 1_795_558_500  # 2026-11-24 17:15:00 America/New_York
 REF = "CC-G0T01"
 CALLER = "+15555550142"
+IN_ZONE = [gdit_copy.WORK_PERSON]
 
 
 def _row(**extra) -> dict:
@@ -53,26 +54,69 @@ def _row(**extra) -> dict:
 
 
 def test_work_gate_only_work_zone():
-    assert gdit_copy.work_gate(False, "Work") == "disabled"
-    assert gdit_copy.work_gate(True, "Work") == "ok"
-    assert gdit_copy.work_gate(True, "work") == "ok"
-    assert gdit_copy.work_gate(True, "WORK") == "ok"
-    assert gdit_copy.work_gate(True, "home") == "not_at_work"
-    assert gdit_copy.work_gate(True, "not_home") == "not_at_work"
-    assert gdit_copy.work_gate(True, "on") == "not_at_work"
+    assert gdit_copy.work_gate(False, "Work", IN_ZONE) == "disabled"
+    assert gdit_copy.work_gate(True, "Work", IN_ZONE) == "ok"
+    assert gdit_copy.work_gate(True, "work", IN_ZONE) == "ok"
+    assert gdit_copy.work_gate(True, "WORK", IN_ZONE) == "ok"
+    assert gdit_copy.work_gate(True, "home", IN_ZONE) == "not_at_work"
+    assert gdit_copy.work_gate(True, "not_home", []) == "not_at_work"
+    assert gdit_copy.work_gate(True, "on", []) == "not_at_work"
     for state in (None, "unknown", "unavailable", "", "none"):
-        assert gdit_copy.work_gate(True, state) == "work_unknown", state
+        assert gdit_copy.work_gate(True, state, IN_ZONE) == "work_unknown", state
+
+
+def test_work_gate_requires_zone_work_persons():
+    assert gdit_copy.WORK_ZONE_ID == "zone.work"
+    # A second zone also named Work: person state matches, but zone.work is empty.
+    assert gdit_copy.work_gate(True, "Work", []) == "not_at_work"
+    assert gdit_copy.work_gate(True, "Work", ["person.other"]) == "not_at_work"
+    assert gdit_copy.work_gate(True, "Work", None) == "work_unknown"
+    assert gdit_copy.work_gate(True, "Work", "person.bryson") == "work_unknown"
+    assert gdit_copy.work_gate(True, "Work", {"persons": IN_ZONE}) == "work_unknown"
+    # Entity id match is case-insensitive.
+    assert gdit_copy.work_gate(True, "Work", ["Person.Bryson"]) == "ok"
 
 
 def test_decide_requires_proton_then_presence():
-    assert gdit_copy.decide(True, "pending", "Work") == "no_proton"
-    assert gdit_copy.decide(True, "", "Work") == "no_proton"
-    assert gdit_copy.decide(False, "sent", "Work") == "disabled"
-    assert gdit_copy.decide(True, "sent", None) == "work_unknown"
-    assert gdit_copy.decide(True, "would-send", "unavailable") == "work_unknown"
-    assert gdit_copy.decide(True, "sent", "home") == "not_at_work"
-    assert gdit_copy.decide(True, "would-send", "Work") == "dry_run"
-    assert gdit_copy.decide(True, "sent", "Work") == "ok"
+    assert gdit_copy.decide(True, "pending", "Work", IN_ZONE) == "no_proton"
+    assert gdit_copy.decide(True, "", "Work", IN_ZONE) == "no_proton"
+    assert gdit_copy.decide(False, "sent", "Work", IN_ZONE) == "disabled"
+    assert gdit_copy.decide(True, "sent", None, IN_ZONE) == "work_unknown"
+    assert gdit_copy.decide(True, "would-send", "unavailable", IN_ZONE) == "work_unknown"
+    assert gdit_copy.decide(True, "sent", "home", []) == "not_at_work"
+    assert gdit_copy.decide(True, "sent", "Work", None) == "work_unknown"
+    assert gdit_copy.decide(True, "sent", "Work", []) == "not_at_work"
+    assert gdit_copy.decide(True, "would-send", "Work", IN_ZONE) == "dry_run"
+    assert gdit_copy.decide(True, "sent", "Work", IN_ZONE) == "ok"
+
+
+def test_voicemail_left_uses_has_audio_rule_for_agent_rows():
+    agent = {
+        "ref": REF,
+        "created_at": TS,
+        "recording_file": "CC-G0T01.wav",
+        "verbatim_at": TS,
+    }
+    assert "has_audio" not in agent
+    assert notify_render._has_audio(agent) is True
+    assert gdit_copy.voicemail_left(agent) is True
+    assert notify_render.voicemail_left_label(agent) == "Yes"
+    mail = notify_render.gdit_email(agent)
+    assert "Voicemail left: Yes" in mail["text"]
+    assert "Voicemail left: Yes" in mail["html"]
+    assert notify_send.gdit_notice_is_clean(mail["subject"], mail["text"], mail["html"]) is True
+
+    quiet = {"ref": REF, "created_at": TS, "recording_file": "", "verbatim_at": 0}
+    assert notify_render._has_audio(quiet) is False
+    assert gdit_copy.voicemail_left(quiet) is False
+    assert "Voicemail left: No" in notify_render.gdit_email(quiet)["text"]
+
+    assert gdit_copy.voicemail_left({"ref": REF, "verbatim_at": TS}) is True
+    assert gdit_copy.voicemail_left({"ref": REF, "recording_file": "CC-G0T01.wav"}) is True
+    assert gdit_copy.voicemail_left({"ref": REF, "has_audio": True}) is True
+    assert gdit_copy.voicemail_left({"ref": REF, "has_audio": False}) is False
+    assert gdit_copy.voicemail_left({}) is False
+    assert gdit_copy.voicemail_left(None) is False
 
 
 def test_content_free_notice_has_no_name_number_transcript_or_link():
@@ -193,7 +237,15 @@ async def _finalize(mod, client, label="gdit"):
     return body["ref"]
 
 
-def _state_fn(dry_run: str, presence: str | None):
+def _patch_ha(mod, dry_run: str, presence: str | None, zone_persons=...):
+    if zone_persons is ...:
+        if presence is not None and str(presence).strip().casefold() in gdit_copy.WORK_ZONE_STATES:
+            zone_persons = list(IN_ZONE)
+        elif presence in (None, "", "unknown", "unavailable", "none"):
+            zone_persons = None
+        else:
+            zone_persons = []
+
     async def read_state(_app, entity):
         if entity == "input_boolean.callcatch_notify_dry_run":
             return dry_run
@@ -201,7 +253,13 @@ def _state_fn(dry_run: str, presence: str | None):
             return presence
         return None
 
-    return read_state
+    async def read_persons(_app, entity_id):
+        if entity_id != gdit_copy.WORK_ZONE_ID:
+            return None
+        return zone_persons
+
+    mod.read_entity_state = read_state
+    mod.read_zone_persons = read_persons
 
 
 @pytest.mark.asyncio
@@ -225,7 +283,7 @@ async def test_option_default_off_is_quiet_disabled(monkeypatch, tmp_path, caplo
             sent.append(job["id"])
             return True, "sent", False
 
-        mod.read_entity_state = _state_fn("off", "Work")
+        _patch_ha(mod, "off", "Work")
         mod._box(app)["senders"] = {"push": fake, "email": fake, "gdit": fake}
         await _finalize(mod, client, "default-off")
         await mod.agent_tick(app)
@@ -246,7 +304,7 @@ async def test_dry_run_logs_would_send_only(monkeypatch, tmp_path, caplog):
             sent.append(job["id"])
             return True, "sent", False
 
-        mod.read_entity_state = _state_fn("on", "Work")
+        _patch_ha(mod, "on", "Work")
         mod._box(app)["senders"] = {"push": fake, "email": fake, "gdit": fake}
         ref = await _finalize(mod, client, "dry")
         await mod.agent_tick(app)
@@ -280,7 +338,7 @@ async def test_sent_after_proton_enqueues_and_sends_gdit(monkeypatch, tmp_path, 
                 assert "http" not in payload.get("html", "").lower()
             return True, "sent", False
 
-        mod.read_entity_state = _state_fn("off", "Work")
+        _patch_ha(mod, "off", "Work")
         mod._box(app)["senders"] = {"push": fake, "email": fake, "gdit": fake}
         ref = await _finalize(mod, client, "send")
         await mod.agent_tick(app)
@@ -317,7 +375,7 @@ async def test_presence_fail_closed_skips_notice(monkeypatch, tmp_path, caplog, 
             sent.append(job["id"])
             return True, "sent", False
 
-        mod.read_entity_state = _state_fn("off", presence)
+        _patch_ha(mod, "off", presence)
         mod._box(app)["senders"] = {"push": fake, "email": fake, "gdit": fake}
         ref = await _finalize(mod, client, f"work-{presence}")
         await mod.agent_tick(app)
@@ -341,7 +399,7 @@ async def test_no_proton_means_no_gdit(monkeypatch, tmp_path, caplog):
             sent.append(job["id"])
             return True, "sent", False
 
-        mod.read_entity_state = _state_fn("off", "Work")
+        _patch_ha(mod, "off", "Work")
         mod._box(app)["senders"] = {"push": fake, "gdit": fake}
         ref = await _finalize(mod, client, "no-proton")
         await mod.agent_tick(app)
@@ -380,8 +438,12 @@ async def test_stale_gdit_sender_does_not_send():
             raise AssertionError("stale job must not be posted")
 
     async def send_job():
+        async def presence():
+            return "Work", IN_ZONE
+
         sender = notify_send.agentmail_gdit_sender(
-            lambda: _Dead(), "callcatch-test@agentmail.to", "am-key-555-not-real"
+            lambda: _Dead(), "callcatch-test@agentmail.to", "am-key-555-not-real",
+            presence_check=presence,
         )
         job = {
             "id": f"gdit:{REF}",
@@ -406,7 +468,7 @@ async def test_send_time_presence_recheck_fails_closed():
             raise AssertionError("must not post when no longer at work")
 
     async def presence():
-        return "home"
+        return "home", []
 
     sender = notify_send.agentmail_gdit_sender(
         lambda: _Dead(), "callcatch-test@agentmail.to", "am-key-555-not-real",
@@ -422,6 +484,119 @@ async def test_send_time_presence_recheck_fails_closed():
     ok, code, retry = await sender(job)
     assert (ok, code, retry) == (False, "not_at_work", False)
     assert posted == []
+
+
+@pytest.mark.asyncio
+async def test_send_time_requires_zone_work_membership():
+    posted = []
+
+    class _Dead:
+        def post(self, *args, **kwargs):
+            posted.append(True)
+            raise AssertionError("must not post when zone.work persons is empty")
+
+    async def presence():
+        return "Work", []
+
+    sender = notify_send.agentmail_gdit_sender(
+        lambda: _Dead(), "callcatch-test@agentmail.to", "am-key-555-not-real",
+        presence_check=presence,
+    )
+    import time
+    job = {
+        "id": f"gdit:{REF}",
+        "ref": REF,
+        "created_at": time.time(),
+        "payload": notify_render.gdit_email(_row()),
+    }
+    ok, code, retry = await sender(job)
+    assert (ok, code, retry) == (False, "not_at_work", False)
+    assert posted == []
+
+
+@pytest.mark.asyncio
+async def test_send_time_zone_read_failure_is_work_unknown():
+    posted = []
+
+    class _Dead:
+        def post(self, *args, **kwargs):
+            posted.append(True)
+            raise AssertionError("must not post when zone.work cannot be read")
+
+    async def presence():
+        return "Work", None
+
+    sender = notify_send.agentmail_gdit_sender(
+        lambda: _Dead(), "callcatch-test@agentmail.to", "am-key-555-not-real",
+        presence_check=presence,
+    )
+    import time
+    job = {
+        "id": f"gdit:{REF}",
+        "ref": REF,
+        "created_at": time.time(),
+        "payload": notify_render.gdit_email(_row()),
+    }
+    ok, code, retry = await sender(job)
+    assert (ok, code, retry) == (False, "work_unknown", False)
+    assert posted == []
+
+
+def test_presence_check_is_required():
+    import inspect
+
+    param = inspect.signature(notify_send.agentmail_gdit_sender).parameters["presence_check"]
+    assert param.default is inspect.Parameter.empty
+    assert param.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+
+
+@pytest.mark.asyncio
+async def test_missing_presence_check_fails_closed():
+    posted = []
+
+    class _Dead:
+        def post(self, *args, **kwargs):
+            posted.append(True)
+            raise AssertionError("must not post without a presence check")
+
+    sender = notify_send.agentmail_gdit_sender(
+        lambda: _Dead(), "callcatch-test@agentmail.to", "am-key-555-not-real",
+        presence_check=None,
+    )
+    import time
+    job = {
+        "id": f"gdit:{REF}",
+        "ref": REF,
+        "created_at": time.time(),
+        "payload": notify_render.gdit_email(_row()),
+    }
+    ok, code, retry = await sender(job)
+    assert (ok, code, retry) == (False, "work_unknown", False)
+    assert posted == []
+
+
+@pytest.mark.asyncio
+async def test_presence_fail_closed_when_work_state_but_not_in_zone_work(
+        monkeypatch, tmp_path, caplog):
+    caplog.set_level(logging.INFO)
+    mod = _mod(monkeypatch, tmp_path)
+    async with TestClient(TestServer(mod.make_app())) as client:
+        app = client.server.app
+        sent = []
+
+        async def fake(job):
+            sent.append(job["id"])
+            return True, "sent", False
+
+        _patch_ha(mod, "off", "Work", zone_persons=[])
+        mod._box(app)["senders"] = {"push": fake, "email": fake, "gdit": fake}
+        ref = await _finalize(mod, client, "other-work-zone")
+        await mod.agent_tick(app)
+        _calls, outbox = mod.ensure_agent(app)
+        assert f"email:{ref}" in sent
+        assert f"gdit:{ref}" not in sent
+        assert outbox.get(f"gdit:{ref}") is None
+        assert "gdit skip reason=not_at_work" in caplog.text
 
 
 def test_startup_clears_pending_gdit_when_option_is_off(monkeypatch, tmp_path):
