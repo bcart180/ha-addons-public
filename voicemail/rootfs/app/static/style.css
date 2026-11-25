@@ -339,6 +339,11 @@ button, input, select { font: inherit; color: inherit; }
 }
 .numbers-form input { flex: 1; min-width: 0; }
 .numbers-form input:focus, .numbers-form select:focus { border-color: var(--accent); outline: none; }
+@media (max-width: 400px) {
+  .numbers-form { flex-wrap: wrap; align-items: stretch; }
+  .numbers-form input { flex: 1 1 100%; width: 100%; min-width: 0; }
+  .numbers-form select, .numbers-form button { flex: 1 1 auto; }
+}
 .numbers-h { margin: 22px 20px 6px; }
 .numbers-ul { list-style: none; margin: 0 16px; padding: 0; }
 .numbers-ul li {
