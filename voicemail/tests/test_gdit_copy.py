@@ -1,4 +1,4 @@
-"""0.8.6 GDIT work-hours copy: gates, redaction, pins, and after-Proton send.
+"""0.8.6+ GDIT work-hours copy: gates, redaction, pins, and after-Proton send.
 
 Fake data only: 555-01xx numbers and invented names.
 """
@@ -174,10 +174,10 @@ def test_sensitive_terms_fail_toward_skipping(text):
 
 def test_redacted_template_is_name_time_and_proton_pointer():
     mail = notify_render.gdit_email(_row())
-    assert mail["subject"] == "Jordan Hale called at 5:15 PM ET"
-    assert mail["text"] == "Jordan Hale called at 5:15 PM ET.\n\nSee Proton for the full message."
+    assert mail["subject"] == "Jordan Hale called at 17:15 ET"
+    assert mail["text"] == "Jordan Hale called at 17:15 ET.\n\nSee Proton for the full message."
     assert "See Proton for the full message." in mail["html"]
-    assert mail["to"] == ["bryson.carter@gdit.com"]
+    assert mail["to"] == [gdit_copy.GDIT_RECIPIENT]
     assert mail["category"] == "callcatch_gdit_notice"
     blob = mail["subject"] + mail["text"] + mail["html"]
     assert "555" not in blob
@@ -216,18 +216,18 @@ def test_unusable_contact_name_becomes_a_caller():
 def test_proton_pin_unchanged_and_refuses_gdit():
     assert notify_send.RECIPIENT_DOMAINS == ("proton.me", "protonmail.com")
     assert "gdit.com" not in notify_send.RECIPIENT_DOMAINS
-    assert notify_send.parse_recipient("bryson.carter@gdit.com") == ""
-    assert notify_send.recipient_allowed("bryson.carter@gdit.com") is False
+    assert notify_send.parse_recipient(gdit_copy.GDIT_RECIPIENT) == ""
+    assert notify_send.recipient_allowed(gdit_copy.GDIT_RECIPIENT) is False
     assert notify_send.parse_recipient("callcatch-test@proton.me") == "callcatch-test@proton.me"
     body = notify_send.build_agentmail_body(
         {
-            "to": ["bryson.carter@gdit.com"],
+            "to": [gdit_copy.GDIT_RECIPIENT],
             "subject": "x",
             "text": "x",
             "html": "<p>x</p>",
             "category": notify_send.CATEGORY,
         },
-        "bryson.carter@gdit.com",
+        gdit_copy.GDIT_RECIPIENT,
     )
     assert body is None
 
@@ -236,14 +236,14 @@ def test_gdit_pin_is_exact_address_and_domain():
     assert not hasattr(notify_send, "GDIT_DOMAINS")
     assert notify_send.GDIT_RECIPIENT is gdit_copy.GDIT_RECIPIENT
     assert notify_send.parse_gdit_recipient(gdit_copy.GDIT_RECIPIENT) == gdit_copy.GDIT_RECIPIENT
-    assert notify_send.parse_gdit_recipient("bryson.carter@gdit.com") == "bryson.carter@gdit.com"
-    assert notify_send.parse_gdit_recipient("Bryson.Carter@GDIT.com") == "bryson.carter@gdit.com"
+    assert notify_send.parse_gdit_recipient(gdit_copy.GDIT_RECIPIENT) == gdit_copy.GDIT_RECIPIENT
+    assert notify_send.parse_gdit_recipient("Bryson.Carter@GDIT.com") == gdit_copy.GDIT_RECIPIENT
     for bad in (
         "other@gdit.com",
         "bryson.carter@mail.gdit.com",
-        "bryson.carter@gdit.com.example",
+        gdit_copy.GDIT_RECIPIENT + ".example",
         "bryson.carter@proton.me",
-        "bryson.carter@gdit.com,other@gdit.com",
+        gdit_copy.GDIT_RECIPIENT + ",other@gdit.com",
         "someone@gmail.com",
         "",
     ):
@@ -262,7 +262,7 @@ def test_gdit_body_and_idempotency_are_distinct():
     payload = notify_render.gdit_email(_row())
     body = notify_send.build_gdit_agentmail_body(payload, notify_send.GDIT_RECIPIENT)
     assert body is not None
-    assert body["to"] == ["bryson.carter@gdit.com"]
+    assert body["to"] == [gdit_copy.GDIT_RECIPIENT]
     assert body["labels"] == ["callcatch", "callcatch_gdit_notice"]
     protonish = dict(payload)
     protonish["category"] = notify_send.CATEGORY
@@ -334,7 +334,7 @@ async def test_option_default_off_is_quiet_disabled(monkeypatch, tmp_path, caplo
         agentmail_inbox="callcatch-test@agentmail.to",
     )
     assert mod.GDIT_WORK_COPY is False
-    assert mod.VERSION == "0.8.6"
+    assert mod.VERSION == "0.8.7"
     async with TestClient(TestServer(mod.make_app())) as client:
         app = client.server.app
         sent = []
@@ -390,7 +390,7 @@ async def test_sent_after_proton_enqueues_and_sends_gdit(monkeypatch, tmp_path, 
             sent.append(job["id"])
             if job["kind"] == "gdit":
                 payload = job["payload"]
-                assert payload["to"] == ["bryson.carter@gdit.com"]
+                assert payload["to"] == [gdit_copy.GDIT_RECIPIENT]
                 assert "See Proton for the full message." in payload["text"]
                 assert "555" not in payload["text"]
                 assert "Saturday" not in payload.get("html", "")
@@ -529,6 +529,62 @@ def test_normalize_spaced_punctuated_and_lookalike_spellings():
     assert gdit_copy.is_sensitive(_row(summary="D r Patel called")) is True
     assert gdit_copy.is_sensitive(_row(summary="lab-results are ready")) is True
     assert gdit_copy.is_sensitive(_row(summary="New Rez payoff")) is True
+
+
+
+def test_n1_stems_match_and_short_stems_stay_word_bounded():
+    hits = (
+        "oncologist",
+        "cardiologist",
+        "dermatologist",
+        "psychiatrist",
+        "psychologist",
+        "counselor",
+        "nurse",
+        "nurses",
+        "chiropractor",
+        "optometrist",
+        "orthopedics",
+        "urologist",
+        "OB-GYN",
+        "eye care",
+        "Chase",
+        "Schwab",
+        "Amex",
+        "Venmo",
+        "PNC",
+        "Truist",
+        "Ally",
+        "SoFi",
+        "Synchrony",
+        "Equifax",
+        "Experian",
+        "TransUnion",
+        "CPA",
+        "accountant",
+        "tax",
+        "credit",
+    )
+    for text in hits:
+        assert gdit_copy.is_sensitive(_row(summary=text)) is True, text
+    # Small capitals (U+0280 and the rest of the fold table).
+    assert gdit_copy.is_sensitive(_row(summary="ʙᴀɴᴋ")) is True
+    assert gdit_copy.is_sensitive(_row(summary="ᴠᴀ")) is True
+    assert gdit_copy.normalize_match_text("ʀ") == "r"
+    # Short stems must not fire inside ordinary words.
+    for text in (
+        "Sally",
+        "rally",
+        "valley",
+        "syntax",
+        "taxi",
+        "purchase",
+        "purchaser",
+        "credentials",
+        "accreditation",
+        "nursery",
+    ):
+        assert gdit_copy.is_sensitive(_row(summary=text)) is False, text
 
 
 def test_top_level_source_is_ignored_for_the_gdit_name():

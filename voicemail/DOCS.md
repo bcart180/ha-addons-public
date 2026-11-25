@@ -346,11 +346,11 @@ Each voicemail gets a short structured summary: **caller name** (only if the cal
 
 When this add-on is moved to another add-on store, its `/data` does not move with it. The new install imports allow-listed files once, on its first start, from `/share/.migrate-2026-11-01/<slug>/` (`voicemail` or `twilio_house_voice`). The folder must be owned by root with mode 700 (`chmod 700`). Anything unexpected (a symlink, a file not on the allow-list, a file over 8 MB, invalid JSON) stops the import with nothing written, and the log names only the reason. After a successful import the add-on writes an import marker in `/data` and deletes the staged files. It never imports twice.
 
-## Post-call email (0.8.5)
+## Post-call email (0.8.5, 0.8.7)
 
 When a call is finalized, CallCatch queues one email (still gated by the notify
 dry-run switch).  The subject is the caller name, or a last-4 fallback, plus
-the time in America/New_York: `Jordan Hale called at 5:15 PM ET`.  The HTML body
+the time in America/New_York: `Jordan Hale called at 17:15 ET`.  The HTML body
 is black-friendly for Proton on iPhone (`#000` background, `#3E6AE1` links) and
 includes:
 
@@ -364,7 +364,9 @@ includes:
   reference)
 
 `email_full_number` still adds a call-back line with the full number when it is
-on.  The header last-4 is always shown.  Prose uses two spaces after periods.
+on.  The last-4 is shown once: as the heading for an unknown caller, or as a
+subline under a name.  Times in the subject and body are 24-hour ET, like the
+inbox.  Prose uses two spaces after periods.
 
 ## GDIT work-hours copy (0.8.6)
 
@@ -495,14 +497,14 @@ appleid.apple.com.
 - Logs show only counts and a status, for example
   `contacts: synced 412 numbers from 380 contacts`.
 
-### .vcf upload (normal import)
+### .vcf upload (admin endpoint only)
 
-Numbers view (sidebar) → **Contacts** → **Upload .vcf**. Export contacts from
-iCloud.com or the iPhone Contacts app as a `.vcf`. Limit 5 MB. The file is
-parsed in memory, merged into the private directory (existing iCloud-only
-entries are kept) and discarded; it is never stored. Only signed-in Home
-Assistant ingress sessions can upload (the panel is admin-only).  This is the
-usual import route when iCloud sync is off.
+The Numbers screen no longer shows an Upload .vcf control.  Contacts are
+pulled directly.  `POST /api/contacts/upload` remains for a signed-in Home
+Assistant ingress session only (5 MB limit).  A file sent there is parsed in
+memory, merged into the private directory (existing iCloud-only entries are
+kept), and discarded; it is never stored.  Names, numbers, and filenames are
+never logged.
 
 ### .vcf drop folder (0.8.5, off by default)
 

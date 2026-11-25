@@ -79,7 +79,7 @@ def gdit_recipient_allowed(addr: Any) -> bool:
 
 
 def parse_gdit_recipient(raw: Any) -> str:
-    """Exactly bryson.carter@gdit.com.  Any other address, list, or domain gives ""."""
+    """Exactly the pinned work address.  Any other address, list, or domain gives ""."""
     text = str(raw or "").strip()
     if not text or any(c in text for c in ",; \t\r\n"):
         return ""

@@ -18,10 +18,18 @@ def test_canvas_is_pure_black():
     assert 'data-filter="needs_callback"' in HTML
 
 
-def test_no_branding_in_visible_chrome():
-    assert "<h1>CallCatch</h1>" not in HTML
-    assert "<title>CallCatch</title>" not in HTML
+def test_inbox_title_is_callcatch():
+    assert "<title>CallCatch</title>" in HTML
+    assert "<h1>CallCatch " in HTML
+    assert "Allowed, blocked, and contacts" in HTML
+    assert "Upload .vcf" not in HTML
+    assert 'id="contacts-file"' not in HTML
     assert "through CallCatch" not in JS
+
+
+def test_numbers_form_stacks_on_narrow_screens():
+    assert ".numbers-form { flex-wrap: wrap; align-items: stretch; }" in CSS
+    assert ".numbers-form input { flex: 1 1 100%; width: 100%; min-width: 0; }" in CSS
 
 
 def test_touch_targets_at_least_48px():

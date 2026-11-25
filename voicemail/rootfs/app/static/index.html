@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#000000" />
   <meta name="color-scheme" content="dark" />
-  <title>Voicemail</title>
+  <title>CallCatch</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -14,8 +14,8 @@
     <section id="view-list" class="view view-list">
       <header class="vm-nav">
         <button type="button" class="pill-btn" id="btn-edit" aria-pressed="false">Edit</button>
-        <h1>Voicemail <span id="followup-badge" class="count-badge hidden" aria-label="Needs callback"></span></h1>
-        <button type="button" class="icon-btn" id="btn-numbers" title="Allowed and blocked numbers" aria-label="Allowed and blocked numbers">
+        <h1>CallCatch <span id="followup-badge" class="count-badge hidden" aria-label="Needs callback"></span></h1>
+        <button type="button" class="icon-btn" id="btn-numbers" title="Allowed, blocked, and contacts" aria-label="Allowed, blocked, and contacts">
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3zm0 2.2 6 2.2V11c0 3.9-2.5 7.6-6 8.8-3.5-1.2-6-4.9-6-8.8V6.4l6-2.2z"/></svg>
         </button>
         <button type="button" class="icon-btn accent" id="btn-clear-all" title="Clear all" aria-label="Clear all">
@@ -198,9 +198,6 @@
         <p class="dim tiny" id="contacts-status">Loading…</p>
         <div class="contacts-actions">
           <button type="button" class="pill-btn" id="btn-contacts-sync">Sync now</button>
-          <label class="pill-btn contacts-file">Upload .vcf
-            <input type="file" id="contacts-file" accept=".vcf,text/vcard,text/x-vcard" class="hidden" />
-          </label>
         </div>
       </div>
     </section>
