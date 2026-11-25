@@ -6,6 +6,7 @@
 - **Presence gate.**  The notice is sent only when `person.bryson` is in the Home Assistant Work zone (`zone.work`).  `home`, `not_home`, and other zones are `not_at_work`.  `unknown`, `unavailable`, a missing entity, or an unreachable Home Assistant read is `work_unknown`.  Both fail closed.  The earlier `binary_sensor.bryson_at_work` gate is no longer used.
 - **Send-time re-check.**  The presence gate is checked again at send time, and a pending notice older than about 15 minutes is still dropped.  Dry-run behavior is unchanged.  The option still defaults to off.
 - **SA leftovers from 0.8.7.**  Tests derive work-address variants from the code constant (no local-part literals).  The unused Upload .vcf listener is removed from the inbox script.
+- **Security Audit PR #77 (L1, L2, I3).**  "Voicemail left" uses the same recording rule as the Proton notice (`recording_file`, `has_audio`, or `verbatim_at`), so phone-agent calls are not always "No".  The presence gate requires `person.bryson` both to have the Work state and to appear in `zone.work`'s `persons` attribute; a second zone named Work does not pass, and a failed zone read is `work_unknown`.  The send-time presence check is required; a missing check fails closed.
 
 ## 0.8.7 — 2026-11-24
 

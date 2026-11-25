@@ -383,10 +383,13 @@ Bryson is physically in the Home Assistant Work zone.
   `input_boolean.callcatch_notify_dry_run` is explicitly on.  If no Proton
   notice goes out (no recipient, sender missing, or the job never sends), no
   work notice is sent (`reason=no_proton`).
-- `person.bryson` must be in `zone.work` (the zone named Work).  The person
-  state is compared case-insensitively to `Work`.  `home`, `not_home`, and
-  any other known zone are `reason=not_at_work`.  `unknown`, `unavailable`,
-  a missing entity, or an unreachable Home Assistant read is
+- `person.bryson` must be in `zone.work`.  The person state is compared
+  case-insensitively to `Work`, and `person.bryson` must also appear in
+  `zone.work`'s `persons` attribute, so a second zone named Work does not
+  pass.  `home`, `not_home`, and any other known zone, or a readable
+  `zone.work` that does not list the person, are `reason=not_at_work`.
+  `unknown`, `unavailable`, a missing entity, an unreachable Home
+  Assistant read, or an unreadable `persons` attribute is
   `reason=work_unknown`.  All of those fail closed: no notice is sent.  There
   is no clock fallback, and `binary_sensor.bryson_at_work` is not used.
 - The same notify dry-run switch still applies.  With dry-run on, a notice
@@ -409,7 +412,9 @@ the Proton pin.  `mail_to` still accepts only `proton.me` and
 The body carries only:
 
 - the line `Missed call`
-- `Voicemail left: Yes` or `Voicemail left: No`
+- `Voicemail left: Yes` or `Voicemail left: No` (the same recording
+  rule as the Proton notice: a recording file, `has_audio`, or a verbatim
+  transcript timestamp)
 - the time in 24-hour America/New_York, for example `Tue Nov 24, 17:15 ET`
 
 The subject is `Missed call at {time} ET`.  It has no name, number or last-4,
