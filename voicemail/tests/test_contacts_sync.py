@@ -438,7 +438,7 @@ async def test_upload_merges_and_keeps_no_file(monkeypatch):
         assert n not in r.body.decode()
     assert not re.search(r"555", r.body.decode())
     created = {p.name for p in pathlib.Path(tmp).rglob("*")} - {p.name for p in before}
-    assert created <= {"private", cs.DIRECTORY_NAME, cs.MANUAL_NAME, cs.STATUS_NAME, "callcatch"}
+    assert created <= {"private", cs.DIRECTORY_NAME, cs.MANUAL_NAME, cs.ORG_NAME, cs.STATUS_NAME, "callcatch"}
     assert not any(p.suffix == ".vcf" for p in pathlib.Path(tmp).rglob("*"))
     d = pathlib.Path(tmp) / "private" / cs.DIRECTORY_NAME
     assert stat.S_IMODE(d.stat().st_mode) == 0o600
@@ -605,3 +605,28 @@ def test_prepare_import_dir_always_chmods_0700(tmp_path):
     out = sync._prepare_import_dir()
     assert out == folder
     assert stat.S_IMODE(folder.stat().st_mode) == 0o700
+
+
+@pytest.mark.asyncio
+async def test_upload_stores_org_alongside_name(tmp_path):
+    """A vCard ORG is kept even when the card also has a display name."""
+    priv = tmp_path / "private"
+    sync = cs.ContactsSync(
+        cs.Directory(priv),
+        tmp_path / "status.json",
+        enabled=False,
+        apple_id="",
+        app_password="",
+    )
+    raw = (
+        "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Jordan Hale\r\nORG:Navy Federal;\r\n"
+        "TEL:+15555550142\r\nEND:VCARD\r\n"
+    ).encode()
+    out = await sync.import_vcf(raw)
+    assert out["state"] == "ok"
+    assert sync.directory.loaded()["+15555550142"] == "Jordan Hale"
+    assert sync.directory.loaded_orgs()["+15555550142"] == "Navy Federal"
+    org_path = priv / cs.ORG_NAME
+    assert org_path.exists()
+    import stat as _stat
+    assert _stat.S_IMODE(org_path.stat().st_mode) == 0o600

@@ -2,7 +2,8 @@
 
 Jobs live in /data/notify_outbox.json.  Each job id is ``<kind>:<ref>``, and
 ``enqueue`` refuses an id it already holds, so one call yields one email job
-and one push job no matter how many triggers fire.  ``pump_once`` sends due
+and one push job no matter how many triggers fire.  A ``gdit`` job is the
+optional redacted work-hours copy, enqueued only after the Proton notice.  ``pump_once`` sends due
 jobs and retries failures with exponential backoff.  A job that keeps failing
 is parked as ``dead`` (visible in /api/diag counts) instead of being dropped.
 
@@ -22,10 +23,10 @@ from typing import Any, Awaitable, Callable
 from inbox_store import atomic_write_bytes, exclusive_lock
 from notify_render import PUSH_PANEL
 
-KINDS = ("email", "push", "push_update", "push_notice")
+KINDS = ("email", "push", "push_update", "push_notice", "gdit")
 # push_notice is the one masked "N CallCatch notices expired" push (R3-L1); its
 # ref is EX-<unix seconds> because it belongs to no single call.
-ID_RE = re.compile(r"^(?:(email|push|push_update):CC-[A-Z0-9]{5}|push_notice:EX-[0-9]{10})$")
+ID_RE = re.compile(r"^(?:(email|push|push_update|gdit):CC-[A-Z0-9]{5}|push_notice:EX-[0-9]{10})$")
 NOTICE_KIND = "push_notice"
 BASE_DELAY_S = 30
 MAX_DELAY_S = 30 * 60
@@ -118,12 +119,15 @@ class Outbox:
         return out
 
     def suppress_pending(self, clock: float | None = None, status: str = "dry_run",
-                         created_before: float | None = None) -> list[str]:
+                         created_before: float | None = None,
+                         kinds: tuple[str, ...] | None = None) -> list[str]:
         """Close pending jobs without sending: ``dry_run`` (switch explicitly
         on) or ``expired`` (held too long while the switch was unreadable).
 
         Terminal on purpose, so turning dry_run off later never releases a
-        backlog of stale notices.  The message itself stays in CallCatch."""
+        backlog of stale notices.  The message itself stays in CallCatch.
+        ``kinds`` limits the close to those job kinds (used to drop pending
+        GDIT copies when the option is off)."""
         if status not in ("dry_run", "expired"):
             raise ValueError("bad-status")
         now = clock if clock is not None else now_ts()
@@ -132,6 +136,8 @@ class Outbox:
             data = self._read()
             for jid, job in data["jobs"].items():
                 if job.get("status") != "pending":
+                    continue
+                if kinds is not None and job.get("kind") not in kinds:
                     continue
                 if status == "expired" and job.get("kind") == NOTICE_KIND:
                     continue  # the expiry notice itself never expires (no notice-about-the-notice loop)

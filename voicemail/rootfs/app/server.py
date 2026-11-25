@@ -32,6 +32,7 @@ import call_summary
 import contacts_sync
 import drive_backend
 import freebusy
+import gdit_copy
 import inbox_store
 import legacy_import
 import notify_outbox
@@ -43,7 +44,7 @@ import telnyx_capture
 APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC = APP_DIR / "static"
 EXAMPLE = APP_DIR / "example_voicemails.json"
-VERSION = "0.8.5"
+VERSION = "0.8.6"
 AUDIO_LIMIT = 25 * 1024 * 1024
 SENSOR_RE = re.compile(r"sensor\.[a-z0-9_]+")
 RT = web.AppKey("rt", dict)
@@ -128,6 +129,7 @@ MAIL_FROM = AGENTMAIL_INBOX
 AGENTMAIL_API_KEY = str(OPTS.get("agentmail_api_key") or "")
 PANEL_BASE_URL = str(OPTS.get("panel_base_url") or "").strip()  # blank: email names the sidebar, no link
 EMAIL_FULL_NUMBER = bool(OPTS.get("email_full_number", False))  # off: last 4 only (opt-in at install)
+GDIT_WORK_COPY = bool(OPTS.get("gdit_work_copy", False))  # off: no work-hours copy (opt-in later)
 PUSH_SERVICE = str(OPTS.get("push_service") or "").strip()
 if PUSH_SERVICE.startswith("notify."):
     PUSH_SERVICE = PUSH_SERVICE[len("notify."):]
@@ -1784,6 +1786,8 @@ def build_senders(app: web.Application) -> dict:
     senders: dict = {}
     if mail_ready():
         senders["email"] = notify_send.agentmail_sender(session, AGENTMAIL_INBOX, AGENTMAIL_API_KEY, MAIL_TO)
+        if GDIT_WORK_COPY:
+            senders["gdit"] = notify_send.agentmail_gdit_sender(session, AGENTMAIL_INBOX, AGENTMAIL_API_KEY)
     if notify_send.NOTIFY_RE.fullmatch(PUSH_SERVICE or ""):
         async def call_service(domain, service, data):
             sess = session()
@@ -1962,14 +1966,24 @@ def apply_caller_identity(app: web.Application, row: dict) -> None:
         directory = ensure_contacts(app).directory.loaded()
     except Exception:  # noqa: BLE001 - a directory read must not block the notice
         directory = {}
+    orgs: dict = {}
+    try:
+        orgs = ensure_contacts(app).directory.loaded_orgs()
+    except Exception:  # noqa: BLE001
+        orgs = {}
+    org = contacts_sync.lookup_org(number, orgs)
+    if org:
+        f["org"] = org
     name, source = contacts_sync.lookup_display(number, directory, cnam)
     if not name and contacts_sync.name_is_usable(existing):
         name, source = contacts_sync.clean_name(existing), "spoken"
     if name:
         f["caller_name"] = name
         f["caller_name_source"] = source
-    elif not contacts_sync.name_is_usable(existing):
-        f["caller_name"] = ""
+    else:
+        f["caller_name_source"] = source or "none"
+        if not contacts_sync.name_is_usable(existing):
+            f["caller_name"] = ""
 
 
 async def deliver_final(app: web.Application, row: dict) -> None:
@@ -1986,6 +2000,7 @@ async def deliver_final(app: web.Application, row: dict) -> None:
         _log_safe(f"agent final ref={ref} empty, not notified")
         return
     apply_caller_identity(app, row)
+    _calls.patch_fields(ref, row.get("fields") or {})
     item = agent_item(row)
     saved = store.upsert(item, preserve_heard=True)
     if (row.get("fields") or {}).get("callback_requested"):
@@ -2253,6 +2268,32 @@ async def _capture_safe(app: web.Application) -> None:
         log.warning("recording tick %s", type(exc).__name__)
 
 
+async def follow_gdit(app: web.Application, row: dict, proton: str) -> str:
+    """After a Proton notice is sent or would-send: maybe enqueue a GDIT copy.
+
+    Logs a reason code only.  Names and numbers are never logged.  When
+    ``gdit_work_copy`` is off this is a quiet no-op (reason ``disabled``).
+    """
+    if not GDIT_WORK_COPY:
+        return "disabled"
+    apply_caller_identity(app, row)
+    calls, _outbox = ensure_agent(app)
+    calls.patch_fields(str((row or {}).get("ref") or ""), (row or {}).get("fields") or {})
+    state = await read_entity_state(app, gdit_copy.WORK_SENSOR)
+    reason = gdit_copy.decide(True, proton, state, row)
+    if reason == "dry_run":
+        log.info("gdit would-send reason=dry_run")
+        return reason
+    if reason != "ok":
+        log.info("gdit skip reason=%s", reason)
+        return reason
+    ref = str((row or {}).get("ref") or "")
+    _calls, outbox = ensure_agent(app)
+    outbox.enqueue("gdit", ref, notify_render.gdit_email(row or {}))
+    log.info("gdit enqueue reason=ok")
+    return "ok"
+
+
 async def agent_tick(app: web.Application) -> None:
     calls, outbox = ensure_agent(app)
     for row in calls.sweep(AGENT_INACTIVITY_S, HOOK_EXPECTED, HOOK_GRACE_S,
@@ -2270,6 +2311,11 @@ async def agent_tick(app: web.Application) -> None:
     if gate == "dry_run":
         for jid in outbox.suppress_pending():
             log.info("dry_run on: would send %s (not sent)", jid)
+            kind, _, ref = jid.partition(":")
+            if kind == "email":
+                row = calls.by_ref(ref)
+                if row:
+                    await follow_gdit(app, row, "would-send")
         return
     if gate == "hold":
         expired = outbox.suppress_pending(status="expired",
@@ -2281,10 +2327,24 @@ async def agent_tick(app: web.Application) -> None:
             outbox.note_expired(len(expired))
             box["sensor_dirty"] = True
         return
+    pending_gdit = False
     for rec in await outbox.pump_once(senders):
-        if rec.get("status") != "sent":
+        if rec.get("kind") == "email" and rec.get("status") == "sent":
+            row = calls.by_ref(str(rec.get("ref") or ""))
+            if row and await follow_gdit(app, row, "sent") == "ok":
+                pending_gdit = True
+        if rec.get("kind") == "gdit" and rec.get("status") == "sent":
+            log.info("gdit sent reason=sent")
+        elif rec.get("status") != "sent":
             log.warning("notify %s attempt=%s code=%s status=%s", rec.get("kind"), rec.get("attempts"),
                         rec.get("last_code"), rec.get("status"))
+    if pending_gdit:
+        for rec in await outbox.pump_once(senders):
+            if rec.get("kind") == "gdit" and rec.get("status") == "sent":
+                log.info("gdit sent reason=sent")
+            elif rec.get("status") != "sent":
+                log.warning("notify %s attempt=%s code=%s status=%s", rec.get("kind"), rec.get("attempts"),
+                            rec.get("last_code"), rec.get("status"))
 
 
 async def index(_request: web.Request) -> web.Response:
@@ -2323,12 +2383,24 @@ async def background(app: web.Application) -> None:
         return
 
 
+def clear_pending_gdit_if_disabled(app: web.Application) -> int:
+    """When the option is off, close pending GDIT jobs so they cannot send later."""
+    if GDIT_WORK_COPY:
+        return 0
+    _calls, outbox = ensure_agent(app)
+    closed = outbox.suppress_pending(status="expired", kinds=("gdit",))
+    if closed:
+        log.info("gdit skip reason=disabled n=%s", len(closed))
+    return len(closed)
+
+
 async def on_startup(app: web.Application) -> None:
     global IN_HA
     box = _box(app)
     box["session"] = ClientSession(timeout=ClientTimeout(total=30))
     IN_HA = _in_ha()
     ensure_runtime(app)
+    clear_pending_gdit_if_disabled(app)
     box["bg"] = asyncio.create_task(background(app))
     box["contacts_task"] = asyncio.create_task(ensure_contacts(app).run_forever())
     if IN_HA:

@@ -160,6 +160,13 @@ configuration:
       Off (default) shows the last 4 digits only.  On puts the full callback
       number in the email so it can be dialed.  The email leaves the house
       through the mail route, so turn this on only by explicit choice.
+  gdit_work_copy:
+    name: GDIT work-hours copy
+    description: >-
+      Off (default).  When on, a redacted copy of the Proton notice is sent
+      to the pinned GDIT address only after the Proton notice, and only when
+      binary_sensor.bryson_at_work is explicitly on.  VA, medical, and
+      financial callers are skipped.  Still honors the notify dry-run switch.
   panel_base_url:
     name: Panel link base URL
     description: >-

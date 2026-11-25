@@ -255,6 +255,36 @@ class AgentCalls:
             row = self._read()["calls"].get(key)
             return copy.deepcopy(row) if isinstance(row, dict) else None
 
+    def by_ref(self, ref: str) -> dict | None:
+        want = str(ref or "")
+        if not want:
+            return None
+        with exclusive_lock(self.lock_path):
+            for row in self._read()["calls"].values():
+                if isinstance(row, dict) and str(row.get("ref") or "") == want:
+                    return copy.deepcopy(row)
+        return None
+
+    def patch_fields(self, ref: str, fields: dict) -> dict | None:
+        """Write identity fields back onto the stored row for this CallCatch ref."""
+        want = str(ref or "")
+        if not want or not isinstance(fields, dict):
+            return None
+        with exclusive_lock(self.lock_path):
+            data = self._read()
+            for row in data["calls"].values():
+                if not isinstance(row, dict) or str(row.get("ref") or "") != want:
+                    continue
+                cur = row.get("fields")
+                if not isinstance(cur, dict):
+                    cur = {}
+                    row["fields"] = cur
+                for key, value in fields.items():
+                    cur[key] = value
+                self._write(data)
+                return copy.deepcopy(row)
+        return None
+
     def all(self) -> list[dict]:
         with exclusive_lock(self.lock_path):
             return [copy.deepcopy(v) for v in self._read()["calls"].values()]

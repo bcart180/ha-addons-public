@@ -13,11 +13,18 @@ import re
 from typing import Any, Awaitable, Callable
 from urllib.parse import quote
 
+import gdit_copy
+
 from aiohttp import ClientTimeout
 
 BLOCKED_MAIL_DOMAINS = ("gmail.com", "googlemail.com")
 # Pinned recipient domains: Bryson's Proton.  Exact match, no subdomains.
 RECIPIENT_DOMAINS = ("proton.me", "protonmail.com")
+# The work-hours recipient is pinned in gdit_copy.GDIT_RECIPIENT only.
+# This does not change the Proton pin above.
+GDIT_RECIPIENT = gdit_copy.GDIT_RECIPIENT
+CATEGORY_GDIT = "callcatch_gdit_notice"
+LABELS_GDIT = ("callcatch", CATEGORY_GDIT)
 # Sender must be a DEDICATED CallCatch-only AgentMail inbox:
 # an AgentMail-hosted inbox whose local part starts with "callcatch", so a shared bot
 # inbox can never be configured as the From address.  Keeping it out of reach of other
@@ -63,6 +70,22 @@ def parse_recipient(raw: Any) -> str:
     return text if recipient_allowed(text) else ""
 
 
+def gdit_recipient_allowed(addr: Any) -> bool:
+    """Pinned work address only.  Exact match against the one code constant."""
+    text = str(addr or "").strip()
+    if not EMAIL_RE.fullmatch(text):
+        return False
+    return text.lower() == GDIT_RECIPIENT
+
+
+def parse_gdit_recipient(raw: Any) -> str:
+    """Exactly bryson.carter@gdit.com.  Any other address, list, or domain gives ""."""
+    text = str(raw or "").strip()
+    if not text or any(c in text for c in ",; \t\r\n"):
+        return ""
+    return text.lower() if gdit_recipient_allowed(text) else ""
+
+
 def sender_allowed(inbox: Any) -> bool:
     text = str(inbox or "").strip().lower()
     return bool(SENDER_RE.fullmatch(text)) and mail_allowed(text)
@@ -75,6 +98,16 @@ def idempotency_key(job: dict) -> str:
         jid = str(job.get("id") or "")
         ref = jid.split(":", 1)[1] if jid.startswith("email:") else ""
     key = f"callcatch-{ref}" if REF_RE.fullmatch(ref) else ""
+    return key if IDEMPOTENCY_RE.fullmatch(key) else ""
+
+
+def gdit_idempotency_key(job: dict) -> str:
+    """``callcatch-gdit-<ref>``: distinct from the Proton notice key."""
+    ref = str(job.get("ref") or "")
+    if not REF_RE.fullmatch(ref):
+        jid = str(job.get("id") or "")
+        ref = jid.split(":", 1)[1] if jid.startswith("gdit:") else ""
+    key = f"callcatch-gdit-{ref}" if REF_RE.fullmatch(ref) else ""
     return key if IDEMPOTENCY_RE.fullmatch(key) else ""
 
 
@@ -145,6 +178,23 @@ def build_agentmail_body(payload: dict, recipient: str) -> dict | None:
     return {"to": [recipient], "subject": subject, "text": text, "html": html, "labels": list(LABELS)}
 
 
+def build_gdit_agentmail_body(payload: dict, recipient: str) -> dict | None:
+    """The redacted GDIT body, or None if the payload does not match the pinned route."""
+    to = payload.get("to")
+    if not isinstance(to, list) or to != [recipient] or not gdit_recipient_allowed(recipient):
+        return None
+    if payload.get("category") != CATEGORY_GDIT:
+        return None
+    subject, text, html = payload.get("subject"), payload.get("text"), payload.get("html")
+    if not isinstance(subject, str) or not isinstance(text, str) or not isinstance(html, str):
+        return None
+    if not subject or len(subject) > SUBJECT_MAX or "\r" in subject or "\n" in subject:
+        return None
+    if len(text) > TEXT_MAX or len(html) > HTML_MAX:
+        return None
+    return {"to": [GDIT_RECIPIENT], "subject": subject, "text": text, "html": html, "labels": list(LABELS_GDIT)}
+
+
 def agentmail_sender(get_session: Callable[[], Any], inbox: str, api_key: str,
                      recipient: str) -> Callable[[dict], Awaitable[tuple[bool, str, bool]]]:
     """Direct HTTPS POST to AgentMail.  No other host, no redirects."""
@@ -170,6 +220,40 @@ def agentmail_sender(get_session: Callable[[], Any], inbox: str, api_key: str,
                                     allow_redirects=False) as resp:
                 if resp.status == 409 and conflict_is_key_reuse(await _read_error_body(resp)):
                     return False, "http-409-key-reused", False  # can never succeed: park now
+                return _classify(resp.status)
+        except Exception as exc:  # noqa: BLE001
+            return False, type(exc).__name__.lower(), True
+
+    return send
+
+
+def agentmail_gdit_sender(get_session: Callable[[], Any], inbox: str, api_key: str,
+                          recipient: str = GDIT_RECIPIENT) -> Callable[[dict], Awaitable[tuple[bool, str, bool]]]:
+    """Direct HTTPS POST to AgentMail for the pinned GDIT address.  No redirects."""
+
+    async def send(job: dict) -> tuple[bool, str, bool]:
+        if gdit_copy.job_is_stale(job):
+            return False, "stale", False
+        if not sender_allowed(inbox) or parse_gdit_recipient(recipient) != GDIT_RECIPIENT:
+            return False, "blocked-address", False
+        body = build_gdit_agentmail_body(dict(job.get("payload") or {}), recipient)
+        if body is None:
+            return False, "blocked-payload", False
+        if not api_key:
+            return False, "not-configured", True
+        session = get_session()
+        if session is None:
+            return False, "no-session", True
+        url = AGENTMAIL_API.format(inbox=quote(inbox.strip().lower(), safe="@."))
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        idem = gdit_idempotency_key(job)
+        if idem:
+            headers["Idempotency-Key"] = idem
+        try:
+            async with session.post(url, json=body, headers=headers, timeout=TIMEOUT,
+                                    allow_redirects=False) as resp:
+                if resp.status == 409 and conflict_is_key_reuse(await _read_error_body(resp)):
+                    return False, "http-409-key-reused", False
                 return _classify(resp.status)
         except Exception as exc:  # noqa: BLE001
             return False, type(exc).__name__.lower(), True
