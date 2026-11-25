@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.7 — 2026-11-24
+
+- **Email last-4 once.**  An unknown-caller heading that is already "Number ending XXXX" no longer repeats that line in the HTML body.  The plain-text path already skipped it.
+- **Numbers form stacks on a phone.**  At 400 px and below, the number field is full width, with Block and Add on the next row, so the placeholder is not clipped.
+- **Inbox chrome.**  The document title and inbox `h1` say CallCatch.  The shield button is labeled "Allowed, blocked, and contacts".
+- **24-hour ET in email.**  The subject and body use 24-hour America/New_York time, matching the inbox.
+- **Upload .vcf is hidden.**  Contacts are pulled directly, so the Numbers screen no longer shows an upload control or help text.  `POST /api/contacts/upload` stays available to a signed-in ingress admin session.  `contacts_drop_import` stays off by default.  Names and numbers are never logged.
+- **GDIT skip list (N1, N2).**  Additional medical and financial stems are matched, with word-boundary-only matching for short tokens such as ally, tax, and pnc.  Latin small capitals fold into the Latin letters.  The pinned work address is not written in `notify_send.py` or the tests (the code constant is used instead).  `gdit_work_copy` still defaults to off.  Dry-run behavior is unchanged.
+
 ## 0.8.6 — 2026-11-24
 
 - **Optional GDIT work-hours copy.**  New option `gdit_work_copy` (default `false`).  When on, a redacted copy is considered only after the Proton notice has been sent, or would have been sent while `input_boolean.callcatch_notify_dry_run` is on (would-send is logged, nothing is sent).  The recipient is a single exact-address pin in code; the existing Proton pin is unchanged.  The work address is not published in this file or in the documentation.

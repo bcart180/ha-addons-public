@@ -102,9 +102,10 @@ configuration:
     description: >-
       Off by default. When on, CallCatch reads .vcf files placed in
       /share/callcatch/import/, merges them into the private directory, and
-      deletes the file on success. The usual import route is the admin
-      Upload .vcf button, which stays available either way. Only counts are
-      logged.
+      deletes the file on success. The Numbers screen does not offer an
+      upload button; contacts are pulled directly. The admin upload
+      endpoint stays available to a signed-in ingress session. Only counts
+      are logged.
   agent_token:
     name: Phone agent token (CallCatch Line)
     description: >-
