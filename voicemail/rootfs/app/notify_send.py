@@ -13,15 +13,16 @@ import re
 from typing import Any, Awaitable, Callable
 from urllib.parse import quote
 
+import gdit_copy
+
 from aiohttp import ClientTimeout
 
 BLOCKED_MAIL_DOMAINS = ("gmail.com", "googlemail.com")
 # Pinned recipient domains: Bryson's Proton.  Exact match, no subdomains.
 RECIPIENT_DOMAINS = ("proton.me", "protonmail.com")
-# Separate pin for the optional GDIT work-hours copy.  Exact address only;
-# subdomains are not accepted.  This does not change the Proton pin above.
-GDIT_DOMAINS = ("gdit.com",)
-GDIT_RECIPIENT = "bryson.carter@gdit.com"
+# The work-hours recipient is pinned in gdit_copy.GDIT_RECIPIENT only.
+# This does not change the Proton pin above.
+GDIT_RECIPIENT = gdit_copy.GDIT_RECIPIENT
 CATEGORY_GDIT = "callcatch_gdit_notice"
 LABELS_GDIT = ("callcatch", CATEGORY_GDIT)
 # Sender must be a DEDICATED CallCatch-only AgentMail inbox:
@@ -70,12 +71,9 @@ def parse_recipient(raw: Any) -> str:
 
 
 def gdit_recipient_allowed(addr: Any) -> bool:
-    """Pinned work address on gdit.com only.  Does not loosen the Proton pin."""
+    """Pinned work address only.  Exact match against the one code constant."""
     text = str(addr or "").strip()
     if not EMAIL_RE.fullmatch(text):
-        return False
-    domain = text.rsplit("@", 1)[1].lower()
-    if domain not in GDIT_DOMAINS:
         return False
     return text.lower() == GDIT_RECIPIENT
 
@@ -234,6 +232,8 @@ def agentmail_gdit_sender(get_session: Callable[[], Any], inbox: str, api_key: s
     """Direct HTTPS POST to AgentMail for the pinned GDIT address.  No redirects."""
 
     async def send(job: dict) -> tuple[bool, str, bool]:
+        if gdit_copy.job_is_stale(job):
+            return False, "stale", False
         if not sender_allowed(inbox) or parse_gdit_recipient(recipient) != GDIT_RECIPIENT:
             return False, "blocked-address", False
         body = build_gdit_agentmail_body(dict(job.get("payload") or {}), recipient)

@@ -119,12 +119,15 @@ class Outbox:
         return out
 
     def suppress_pending(self, clock: float | None = None, status: str = "dry_run",
-                         created_before: float | None = None) -> list[str]:
+                         created_before: float | None = None,
+                         kinds: tuple[str, ...] | None = None) -> list[str]:
         """Close pending jobs without sending: ``dry_run`` (switch explicitly
         on) or ``expired`` (held too long while the switch was unreadable).
 
         Terminal on purpose, so turning dry_run off later never releases a
-        backlog of stale notices.  The message itself stays in CallCatch."""
+        backlog of stale notices.  The message itself stays in CallCatch.
+        ``kinds`` limits the close to those job kinds (used to drop pending
+        GDIT copies when the option is off)."""
         if status not in ("dry_run", "expired"):
             raise ValueError("bad-status")
         now = clock if clock is not None else now_ts()
@@ -133,6 +136,8 @@ class Outbox:
             data = self._read()
             for jid, job in data["jobs"].items():
                 if job.get("status") != "pending":
+                    continue
+                if kinds is not None and job.get("kind") not in kinds:
                     continue
                 if status == "expired" and job.get("kind") == NOTICE_KIND:
                     continue  # the expiry notice itself never expires (no notice-about-the-notice loop)

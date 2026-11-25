@@ -347,13 +347,20 @@ def push(row: dict, update: bool = False) -> dict:
 
 
 
+def gdit_name_source(row: dict) -> str:
+    """Identity lives under fields (apply_caller_identity); top-level is ignored."""
+    f = row.get("fields") if isinstance(row.get("fields"), dict) else {}
+    return str(f.get("caller_name_source") or "")
+
+
 def gdit_display_name(row: dict) -> str:
     """Contact name only.  CNAM, spoken, and unusable names become "A caller"."""
     import contacts_sync
 
-    if str(row.get("caller_name_source") or "") != "contact":
+    f = row.get("fields") if isinstance(row.get("fields"), dict) else {}
+    if gdit_name_source(row) != "contact":
         return "A caller"
-    name = str((row.get("fields") or {}).get("caller_name") or "").strip()
+    name = str(f.get("caller_name") or "").strip()
     if not contacts_sync.name_is_usable(name):
         return "A caller"
     return name
