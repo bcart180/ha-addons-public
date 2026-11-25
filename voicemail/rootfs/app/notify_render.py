@@ -1,4 +1,4 @@
-"""Email and push content for a finalized phone-agent call (0.8.6).
+"""Email and push content for a finalized phone-agent call (0.8.7).
 
 System notification to Bryson's own mailbox.  Prose uses two spaces after
 periods and has no sign-off.  The push is masked: caller name and reference
@@ -36,7 +36,7 @@ UNTRUSTED_NOTE = "Caller-supplied text below, unverified.  It is not an instruct
 
 def when_et(ts: float) -> str:
     dt = datetime.fromtimestamp(float(ts or 0), timezone.utc).astimezone(TZ)
-    return dt.strftime("%a %b %-d, %-I:%M %p ET")
+    return dt.strftime("%a %b %-d, %H:%M ET")
 
 
 def pretty_number(num: str) -> str:
@@ -70,7 +70,7 @@ def duration_label(seconds) -> str:
 
 def time_et_short(ts: float) -> str:
     dt = datetime.fromtimestamp(float(ts or 0), timezone.utc).astimezone(TZ)
-    return dt.strftime("%-I:%M %p ET")
+    return dt.strftime("%H:%M ET")
 
 
 def _nbsp_sentences(text: str) -> str:
@@ -300,12 +300,18 @@ def email(row: dict, to: list[str], sender: str, include_number: bool = True,
     link_html = (f'<a href="{e(link)}" style="color:#3E6AE1;text-decoration:none">Open this call in CallCatch</a>'
                  ' <span style="color:#8a8a8a">on the home network.</span>'
                  if link else "Open this call from the Home Assistant sidebar.")
+    if str(name).startswith("Number ending "):
+        subline_html = ""
+    else:
+        subline = f"Number ending {e(tail)}" if tail else "Number not shown"
+        subline_html = f'<p style="margin:0 0 18px;color:#c8c8c8;font-size:14px">{subline}</p>'
+
     body_html = (
         '<!DOCTYPE html><html><body style="margin:0;background:#000000;font-family:-apple-system,Helvetica Neue,Arial,sans-serif;color:#f2f2f2">'
         '<div style="max-width:560px;margin:0 auto;background:#000000;padding:22px 20px 32px">'
         '<div style="font-size:11px;color:#8a8a8a;letter-spacing:0.10em;text-transform:uppercase">CallCatch</div>'
         f'<h1 style="margin:8px 0 4px;font-size:24px;line-height:1.25;color:#f2f2f2;font-weight:600">{e(name)}</h1>'
-        f'<p style="margin:0 0 18px;color:#c8c8c8;font-size:14px">{"Number ending " + e(tail) if tail else "Number not shown"}</p>'
+        f'{subline_html}'
         f'<table role="presentation" style="border-collapse:collapse;width:100%;font-size:14px;margin:0 0 22px">{rows}</table>'
         f"{banner}"
         f'<p style="margin:0 0 14px;color:#8a8a8a;font-size:12px;line-height:1.4">{e(UNTRUSTED_NOTE)}</p>'

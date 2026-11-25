@@ -1,4 +1,4 @@
-"""Optional redacted GDIT work-hours copy of a CallCatch notice (0.8.6).
+"""Optional redacted GDIT work-hours copy of a CallCatch notice (0.8.6+).
 
 Off unless ``gdit_work_copy`` is on.  A copy is considered only after the
 Proton notice (sent, or would-send while dry_run is on), only when
@@ -131,6 +131,45 @@ SENSITIVE_WORDS = (
     "irs",
     "labcorp",
 )
+# Compact stems: longer needles matched on the compact haystack so
+# "oncologist" hits "oncolog".  Short or ambiguous tokens are listed in
+# SENSITIVE_BOUND_WORDS and stay word-bounded only.
+SENSITIVE_STEMS = (
+    "oncolog",
+    "cardiolog",
+    "dermatolog",
+    "psychiatr",
+    "psycholog",
+    "counsel",
+    "chiropract",
+    "optom",
+    "orthop",
+    "urolog",
+    "obgyn",
+    "eyecare",
+    "schwab",
+    "venmo",
+    "truist",
+    "synchrony",
+    "equifax",
+    "experian",
+    "transunion",
+    "accountant",
+)
+# Word-bounded only.  Compact substring would over-match short stems
+# ("ally" in "valley", "chase" in "purchase", "tax" is already < 4).
+SENSITIVE_BOUND_WORDS = (
+    "nurse",
+    "nurses",
+    "chase",
+    "amex",
+    "pnc",
+    "ally",
+    "sofi",
+    "cpa",
+    "tax",
+    "credit",
+)
 
 _WORD = re.compile(r"\s+")
 _CTRL = re.compile(r"[\x00-\x1f\x7f\u200b-\u200f\u202a-\u202e\u2066-\u2069]")
@@ -145,6 +184,11 @@ _HOMOGLYPHS = str.maketrans({
     "Μ": "M", "Ν": "N", "Ο": "O", "Ρ": "P", "Τ": "T", "Υ": "Y", "Χ": "X",
     "α": "a", "β": "b", "ε": "e", "ι": "i", "κ": "k", "ν": "v", "ο": "o",
     "ρ": "p", "τ": "t", "υ": "u", "χ": "x", "η": "n",
+    # Latin small capitals (NFKC leaves these alone).
+    "ᴀ": "a", "ʙ": "b", "ᴄ": "c", "ᴅ": "d", "ᴇ": "e", "ꜰ": "f", "ɢ": "g",
+    "ʜ": "h", "ɪ": "i", "ᴊ": "j", "ᴋ": "k", "ʟ": "l", "ᴍ": "m", "ɴ": "n",
+    "ᴏ": "o", "ᴘ": "p", "ꞯ": "q", "ʀ": "r", "ꜱ": "s", "ᴛ": "t", "ᴜ": "u",
+    "ᴠ": "v", "ᴡ": "w", "ʏ": "y", "ᴢ": "z",
 })
 
 
@@ -230,6 +274,15 @@ def is_sensitive(row: dict | None) -> bool:
             return True
         packed = _compact(needle)
         if len(packed) >= 4 and packed in compact:
+            return True
+    for stem in SENSITIVE_STEMS:
+        needle = normalize_match_text(stem)
+        packed = _compact(needle)
+        if packed and packed in compact:
+            return True
+    for word in SENSITIVE_BOUND_WORDS:
+        needle = normalize_match_text(word)
+        if needle and re.search(r"\b" + re.escape(needle) + r"\b", text):
             return True
     return False
 
