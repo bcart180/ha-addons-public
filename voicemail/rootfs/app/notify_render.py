@@ -1,4 +1,4 @@
-"""Email and push content for a finalized phone-agent call (0.8.7).
+"""Email and push content for a finalized phone-agent call (0.8.7, 0.8.8).
 
 System notification to Bryson's own mailbox.  Prose uses two spaces after
 periods and has no sign-off.  The push is masked: caller name and reference
@@ -353,34 +353,23 @@ def push(row: dict, update: bool = False) -> dict:
 
 
 
-def gdit_name_source(row: dict) -> str:
-    """Identity lives under fields (apply_caller_identity); top-level is ignored."""
-    f = row.get("fields") if isinstance(row.get("fields"), dict) else {}
-    return str(f.get("caller_name_source") or "")
+def voicemail_left_label(row: dict) -> str:
+    """Yes or No for the content-free work notice."""
+    import gdit_copy
 
-
-def gdit_display_name(row: dict) -> str:
-    """Contact name only.  CNAM, spoken, and unusable names become "A caller"."""
-    import contacts_sync
-
-    f = row.get("fields") if isinstance(row.get("fields"), dict) else {}
-    if gdit_name_source(row) != "contact":
-        return "A caller"
-    name = str(f.get("caller_name") or "").strip()
-    if not contacts_sync.name_is_usable(name):
-        return "A caller"
-    return name
+    return "Yes" if gdit_copy.voicemail_left(row) else "No"
 
 
 def gdit_email(row: dict) -> dict:
-    """Redacted work-hours copy.  No transcript, summary, number, audio, or link."""
+    """Content-free work notice.  No name, number, transcript, audio, or link."""
     from gdit_copy import GDIT_RECIPIENT
 
-    name = gdit_display_name(row)
-    when = time_et_short(row.get("created_at") or 0)
-    subject = f"{name} called at {when}"[:SUBJECT_MAX]
-    text = f"{name} called at {when}.\n\nSee Proton for the full message."
-    safe_name = html.escape(name)
+    when_short = time_et_short(row.get("created_at") or 0)
+    when = when_et(row.get("created_at") or 0)
+    left = voicemail_left_label(row)
+    subject = f"Missed call at {when_short}"[:SUBJECT_MAX]
+    text = f"Missed call\n\nVoicemail left: {left}\n\nTime: {when}"
+    safe_left = html.escape(left)
     safe_when = html.escape(when)
     body_html = (
         '<!DOCTYPE html><html><head><meta charset="utf-8">'
@@ -388,8 +377,9 @@ def gdit_email(row: dict) -> dict:
         '<body style="margin:0;background:#ffffff;color:#111111;'
         "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif\">"
         '<div style="max-width:520px;margin:0 auto;padding:24px 18px">'
-        f'<p style="margin:0 0 14px;font-size:16px;line-height:1.45">{safe_name} called at {safe_when}.&nbsp;</p>'
-        '<p style="margin:0;font-size:16px;line-height:1.45">See Proton for the full message.</p>'
+        '<p style="margin:0 0 14px;font-size:16px;line-height:1.45">Missed call</p>'
+        f'<p style="margin:0 0 14px;font-size:16px;line-height:1.45">Voicemail left: {safe_left}</p>'
+        f'<p style="margin:0;font-size:16px;line-height:1.45">Time: {safe_when}</p>'
         "</div></body></html>"
     )
     ref = str(row.get("ref") or "")

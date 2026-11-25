@@ -44,7 +44,7 @@ import telnyx_capture
 APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC = APP_DIR / "static"
 EXAMPLE = APP_DIR / "example_voicemails.json"
-VERSION = "0.8.7"
+VERSION = "0.8.8"
 AUDIO_LIMIT = 25 * 1024 * 1024
 SENSOR_RE = re.compile(r"sensor\.[a-z0-9_]+")
 RT = web.AppKey("rt", dict)
@@ -1787,7 +1787,12 @@ def build_senders(app: web.Application) -> dict:
     if mail_ready():
         senders["email"] = notify_send.agentmail_sender(session, AGENTMAIL_INBOX, AGENTMAIL_API_KEY, MAIL_TO)
         if GDIT_WORK_COPY:
-            senders["gdit"] = notify_send.agentmail_gdit_sender(session, AGENTMAIL_INBOX, AGENTMAIL_API_KEY)
+            async def presence_check():
+                return await read_entity_state(app, gdit_copy.WORK_PERSON)
+
+            senders["gdit"] = notify_send.agentmail_gdit_sender(
+                session, AGENTMAIL_INBOX, AGENTMAIL_API_KEY, presence_check=presence_check,
+            )
     if notify_send.NOTIFY_RE.fullmatch(PUSH_SERVICE or ""):
         async def call_service(domain, service, data):
             sess = session()
@@ -2269,18 +2274,17 @@ async def _capture_safe(app: web.Application) -> None:
 
 
 async def follow_gdit(app: web.Application, row: dict, proton: str) -> str:
-    """After a Proton notice is sent or would-send: maybe enqueue a GDIT copy.
+    """After a Proton notice is sent or would-send: maybe enqueue a GDIT notice.
 
-    Logs a reason code only.  Names and numbers are never logged.  When
-    ``gdit_work_copy`` is off this is a quiet no-op (reason ``disabled``).
+    Logs a reason code only.  Names, numbers, and the work address are never
+    logged.  When ``gdit_work_copy`` is off this is a quiet no-op
+    (reason ``disabled``).  The presence gate is ``person.bryson`` in
+    ``zone.work`` and is fail-closed.
     """
     if not GDIT_WORK_COPY:
         return "disabled"
-    apply_caller_identity(app, row)
-    calls, _outbox = ensure_agent(app)
-    calls.patch_fields(str((row or {}).get("ref") or ""), (row or {}).get("fields") or {})
-    state = await read_entity_state(app, gdit_copy.WORK_SENSOR)
-    reason = gdit_copy.decide(True, proton, state, row)
+    state = await read_entity_state(app, gdit_copy.WORK_PERSON)
+    reason = gdit_copy.decide(True, proton, state)
     if reason == "dry_run":
         log.info("gdit would-send reason=dry_run")
         return reason
