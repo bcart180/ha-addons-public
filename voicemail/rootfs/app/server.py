@@ -1966,14 +1966,24 @@ def apply_caller_identity(app: web.Application, row: dict) -> None:
         directory = ensure_contacts(app).directory.loaded()
     except Exception:  # noqa: BLE001 - a directory read must not block the notice
         directory = {}
+    orgs: dict = {}
+    try:
+        orgs = ensure_contacts(app).directory.loaded_orgs()
+    except Exception:  # noqa: BLE001
+        orgs = {}
+    org = contacts_sync.lookup_org(number, orgs)
+    if org:
+        f["org"] = org
     name, source = contacts_sync.lookup_display(number, directory, cnam)
     if not name and contacts_sync.name_is_usable(existing):
         name, source = contacts_sync.clean_name(existing), "spoken"
     if name:
         f["caller_name"] = name
         f["caller_name_source"] = source
-    elif not contacts_sync.name_is_usable(existing):
-        f["caller_name"] = ""
+    else:
+        f["caller_name_source"] = source or "none"
+        if not contacts_sync.name_is_usable(existing):
+            f["caller_name"] = ""
 
 
 async def deliver_final(app: web.Application, row: dict) -> None:
@@ -1990,6 +2000,7 @@ async def deliver_final(app: web.Application, row: dict) -> None:
         _log_safe(f"agent final ref={ref} empty, not notified")
         return
     apply_caller_identity(app, row)
+    _calls.patch_fields(ref, row.get("fields") or {})
     item = agent_item(row)
     saved = store.upsert(item, preserve_heard=True)
     if (row.get("fields") or {}).get("callback_requested"):
@@ -2265,6 +2276,9 @@ async def follow_gdit(app: web.Application, row: dict, proton: str) -> str:
     """
     if not GDIT_WORK_COPY:
         return "disabled"
+    apply_caller_identity(app, row)
+    calls, _outbox = ensure_agent(app)
+    calls.patch_fields(str((row or {}).get("ref") or ""), (row or {}).get("fields") or {})
     state = await read_entity_state(app, gdit_copy.WORK_SENSOR)
     reason = gdit_copy.decide(True, proton, state, row)
     if reason == "dry_run":
@@ -2369,12 +2383,24 @@ async def background(app: web.Application) -> None:
         return
 
 
+def clear_pending_gdit_if_disabled(app: web.Application) -> int:
+    """When the option is off, close pending GDIT jobs so they cannot send later."""
+    if GDIT_WORK_COPY:
+        return 0
+    _calls, outbox = ensure_agent(app)
+    closed = outbox.suppress_pending(status="expired", kinds=("gdit",))
+    if closed:
+        log.info("gdit skip reason=disabled n=%s", len(closed))
+    return len(closed)
+
+
 async def on_startup(app: web.Application) -> None:
     global IN_HA
     box = _box(app)
     box["session"] = ClientSession(timeout=ClientTimeout(total=30))
     IN_HA = _in_ha()
     ensure_runtime(app)
+    clear_pending_gdit_if_disabled(app)
     box["bg"] = asyncio.create_task(background(app))
     box["contacts_task"] = asyncio.create_task(ensure_contacts(app).run_forever())
     if IN_HA:
