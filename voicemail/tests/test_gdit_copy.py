@@ -1,4 +1,4 @@
-"""0.8.6+ GDIT work-hours copy: gates, redaction, pins, and after-Proton send.
+"""0.8.8 GDIT presence notice: zone gate, content-free body, pins, after-Proton send.
 
 Fake data only: 555-01xx numbers and invented names.
 """
@@ -52,198 +52,82 @@ def _row(**extra) -> dict:
     return row
 
 
-# --- work and proton gates ------------------------------------------------
-
-def test_work_gate_only_explicit_on():
-    assert gdit_copy.work_gate(False, "on") == "disabled"
-    assert gdit_copy.work_gate(True, "on") == "ok"
-    assert gdit_copy.work_gate(True, "off") == "not_at_work"
-    for state in (None, "unknown", "unavailable", "", "ON", "true", "home"):
+def test_work_gate_only_work_zone():
+    assert gdit_copy.work_gate(False, "Work") == "disabled"
+    assert gdit_copy.work_gate(True, "Work") == "ok"
+    assert gdit_copy.work_gate(True, "work") == "ok"
+    assert gdit_copy.work_gate(True, "WORK") == "ok"
+    assert gdit_copy.work_gate(True, "home") == "not_at_work"
+    assert gdit_copy.work_gate(True, "not_home") == "not_at_work"
+    assert gdit_copy.work_gate(True, "on") == "not_at_work"
+    for state in (None, "unknown", "unavailable", "", "none"):
         assert gdit_copy.work_gate(True, state) == "work_unknown", state
 
 
-def test_decide_requires_proton_then_work_then_sensitivity():
-    row = _row()
-    assert gdit_copy.decide(True, "pending", "on", row) == "no_proton"
-    assert gdit_copy.decide(True, "", "on", row) == "no_proton"
-    assert gdit_copy.decide(False, "sent", "on", row) == "disabled"
-    assert gdit_copy.decide(True, "sent", None, row) == "work_unknown"
-    assert gdit_copy.decide(True, "would-send", "unavailable", row) == "work_unknown"
-    assert gdit_copy.decide(True, "sent", "off", row) == "not_at_work"
-    assert gdit_copy.decide(True, "would-send", "on", row) == "dry_run"
-    assert gdit_copy.decide(True, "sent", "on", row) == "ok"
+def test_decide_requires_proton_then_presence():
+    assert gdit_copy.decide(True, "pending", "Work") == "no_proton"
+    assert gdit_copy.decide(True, "", "Work") == "no_proton"
+    assert gdit_copy.decide(False, "sent", "Work") == "disabled"
+    assert gdit_copy.decide(True, "sent", None) == "work_unknown"
+    assert gdit_copy.decide(True, "would-send", "unavailable") == "work_unknown"
+    assert gdit_copy.decide(True, "sent", "home") == "not_at_work"
+    assert gdit_copy.decide(True, "would-send", "Work") == "dry_run"
+    assert gdit_copy.decide(True, "sent", "Work") == "ok"
 
 
-# --- sensitive skip -------------------------------------------------------
-
-@pytest.mark.parametrize(
-    "field,value",
-    [
-        ("fields", {"caller_name": "VA Hospital Scheduling"}),
-        ("fields", {"caller_label": "Community Clinic"}),
-        ("fields", {"label": "Wells Fargo Card Services"}),
-        ("fields", {"org": "Internal Revenue Service"}),
-        ("fields", {"labels": ["Primary", "Pharmacy"]}),
-        ("summary", "They called from the VA clinic about an appointment."),
-        ("transcript", "Caller: This is the Veterans Affairs benefits line."),
-        ("transcript", "Caller: I am with Quest Diagnostics about lab results."),
-        ("summary", "A mortgage specialist asked to talk today."),
-        ("transcript", "Caller: Calling from Capital One about a credit card."),
-        ("fields", {"org": "Navy Federal"}),
-        ("fields", {"org": "USAA"}),
-        ("fields", {"org": "MedStar"}),
-        ("fields", {"org": "Walter Reed"}),
-        ("fields", {"org": "Kaiser"}),
-        ("fields", {"org": "CVS"}),
-        ("fields", {"org": "Walgreens"}),
-        ("fields", {"org": "Newrez"}),
-        ("summary", "This is the VA calling about your claim."),
-        ("summary", "They mentioned your benefits."),
-        ("transcript", "Caller: I'm your therapist confirming tomorrow."),
-        ("summary", "Lab results are in."),
-        ("summary", "Calling about TRICARE insurance."),
-        ("transcript", "Caller: This is about a loan on the house."),
-    ],
-)
-def test_sensitive_matches_name_label_summary_transcript(field, value):
-    if field == "fields":
-        row = _row(fields=value)
-    else:
-        row = _row(**{field: value})
-    assert gdit_copy.is_sensitive(row) is True
-    assert gdit_copy.decide(True, "sent", "on", row) == "sensitive"
-
-
-def test_notes_are_not_scanned_for_sensitivity():
-    row = _row(notes=["Called from the hospital about a prescription."])
-    assert gdit_copy.is_sensitive(row) is False
-    assert gdit_copy.decide(True, "sent", "on", row) == "ok"
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "Vanessa is dropping by later.",
-        "This is Ira from next door.",
-        "The available window is after three.",
-        "I can come by after 3.",
-    ],
-)
-def test_keywords_do_not_fire_on_unrelated_words(text):
-    assert gdit_copy.is_sensitive(_row(summary=text, transcript=text)) is False
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "The bank of the river is muddy.",
-        "I saw my doctor yesterday, nothing urgent.",
-        "Calling about a food bank donation.",
-        "Dr. Smith is my neighbor.",
-        "This is the VA calling about your claim.",
-        "VA benefits office",
-        "V A hospital",
-        "V.A. clinic",
-        "Ｄｒ. Patel's office",  # fullwidth D r
-        "lab results",
-        "USAA",
-        "Navy Federal",
-        "TRICARE",
-        "insurance",
-        "CVS",
-        "Walgreens",
-        "Kaiser",
-        "MedStar",
-        "Walter Reed",
-        "Newrez",
-        "credit union",
-        "a loan",
-        "a mortgage",
-        "the pharmacy",
-        "the clinic",
-        "the hospital",
-        "dental appointment",
-        "therapist",
-    ],
-)
-def test_sensitive_terms_fail_toward_skipping(text):
-    assert gdit_copy.is_sensitive(_row(summary=text, transcript="")) is True
-
-
-# --- redaction ------------------------------------------------------------
-
-def test_redacted_template_is_name_time_and_proton_pointer():
+def test_content_free_notice_has_no_name_number_transcript_or_link():
     mail = notify_render.gdit_email(_row())
-    assert mail["subject"] == "Jordan Hale called at 17:15 ET"
-    assert mail["text"] == "Jordan Hale called at 17:15 ET.\n\nSee Proton for the full message."
-    assert "See Proton for the full message." in mail["html"]
-    assert mail["to"] == [gdit_copy.GDIT_RECIPIENT]
-    assert mail["category"] == "callcatch_gdit_notice"
+    assert mail["subject"] == "Missed call at 17:15 ET"
+    assert mail["text"] == "Missed call\n\nVoicemail left: Yes\n\nTime: Tue Nov 24, 17:15 ET"
+    assert "Voicemail left: Yes" in mail["html"]
+    assert "Time: Tue Nov 24, 17:15 ET" in mail["html"]
     blob = mail["subject"] + mail["text"] + mail["html"]
+    assert "Jordan" not in blob
+    assert "Hale" not in blob
     assert "555" not in blob
     assert "0142" not in blob
-    assert "last-4" not in blob.lower()
-    assert "Number ending" not in blob
     assert "Saturday" not in blob
     assert "transcript" not in blob.lower()
-    assert "Assistant:" not in blob and "Caller:" not in blob
-    assert "recording" not in blob.lower()
-    assert "ha.home.arpa" not in blob
-    assert "hassio/ingress" not in blob
     assert "http" not in blob.lower()
-    assert "+1" not in blob
+    assert "href=" not in blob.lower()
+    assert "proton" not in blob.lower()
+    assert "@" not in mail["text"] and "@" not in mail["html"]
+    assert notify_send.gdit_notice_is_clean(mail["subject"], mail["text"], mail["html"]) is True
+    empty = notify_render.gdit_email(_row(has_audio=False, transcript="", summary=""))
+    assert "Voicemail left: No" in empty["text"]
+    assert empty["subject"] == "Missed call at 17:15 ET"
 
 
-@pytest.mark.parametrize("source", ["cnam", "spoken", "", "unknown"])
-def test_cnam_and_spoken_become_a_caller(source):
-    row = _row(fields={"caller_name_source": source})
-    assert notify_render.gdit_display_name(row) == "A caller"
-    mail = notify_render.gdit_email(row)
-    assert mail["subject"].startswith("A caller called at ")
-    assert "Jordan Hale" not in mail["subject"]
-    assert "Jordan Hale" not in mail["text"]
-    assert "Jordan Hale" not in mail["html"]
-    assert "(caller ID)" not in mail["subject"]
+def test_legacy_redacted_payload_is_refused():
+    payload = notify_render.gdit_email(_row())
+    payload = dict(payload)
+    payload["subject"] = "Jordan Hale called at 17:15 ET"
+    payload["text"] = "Jordan Hale called at 17:15 ET.\n\nSee Proton for the full message."
+    payload["html"] = "<p>See Proton for the full message.</p>"
+    assert notify_send.build_gdit_agentmail_body(payload, notify_send.GDIT_RECIPIENT) is None
 
-
-def test_unusable_contact_name_becomes_a_caller():
-    row = _row(fields={"caller_name": "•••0142", "caller_name_source": "contact"})
-    assert notify_render.gdit_display_name(row) == "A caller"
-
-
-# --- recipient pins -------------------------------------------------------
 
 def test_proton_pin_unchanged_and_refuses_gdit():
-    assert notify_send.RECIPIENT_DOMAINS == ("proton.me", "protonmail.com")
-    assert "gdit.com" not in notify_send.RECIPIENT_DOMAINS
-    assert notify_send.parse_recipient(gdit_copy.GDIT_RECIPIENT) == ""
-    assert notify_send.recipient_allowed(gdit_copy.GDIT_RECIPIENT) is False
     assert notify_send.parse_recipient("callcatch-test@proton.me") == "callcatch-test@proton.me"
-    body = notify_send.build_agentmail_body(
-        {
-            "to": [gdit_copy.GDIT_RECIPIENT],
-            "subject": "x",
-            "text": "x",
-            "html": "<p>x</p>",
-            "category": notify_send.CATEGORY,
-        },
-        gdit_copy.GDIT_RECIPIENT,
-    )
-    assert body is None
+    assert notify_send.parse_recipient("callcatch-test@protonmail.com") == "callcatch-test@protonmail.com"
+    assert notify_send.parse_recipient(gdit_copy.GDIT_RECIPIENT) == ""
+    assert notify_send.sender_allowed("callcatch-notices@agentmail.to") is True
 
 
 def test_gdit_pin_is_exact_address_and_domain():
+    pin = gdit_copy.GDIT_RECIPIENT
+    local, _, domain = pin.partition("@")
     assert not hasattr(notify_send, "GDIT_DOMAINS")
-    assert notify_send.GDIT_RECIPIENT is gdit_copy.GDIT_RECIPIENT
-    assert notify_send.parse_gdit_recipient(gdit_copy.GDIT_RECIPIENT) == gdit_copy.GDIT_RECIPIENT
-    assert notify_send.parse_gdit_recipient(gdit_copy.GDIT_RECIPIENT) == gdit_copy.GDIT_RECIPIENT
-    assert notify_send.parse_gdit_recipient("Bryson.Carter@GDIT.com") == gdit_copy.GDIT_RECIPIENT
+    assert notify_send.GDIT_RECIPIENT is pin
+    assert notify_send.parse_gdit_recipient(pin) == pin
+    assert notify_send.parse_gdit_recipient(pin.upper()) == pin
+    assert notify_send.parse_gdit_recipient(pin.swapcase()) == pin
     for bad in (
-        "other@gdit.com",
-        "bryson.carter@mail.gdit.com",
-        gdit_copy.GDIT_RECIPIENT + ".example",
-        "bryson.carter@proton.me",
-        gdit_copy.GDIT_RECIPIENT + ",other@gdit.com",
+        f"other@{domain}",
+        f"{local}@mail.{domain}",
+        pin + ".example",
+        f"{local}@proton.me",
+        pin + f",other@{domain}",
         "someone@gmail.com",
         "",
     ):
@@ -272,8 +156,6 @@ def test_gdit_body_and_idempotency_are_distinct():
     assert notify_send.gdit_idempotency_key(job) == f"callcatch-gdit-{REF}"
     assert notify_send.idempotency_key(job) != notify_send.gdit_idempotency_key(job)
 
-
-# --- after Proton, dry-run, and logging ----------------------------------
 
 def _mod(monkeypatch, tmp_path, **extra):
     return _load(
@@ -311,12 +193,12 @@ async def _finalize(mod, client, label="gdit"):
     return body["ref"]
 
 
-def _state_fn(dry_run: str, work: str | None):
+def _state_fn(dry_run: str, presence: str | None):
     async def read_state(_app, entity):
         if entity == "input_boolean.callcatch_notify_dry_run":
             return dry_run
-        if entity == gdit_copy.WORK_SENSOR:
-            return work
+        if entity == gdit_copy.WORK_PERSON:
+            return presence
         return None
 
     return read_state
@@ -334,7 +216,7 @@ async def test_option_default_off_is_quiet_disabled(monkeypatch, tmp_path, caplo
         agentmail_inbox="callcatch-test@agentmail.to",
     )
     assert mod.GDIT_WORK_COPY is False
-    assert mod.VERSION == "0.8.7"
+    assert mod.VERSION == "0.8.8"
     async with TestClient(TestServer(mod.make_app())) as client:
         app = client.server.app
         sent = []
@@ -343,7 +225,7 @@ async def test_option_default_off_is_quiet_disabled(monkeypatch, tmp_path, caplo
             sent.append(job["id"])
             return True, "sent", False
 
-        mod.read_entity_state = _state_fn("off", "on")
+        mod.read_entity_state = _state_fn("off", "Work")
         mod._box(app)["senders"] = {"push": fake, "email": fake, "gdit": fake}
         await _finalize(mod, client, "default-off")
         await mod.agent_tick(app)
@@ -364,7 +246,7 @@ async def test_dry_run_logs_would_send_only(monkeypatch, tmp_path, caplog):
             sent.append(job["id"])
             return True, "sent", False
 
-        mod.read_entity_state = _state_fn("on", "on")
+        mod.read_entity_state = _state_fn("on", "Work")
         mod._box(app)["senders"] = {"push": fake, "email": fake, "gdit": fake}
         ref = await _finalize(mod, client, "dry")
         await mod.agent_tick(app)
@@ -391,19 +273,20 @@ async def test_sent_after_proton_enqueues_and_sends_gdit(monkeypatch, tmp_path, 
             if job["kind"] == "gdit":
                 payload = job["payload"]
                 assert payload["to"] == [gdit_copy.GDIT_RECIPIENT]
-                assert "See Proton for the full message." in payload["text"]
+                assert payload["subject"] == "Missed call at 17:15 ET" or payload["subject"].startswith("Missed call at ")
+                assert "Voicemail left:" in payload["text"]
+                assert "Jordan" not in payload["text"]
                 assert "555" not in payload["text"]
-                assert "Saturday" not in payload.get("html", "")
+                assert "http" not in payload.get("html", "").lower()
             return True, "sent", False
 
-        mod.read_entity_state = _state_fn("off", "on")
+        mod.read_entity_state = _state_fn("off", "Work")
         mod._box(app)["senders"] = {"push": fake, "email": fake, "gdit": fake}
         ref = await _finalize(mod, client, "send")
         await mod.agent_tick(app)
         _calls, outbox = mod.ensure_agent(app)
         assert f"email:{ref}" in sent
         assert f"gdit:{ref}" in sent
-        # Proton first.
         assert sent.index(f"email:{ref}") < sent.index(f"gdit:{ref}")
         assert outbox.get(f"gdit:{ref}")["status"] == "sent"
         assert "gdit sent reason=sent" in caplog.text
@@ -413,16 +296,17 @@ async def test_sent_after_proton_enqueues_and_sends_gdit(monkeypatch, tmp_path, 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "work,reason",
+    "presence,reason",
     [
-        ("off", "not_at_work"),
+        ("home", "not_at_work"),
+        ("not_home", "not_at_work"),
         ("unknown", "work_unknown"),
         ("unavailable", "work_unknown"),
         (None, "work_unknown"),
         ("", "work_unknown"),
     ],
 )
-async def test_work_sensor_fail_closed_skips_copy(monkeypatch, tmp_path, caplog, work, reason):
+async def test_presence_fail_closed_skips_notice(monkeypatch, tmp_path, caplog, presence, reason):
     caplog.set_level(logging.INFO)
     mod = _mod(monkeypatch, tmp_path)
     async with TestClient(TestServer(mod.make_app())) as client:
@@ -433,9 +317,9 @@ async def test_work_sensor_fail_closed_skips_copy(monkeypatch, tmp_path, caplog,
             sent.append(job["id"])
             return True, "sent", False
 
-        mod.read_entity_state = _state_fn("off", work)
+        mod.read_entity_state = _state_fn("off", presence)
         mod._box(app)["senders"] = {"push": fake, "email": fake, "gdit": fake}
-        ref = await _finalize(mod, client, f"work-{work}")
+        ref = await _finalize(mod, client, f"work-{presence}")
         await mod.agent_tick(app)
         _calls, outbox = mod.ensure_agent(app)
         assert f"email:{ref}" in sent
@@ -446,51 +330,9 @@ async def test_work_sensor_fail_closed_skips_copy(monkeypatch, tmp_path, caplog,
 
 
 @pytest.mark.asyncio
-async def test_sensitive_caller_is_skipped_after_proton(monkeypatch, tmp_path, caplog):
-    caplog.set_level(logging.INFO)
-    mod = _mod(monkeypatch, tmp_path)
-    async with TestClient(TestServer(mod.make_app())) as client:
-        app = client.server.app
-        sent = []
-
-        async def fake(job):
-            sent.append(job["id"])
-            return True, "sent", False
-
-        import hashlib
-
-        mod.read_entity_state = _state_fn("off", "on")
-        mod._box(app)["senders"] = {"push": fake, "email": fake, "gdit": fake}
-        key = hashlib.sha256(b"clinic").hexdigest()[:32]
-        resp = await client.post(
-            "/api/agent/call",
-            json={
-                "op": "final",
-                "call_key": key,
-                "kind": "message",
-                "caller_hint": CALLER,
-                "fields": {"caller_name": "Riverside Clinic"},
-                "transcript": "Caller: Confirming a dental appointment.",
-            },
-            headers={"Authorization": f"Bearer {AGENT}"},
-        )
-        body = await resp.json()
-        ref = body["ref"]
-        await mod.agent_tick(app)
-        _calls, outbox = mod.ensure_agent(app)
-        assert f"email:{ref}" in sent
-        assert f"gdit:{ref}" not in sent
-        assert outbox.get(f"gdit:{ref}") is None
-        assert "gdit skip reason=sensitive" in caplog.text
-        assert "Riverside" not in caplog.text
-        assert "dental" not in caplog.text.lower()
-
-
-@pytest.mark.asyncio
 async def test_no_proton_means_no_gdit(monkeypatch, tmp_path, caplog):
     caplog.set_level(logging.INFO)
     mod = _mod(monkeypatch, tmp_path)
-    # Email job stays pending because the email sender is missing.
     async with TestClient(TestServer(mod.make_app())) as client:
         app = client.server.app
         sent = []
@@ -499,7 +341,7 @@ async def test_no_proton_means_no_gdit(monkeypatch, tmp_path, caplog):
             sent.append(job["id"])
             return True, "sent", False
 
-        mod.read_entity_state = _state_fn("off", "on")
+        mod.read_entity_state = _state_fn("off", "Work")
         mod._box(app)["senders"] = {"push": fake, "gdit": fake}
         ref = await _finalize(mod, client, "no-proton")
         await mod.agent_tick(app)
@@ -516,149 +358,6 @@ def test_outbox_accepts_gdit_kind():
     assert "gdit" in notify_outbox.KINDS
     assert notify_outbox.ID_RE.fullmatch("gdit:CC-AB12C")
     assert not notify_outbox.ID_RE.fullmatch("email:CC-EXAMPLE")
-
-
-# --- M1 normalization, org population, L1/L2/L3 --------------------------
-
-def test_normalize_spaced_punctuated_and_lookalike_spellings():
-    assert gdit_copy.is_sensitive(_row(summary="This is the V A calling")) is True
-    assert gdit_copy.is_sensitive(_row(summary="V.A. claim")) is True
-    assert gdit_copy.is_sensitive(_row(summary="Ｎａｖｙ Ｆｅｄｅｒａｌ")) is True
-    # Latin V + Cyrillic a should still match VA after the look-alike fold.
-    assert gdit_copy.is_sensitive(_row(summary="Vа benefits")) is True
-    assert gdit_copy.is_sensitive(_row(summary="D r Patel called")) is True
-    assert gdit_copy.is_sensitive(_row(summary="lab-results are ready")) is True
-    assert gdit_copy.is_sensitive(_row(summary="New Rez payoff")) is True
-
-
-
-def test_n1_stems_match_and_short_stems_stay_word_bounded():
-    hits = (
-        "oncologist",
-        "cardiologist",
-        "dermatologist",
-        "psychiatrist",
-        "psychologist",
-        "counselor",
-        "nurse",
-        "nurses",
-        "chiropractor",
-        "optometrist",
-        "orthopedics",
-        "urologist",
-        "OB-GYN",
-        "eye care",
-        "Chase",
-        "Schwab",
-        "Amex",
-        "Venmo",
-        "PNC",
-        "Truist",
-        "Ally",
-        "SoFi",
-        "Synchrony",
-        "Equifax",
-        "Experian",
-        "TransUnion",
-        "CPA",
-        "accountant",
-        "tax",
-        "credit",
-    )
-    for text in hits:
-        assert gdit_copy.is_sensitive(_row(summary=text)) is True, text
-    # Small capitals (U+0280 and the rest of the fold table).
-    assert gdit_copy.is_sensitive(_row(summary="ʙᴀɴᴋ")) is True
-    assert gdit_copy.is_sensitive(_row(summary="ᴠᴀ")) is True
-    assert gdit_copy.normalize_match_text("ʀ") == "r"
-    # Short stems must not fire inside ordinary words.
-    for text in (
-        "Sally",
-        "rally",
-        "valley",
-        "syntax",
-        "taxi",
-        "purchase",
-        "purchaser",
-        "credentials",
-        "accreditation",
-        "nursery",
-    ):
-        assert gdit_copy.is_sensitive(_row(summary=text)) is False, text
-
-
-def test_top_level_source_is_ignored_for_the_gdit_name():
-    """L1: server stores source under fields.  A top-level key must not count."""
-    row = {
-        "ref": REF,
-        "created_at": TS,
-        "caller_name_source": "contact",
-        "fields": {"caller_name": "Jordan Hale", "caller_id": CALLER},
-    }
-    assert notify_render.gdit_name_source(row) == ""
-    assert notify_render.gdit_display_name(row) == "A caller"
-    row["fields"]["caller_name_source"] = "contact"
-    assert notify_render.gdit_display_name(row) == "Jordan Hale"
-
-
-def test_apply_caller_identity_populates_name_and_org(monkeypatch, tmp_path):
-    import contacts_sync
-
-    priv = tmp_path / "private"
-    priv.mkdir()
-    monkeypatch.setenv("VM_CALLER_DIR", str(priv))
-    monkeypatch.setenv("VM_LEGACY_CALLER_FILE", str(tmp_path / "missing-legacy.json"))
-    directory = contacts_sync.Directory(priv, tmp_path / "missing-legacy.json")
-    directory.merge_in({CALLER: "Jordan Hale"})
-    directory.merge_orgs({CALLER: "Navy Federal"})
-    mod = _mod(monkeypatch, tmp_path)
-    app = mod.make_app()
-    row = {"fields": {"caller_id": CALLER}}
-    mod.apply_caller_identity(app, row)
-    assert row["fields"]["caller_name"] == "Jordan Hale"
-    assert row["fields"]["caller_name_source"] == "contact"
-    assert row["fields"]["org"] == "Navy Federal"
-    assert "caller_name_source" not in row
-    assert gdit_copy.is_sensitive(row) is True
-    assert notify_render.gdit_display_name(row) == "Jordan Hale"
-
-
-@pytest.mark.asyncio
-async def test_contact_row_from_directory_reaches_gdit_body(monkeypatch, tmp_path, caplog):
-    """L1: a real stored row (identity under fields, no fixture source) names the contact."""
-    import contacts_sync
-
-    caplog.set_level(logging.INFO)
-    priv = tmp_path / "private"
-    priv.mkdir()
-    monkeypatch.setenv("VM_CALLER_DIR", str(priv))
-    monkeypatch.setenv("VM_LEGACY_CALLER_FILE", str(tmp_path / "missing-legacy.json"))
-    contacts_sync.Directory(priv, tmp_path / "missing-legacy.json").merge_in({CALLER: "Jordan Hale"})
-    mod = _mod(monkeypatch, tmp_path)
-    async with TestClient(TestServer(mod.make_app())) as client:
-        app = client.server.app
-        sent = []
-
-        async def fake(job):
-            sent.append(job)
-            return True, "sent", False
-
-        mod.read_entity_state = _state_fn("off", "on")
-        mod._box(app)["senders"] = {"push": fake, "email": fake, "gdit": fake}
-        ref = await _finalize(mod, client, "contact-row")
-        # The stored agent row must not rely on a top-level source key.
-        stored = mod.ensure_agent(app)[0].by_ref(ref)
-        assert stored is not None
-        assert "caller_name_source" not in stored
-        await mod.agent_tick(app)
-        gdit_jobs = [j for j in sent if str(j.get("id") or "").startswith("gdit:")]
-        assert len(gdit_jobs) == 1
-        payload = gdit_jobs[0]["payload"]
-        assert payload["subject"].startswith("Jordan Hale called at ")
-        assert "Jordan Hale called at " in payload["text"]
-        assert "Jordan Hale" in payload["html"]
-        assert "Jordan" not in caplog.text
-        assert "555" not in caplog.text
 
 
 def test_stale_gdit_job_is_refused_and_not_retried():
@@ -694,6 +393,34 @@ async def test_stale_gdit_sender_does_not_send():
 
     ok, code, retry = await send_job()
     assert (ok, code, retry) == (False, "stale", False)
+    assert posted == []
+
+
+@pytest.mark.asyncio
+async def test_send_time_presence_recheck_fails_closed():
+    posted = []
+
+    class _Dead:
+        def post(self, *args, **kwargs):
+            posted.append(True)
+            raise AssertionError("must not post when no longer at work")
+
+    async def presence():
+        return "home"
+
+    sender = notify_send.agentmail_gdit_sender(
+        lambda: _Dead(), "callcatch-test@agentmail.to", "am-key-555-not-real",
+        presence_check=presence,
+    )
+    import time
+    job = {
+        "id": f"gdit:{REF}",
+        "ref": REF,
+        "created_at": time.time(),
+        "payload": notify_render.gdit_email(_row()),
+    }
+    ok, code, retry = await sender(job)
+    assert (ok, code, retry) == (False, "not_at_work", False)
     assert posted == []
 
 
