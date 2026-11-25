@@ -6,7 +6,7 @@ import time
 
 from test_line import AUTH, CALLER, call_tool, jobs, rpc
 
-START = "2026-11-17T22:30:05Z"  # 5:30 PM ET
+START = "2026-11-17T22:30:05Z"  # 17:30 ET
 
 
 async def init_vars(client, caller=CALLER, start=START, call_id=None):
@@ -95,8 +95,8 @@ async def test_email_shows_start_eastern_and_console_hint_last4(stack):
     _st, body = await call_tool(line, h, "take_message", {"reason": "quote"}, rid=2)
     ref = body["result"]["structuredContent"]["ref"]
     text = jobs(cc_mod, cc_app)[f"email:{ref}"]["payload"]["text"]
-    assert "Call started: Tue Nov 17, 5:30 PM ET" in text
-    assert "caller number ending 0177, call started Tue Nov 17, 5:30 PM ET" in text
+    assert "Call started: Tue Nov 17, 17:30 ET" in text
+    assert "caller number ending 0177, call started Tue Nov 17, 17:30 ET" in text
     assert "5555550177" not in text and "555-0177" not in text
 
 
@@ -119,7 +119,7 @@ async def test_epoch_start_and_finalizer_once(stack):
         await cc_mod.deliver_final(cc_app, row)
     assert len(done) == 1
     text = jobs(cc_mod, cc_app)[f"email:{done[0]['ref']}"]["payload"]["text"]
-    assert "Call started: Mon Nov 17, 5:30 PM ET" in text
+    assert "Call started: Mon Nov 17, 17:30 ET" in text
     assert calls.sweep(180, False, 120, now=time.time() + 9999) == []
 
 
