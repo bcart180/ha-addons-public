@@ -33,6 +33,7 @@ log = logging.getLogger("callcatch.contacts")
 
 DIRECTORY_NAME = "caller_names.json"
 MANUAL_NAME = "caller_names.manual.json"
+ORG_NAME = "caller_orgs.json"
 STATUS_NAME = "contacts_status.json"
 NAME_MAX = 80
 MAX_DIRECTORY_BYTES = 4_000_000
@@ -138,6 +139,14 @@ def lookup_display(number: Any, directory: dict[str, str] | None, cnam: Any = ""
     return "", "none"
 
 
+def lookup_org(number: Any, orgs: dict[str, str] | None) -> str:
+    """Return the stored organization for a number, or blank.  Never logs."""
+    key = normalize_e164(number)
+    if key and isinstance(orgs, dict):
+        return clean_name(orgs.get(key) or "")
+    return ""
+
+
 # ------------------------------------------------------------------ vCards --
 
 def _unfold(text: str) -> list[str]:
@@ -195,10 +204,10 @@ def _prop(line: str) -> tuple[str, dict, str] | None:
     return name, params, value
 
 
-def parse_vcards(text: str) -> list[tuple[str, list[str]]]:
-    """Return [(display_name, [e164, ...]), ...]. Cards without a name or a
-    usable number are skipped. Never raises on malformed input."""
-    cards: list[tuple[str, list[str]]] = []
+def parse_vcard_records(text: str) -> list[dict]:
+    """Return records with name, org, and tels.  Cards without a name or a
+    usable number are skipped.  Never raises on malformed input."""
+    records: list[dict] = []
     cur: dict | None = None
     for line in _unfold(str(text or "")):
         if not line.strip():
@@ -221,7 +230,7 @@ def parse_vcards(text: str) -> list[tuple[str, list[str]]]:
                 if e and e not in nums:
                     nums.append(e)
             if display and nums:
-                cards.append((display, nums))
+                records.append({"name": display, "org": cur["org"] or "", "tels": nums})
             cur = None
             continue
         if params.get("ENCODING", "").upper() in ("QUOTED-PRINTABLE", "B", "BASE64"):
@@ -240,7 +249,12 @@ def parse_vcards(text: str) -> list[tuple[str, list[str]]]:
             cur["nick"] = clean_name(_split_unescaped(value, ",")[0])
         elif name == "TEL":
             cur["tels"].append(value)
-    return cards
+    return records
+
+
+def parse_vcards(text: str) -> list[tuple[str, list[str]]]:
+    """Return [(display_name, [e164, ...]), ...].  Wrapper over parse_vcard_records."""
+    return [(str(r["name"]), list(r["tels"])) for r in parse_vcard_records(text)]
 
 
 def build_map(cards: Iterable[tuple[str, list[str]]]) -> dict[str, str]:
@@ -250,6 +264,20 @@ def build_map(cards: Iterable[tuple[str, list[str]]]) -> dict[str, str]:
     for display, nums in cards:
         for n in nums:
             out.setdefault(n, display)
+    return out
+
+
+def build_org_map(records: Iterable[dict]) -> dict[str, str]:
+    """Number to organization.  First record that claims a number keeps it."""
+    out: dict[str, str] = {}
+    for rec in records:
+        org = clean_name((rec or {}).get("org") or "")
+        if not org:
+            continue
+        for n in (rec or {}).get("tels") or []:
+            key = n if str(n).startswith("+") else normalize_e164(n)
+            if key:
+                out.setdefault(key, org)
     return out
 
 
@@ -349,6 +377,18 @@ class Directory:
     def loaded(self) -> dict[str, str]:
         data = _read_map(self.path)
         return data or {}
+
+    def loaded_orgs(self) -> dict[str, str]:
+        data = _read_map(self.folder / ORG_NAME)
+        return data or {}
+
+    def merge_orgs(self, orgs: dict[str, str]) -> dict[str, str]:
+        """Overlay organization labels.  Existing orgs for other numbers are kept."""
+        if not orgs:
+            return self.loaded_orgs()
+        merged = merge(self.loaded_orgs(), orgs)
+        atomic_write_json(self.folder / ORG_NAME, merged)
+        return merged
 
     def write(self, contacts: dict[str, str]) -> dict[str, str]:
         manual = self.ensure_manual()
@@ -589,8 +629,10 @@ class ContactsSync:
     def snapshot(self) -> dict[str, Any]:
         return public_status(self.status)
 
-    def _apply(self, source: str, cards: list[tuple[str, list[str]]]) -> dict[str, Any]:
+    def _apply(self, source: str, cards: list[tuple[str, list[str]]],
+               records: list[dict] | None = None) -> dict[str, Any]:
         mapping = build_map(cards)
+        orgs = build_org_map(records or [])
         now = int(time.time())
         self.status["last_sync"] = now
         self.status["source"] = source
@@ -605,6 +647,8 @@ class ContactsSync:
                 merged = self.directory.merge_in(mapping)
             else:
                 merged = self.directory.write(mapping)
+            if orgs:
+                self.directory.merge_orgs(orgs)
             manual = len(self.directory.ensure_manual())
         except SyncError:
             self.status["state"] = "write"
@@ -648,8 +692,11 @@ class ContactsSync:
                 client = CardDAVClient(self.transport_factory())
                 texts = await client.fetch_cards()
                 cards: list[tuple[str, list[str]]] = []
+                records: list[dict] = []
                 for t in texts:
-                    cards.extend(parse_vcards(t))
+                    recs = parse_vcard_records(t)
+                    records.extend(recs)
+                    cards.extend((str(r["name"]), list(r["tels"])) for r in recs)
             except SyncError as exc:
                 self.status["state"] = exc.reason
                 self.status["last_sync"] = int(time.time())
@@ -658,7 +705,7 @@ class ContactsSync:
                 log.warning("contacts: iCloud sync failed (%s)", exc)
                 return self.snapshot()
             self.status.pop("http_status", None)
-            return self._apply("icloud", cards)
+            return self._apply("icloud", cards, records)
 
     async def import_vcf(self, raw: bytes) -> dict[str, Any]:
         if len(raw) > UPLOAD_MAX_BYTES:
@@ -670,8 +717,9 @@ class ContactsSync:
         if "BEGIN:VCARD" not in text.upper():
             return {**self.snapshot(), "state": "bad_upload"}
         async with self.lock:
-            cards = parse_vcards(text)
-            return self._apply("upload", cards)
+            records = parse_vcard_records(text)
+            cards = [(str(r["name"]), list(r["tels"])) for r in records]
+            return self._apply("upload", cards, records)
 
     def _prepare_import_dir(self) -> pathlib.Path | None:
         path = self.import_dir

@@ -395,9 +395,9 @@ notice, and only while Bryson is at work.
 
 ### Recipient pin
 
-The work copy goes only to `bryson.carter@gdit.com`.  The pin is exact-address
-and exact-domain (`gdit.com` only, no subdomains) and lives in a separate
-check from the Proton pin.  `mail_to` still accepts only `proton.me` and
+The work copy goes only to a single exact-address pin kept in code (one
+constant).  The address is not listed here.  The pin is a separate check from
+the Proton pin.  `mail_to` still accepts only `proton.me` and
 `protonmail.com`.  A distinct AgentMail category and Idempotency-Key
 (`callcatch-gdit-<ref>`) keep the two messages from crossing.
 
@@ -414,22 +414,35 @@ It has no transcript, summary, number or last-4, audio, or link.
 
 ### Sensitive keyword list
 
-Phrases (matched as substrings after lowercasing and collapsing whitespace):
-`veterans affairs`, `veteran's affairs`, `veterans administration`,
-`veterans health`, `va hospital`, `va clinic`, `va medical`, `va appointment`,
-`va health`, `urgent care`, `emergency room`, `medical center`,
-`medical centre`, `medical group`, `health system`, `nursing home`,
-`internal revenue`, `credit union`, `credit card`, `bank of america`,
-`wells fargo`, `chase bank`, `capital one`, `american express`,
-`charles schwab`, `h&r block`, `hr block`, `loan servicer`,
-`collections agency`, `payday loan`, `roth ira`, `401(k)`, `401k`,
-`social security`, `quest diagnostics`.
+Matching runs on the resolved contact name and organization, and on the
+summary or transcript.  The haystack is normalized with NFKC, a look-alike
+fold, casefold, control-character strip, and punctuation/spacing collapse.
+Adjacent single-letter tokens are joined, so spaced or punctuated spellings
+(`V A`, `D.r.`) match.  The list fails toward skipping.
 
-Word-bounded tokens: `vamc`, `hospital`, `clinic`, `pharmacy`, `pharmacist`,
-`physician`, `dentist`, `dental`, `dermatology`, `oncology`, `pediatric`,
-`pediatrics`, `cardiology`, `radiology`, `hospice`, `medicaid`, `medicare`,
-`prescription`, `brokerage`, `mortgage`, `fidelity`, `vanguard`, `turbotax`,
-`irs`, `labcorp`.
+Phrases (substring after that normalize): `veterans affairs`,
+`veteran's affairs`, `veterans administration`, `veterans health`, `the va`,
+`va hospital`, `va clinic`, `va medical`, `va appointment`, `va health`,
+`va benefits`, `va loan`, `va claim`, `va office`, `urgent care`,
+`emergency room`, `medical center`, `medical centre`, `medical group`,
+`health system`, `nursing home`, `lab results`, `internal revenue`,
+`credit union`, `credit card`, `navy federal`, `walter reed`,
+`bank of america`, `wells fargo`, `chase bank`, `capital one`,
+`american express`, `charles schwab`, `h&r block`, `hr block`,
+`loan servicer`, `collections agency`, `payday loan`, `roth ira`, `401(k)`,
+`401k`, `social security`, `quest diagnostics`.
+
+Word-bounded tokens (and compact forms of four or more letters): `va`,
+`vamc`, `claim`, `benefits`, `dr`, `doctor`, `md`, `dds`, `therapist`,
+`therapy`, `hospital`, `clinic`, `pharmacy`, `pharmacist`, `physician`,
+`dentist`, `dental`, `dermatology`, `oncology`, `pediatric`, `pediatrics`,
+`cardiology`, `radiology`, `hospice`, `medstar`, `medicaid`, `medicare`,
+`prescription`, `insurance`, `tricare`, `usaa`, `bank`, `cvs`, `walgreens`,
+`kaiser`, `citi`, `discover`, `paypal`, `brokerage`, `mortgage`, `loan`,
+`newrez`, `fidelity`, `vanguard`, `turbotax`, `irs`, `labcorp`.
+
+A pending GDIT job older than about 15 minutes is dropped and not retried.
+When `gdit_work_copy` is off at startup, pending GDIT jobs are cleared.
 
 Logs print a reason code only.  Names and numbers are never logged.
 

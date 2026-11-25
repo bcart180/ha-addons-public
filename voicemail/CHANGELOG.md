@@ -2,10 +2,11 @@
 
 ## 0.8.6 — 2026-11-24
 
-- **Optional GDIT work-hours copy.**  New option `gdit_work_copy` (default `false`).  When on, a redacted copy is considered only after the Proton notice has been sent, or would have been sent while `input_boolean.callcatch_notify_dry_run` is on (would-send is logged, nothing is sent).  The recipient is pinned in code to `bryson.carter@gdit.com` on `@gdit.com` only; the existing Proton pin is unchanged.
+- **Optional GDIT work-hours copy.**  New option `gdit_work_copy` (default `false`).  When on, a redacted copy is considered only after the Proton notice has been sent, or would have been sent while `input_boolean.callcatch_notify_dry_run` is on (would-send is logged, nothing is sent).  The recipient is a single exact-address pin in code; the existing Proton pin is unchanged.  The work address is not published in this file or in the documentation.
 - **At-work gate, fail closed.**  The copy is sent only when `binary_sensor.bryson_at_work` is explicitly `on`.  There is no clock fallback.  If the sensor is `off`, `unknown`, `unavailable`, or Home Assistant is unreachable, no GDIT copy is sent.
-- **Redacted template.**  The copy names the contact (or "A caller" for CNAM, spoken, or unusable names), the time in America/New_York, and "See Proton for the full message."  It has no transcript, summary, number or last-4, audio, or link.
-- **Sensitive-caller skip.**  VA, medical, or financial callers are skipped entirely, matched on the contact name or label and on a conservative, documented keyword list in the summary or transcript.  Reason codes only are logged (`disabled`, `no_proton`, `work_unknown`, `not_at_work`, `sensitive`, `dry_run`, plus send success).  Names and numbers are never logged.
+- **Redacted template.**  The copy names the contact (or "A caller" for CNAM, spoken, or unusable names), the time in America/New_York, and "See Proton for the full message."  It has no transcript, summary, number or last-4, audio, or link.  The contact name is taken from `fields.caller_name_source` after identity is applied and written back onto the stored call row.
+- **Sensitive-caller skip.**  VA, medical, or financial callers are skipped entirely.  Matching uses the resolved contact name and organization, plus a documented keyword list in the summary or transcript, after NFKC, casefold, look-alike folding, and punctuation/spacing collapse (fail toward skipping).  Reason codes only are logged (`disabled`, `no_proton`, `work_unknown`, `not_at_work`, `sensitive`, `dry_run`, `stale`, plus send success).  Names and numbers are never logged.
+- **Stale GDIT jobs.**  A pending work copy older than about 15 minutes is refused and not retried.  When `gdit_work_copy` is off at startup, pending GDIT jobs are cleared.
 
 ## 0.8.5 — 2026-11-24
 
