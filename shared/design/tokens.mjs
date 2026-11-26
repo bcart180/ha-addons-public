@@ -1,6 +1,6 @@
-// Generated from shared/design/tokens.json v4.2.0 by build.py. Do not edit by hand.
+// Generated from shared/design/tokens.json v4.3.0 by build.py. Do not edit by hand.
 export const BUI = {
-  "--bui-page": "#1a1a1a",
+  "--bui-page": "#000000",
   "--bui-surface": "#2a2a2a",
   "--bui-surface-raised": "#393939",
   "--bui-input": "#333333",
