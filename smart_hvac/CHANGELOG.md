@@ -1,3 +1,8 @@
+## 0.9.12 — 2026-11-26
+
+- Style only. Climate cards are `#2a2a2a` and the band is `#393939`. The thermostat dial face and step control, and the Lovelace dial face and step buttons, use `#393939`. Page stays `#000000`. No orange or amber.
+- No behavior, option, or control changes. Rollback: install 0.9.11.
+
 ## 0.9.11 — 2026-11-20
 
 - Spare bathroom heater: a run with no fresh temperature report no longer trips `no_rise`.  The Zooz sensor reports temperature about once an hour, so every run started just after a report had no new reading inside the 45 min window and latched `no_rise` although the heater was warming the room.  Now, 30 min after the last checkpoint with no report in the last 30 min, the plug turns off as `awaiting_reading` (card: "Off: waiting for a temperature reading").  It does not latch or notify, and it stays off until the sensor reports again.

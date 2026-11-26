@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.10 — 2026-11-26
+
+- Style only. CallCatch surfaces use `#2a2a2a` (`--raise`) and `#393939` (`--raise-2`). Type is `#f5f5f5`, muted type is `#c8c8c8`, and links are `#6d8ee8`. Selected filters are a raised chip with `#6d8ee8` text and a `#3e6ae1` edge, not a light pill. Inputs are `#333333`.
+- Inbox behavior, options, and schema are unchanged.
+
 ## 0.8.9 — 2026-11-26
 
 - **Sender allowlist.**  `agentmail_inbox` may be a dedicated `callcatch…@agentmail.to` inbox, or the single address `callcatch@callcatch.brysoncarter.com`.  No other address at brysoncarter.com is accepted.  `mail_ready` requires that allowlist: a filled-in inbox that is not on it leaves email off.  The Proton recipient pin (`proton.me` and `protonmail.com`) is unchanged.

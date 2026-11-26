@@ -588,7 +588,7 @@ def test_020_self_check_reports_missing():
 
 def test_020_defaults_public_safe():
     cfg = yaml.safe_load(open(CFG))
-    assert cfg["version"] == "0.3.2" and cfg["options"]["rates"] == [] and cfg["options"]["taper_soc"] == 90
+    assert cfg["version"] == "0.3.3" and cfg["options"]["rates"] == [] and cfg["options"]["taper_soc"] == 90
 
 
 # ---------------- 0.3.0 ----------------

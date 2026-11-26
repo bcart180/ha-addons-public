@@ -15,10 +15,10 @@
 
 :root {
   --bg: #000000;
-  --card: #000000;
-  --line: #262b31;
-  --text: #f4f6f8;
-  --muted: #b7c0c8;
+  --card: #2a2a2a;
+  --line: #3a3a3a;
+  --text: #f5f5f5;
+  --muted: #c8c8c8;
   --accent: #3e6ae1;
   --chats: #d5dbe2;
   --routines: #8eafc4;
@@ -33,7 +33,7 @@ html, body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: "Usage Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: Inter, "Gotham SSm", "Usage Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
   font-weight: 400;
   font-size: 16px;
   line-height: 1.45;
@@ -94,9 +94,9 @@ h3 {
 }
 
 button, select {
-  background: var(--bg);
+  background: #333333;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 16px;
   min-height: 44px;
 }
 
@@ -111,7 +111,7 @@ button:focus-visible, select:focus-visible {
 }
 
 .provenance, .warning, .error, .reread-result, .provenance-detail {
-  border-radius: 14px;
+  border-radius: 16px;
 }
 
 .provenance {
@@ -299,7 +299,7 @@ select {
   width: 100%;
   height: auto;
   display: block;
-  font-family: "Usage Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: Inter, "Gotham SSm", "Usage Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
 }
 
 .below-line { margin: 0 0 8px; font-size: 14px; color: var(--text); }
@@ -321,6 +321,6 @@ select {
   .focus { margin-top: 14px; }
   .metrics { grid-template-columns: 1fr; }
   .metric .value { font-size: 44px; }
-  .card { padding: 18px 16px; border-radius: 14px; }
+  .card { padding: 18px 16px; border-radius: 16px; }
   .split > div + div { margin-top: 28px; }
 }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.4 — 2026-11-26
+
+- Style only. Production cards (`--panel`) are `#2a2a2a`, raised surfaces (`--panel2`) are `#393939`, and inputs (`--bg-elevated`) are `#333333`, off the `#000000` page. The selected range is a raised chip with `#6d8ee8` text and a `#3e6ae1` indicator. Primary button text is `#ffffff`. The stylesheet file name is still `soft-slate.css`.
+- Snapshot API, range control, and `/ui-trial` routes are unchanged.
+
 ## 0.3.3 — 2026-11-20
 
 - Style only. Production `/` is now BRYSON-UI-4: page and cards are `#000000`, accent `#3e6ae1`, and orange / amber / gold tokens are gone. Category colors stay distinct (purple, blue, indigo, red, pink, green, cyan) and still have written labels.

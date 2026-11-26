@@ -7,7 +7,7 @@ import math
 import os
 from typing import Any
 
-ADDON_VERSION = "0.1.2"
+ADDON_VERSION = "0.1.3"
 ACTIVITIES = ("Chats", "Routines", "Bot-to-Bot")
 SCHEMA_VERSION = 1
 

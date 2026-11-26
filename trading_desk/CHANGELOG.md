@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.8 — 2026-11-26
+
+- Style only. UI-4 tokens v4.3.0: the page stays `#000000`, cards are `#2a2a2a`, and raised surfaces are `#393939`. Text is `#f5f5f5`, muted type is `#c8c8c8`, borders are `#3a3a3a`, and the accent is `#3e6ae1`. Main, Detail, Schwab, and the charts stay.
+- Options, keys, schema, feeds, and routes are unchanged. Still GET and EventSource only.
+
 ## 0.3.7 — 2026-11-20
 
 - Style only. Production page, cards, and theme-color are `#000000`. Warning gold is gone; warnings use `#ff5d73`. Asset-mix and desk-chart accents use `#3e6ae1` with cool Schwab / violet Bitcoin segments.
