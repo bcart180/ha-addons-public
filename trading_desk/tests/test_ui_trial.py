@@ -23,11 +23,11 @@ import server  # noqa: E402
 # Previous production shell, except app.js and assets.js. Those two are shared
 # with the UI-4 page and carry the 0.3.5 Schwab renderer and Detail scroll fix.
 LEGACY = {
-    "index.html": ("521205e5b5d2b41152632a10fb8b17de8d2091f9b0f131e49afaa0ce4bf5b80a", 5089),
+    "index.html": ("7c1088c7860443d8a138a573aca986f684a2726b0e759f8e42d1254ec114867e", 5089),
     "assets.css": ("6bdcfcaa9fb719cec0ae6c24b3b90be308679ef343c666cf3c7d1a09e182467e", 3519),
-    "main.js": ("e8e71d9f88edd1bb6e3a6f76fff27abff5bdc2ac92c0887f277fc7ed02beb0b0", 12891),
+    "main.js": ("d5ff01e0b3fe7b65ec59f319015c71c6f6e54ed44e54b445d0a6a72c2bc870f6", 12891),
     "main.css": ("c03c50d03169e2d44e4821cd75524b2c03d33bbd76b637e973826b70408e9043", 4811),
-    "style.css": ("ff3e440740e4b8a6348b609d88a5dfda7f6b5f7d1e039c774b9cb76ba16412a3", 10960),
+    "style.css": ("dd1d05eeb77c9ae20a911bb3fd75e1d1c112624ffc523229e16096951d7bd980", 10963),
 }
 
 SCHEMA_KEYS = [
