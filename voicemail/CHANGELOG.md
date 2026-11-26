@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.9 — 2026-11-26
+
+- **Sender allowlist.**  `agentmail_inbox` may be a dedicated `callcatch…@agentmail.to` inbox, or the single address `callcatch@callcatch.brysoncarter.com`.  No other address at brysoncarter.com is accepted.  `mail_ready` requires that allowlist: a filled-in inbox that is not on it leaves email off.  The Proton recipient pin (`proton.me` and `protonmail.com`) is unchanged.
+- **Opt-in sending-domain setup.**  New option `agentmail_domain_setup` (default off).  When on, CallCatch uses its own AgentMail API key in place to register the send-only domain `callcatch.brysoncarter.com` (`inbound_enabled` false, `subdomains_enabled` false), shows the public DNS records AgentMail returns on `/api/diag` (type, name, value, priority, status), asks AgentMail to verify, and creates `callcatch@callcatch.brysoncarter.com` once the domain is verified.  A later run does not create another domain or inbox.  The key is never logged or returned.  CallCatch does not change DNS and does not call Cloudflare.
+
 ## 0.8.8 — 2026-11-25
 
 - **Content-free GDIT notice.**  The redacted-transcript work copy is retired.  Full transcripts still go only to the CallCatch inbox and Proton.  When `gdit_work_copy` is on, the pinned work address gets only a missed-call notice: voicemail left yes/no, and the 24-hour ET time.  No name, number, transcript, audio, or link.

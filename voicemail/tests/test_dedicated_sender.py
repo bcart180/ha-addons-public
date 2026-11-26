@@ -69,13 +69,22 @@ def _err(code, name="ConflictError", message="Conflict"):
 
 # --- dedicated sender inbox ----------------------------------------------------
 
+PINNED = "callcatch@callcatch.brysoncarter.com"
+
+
 def test_sender_must_be_a_dedicated_callcatch_inbox():
-    for ok in ("callcatch@agentmail.to", FROM, "callcatch.notices@agentmail.to", "CallCatch-Test@AgentMail.to"):
+    for ok in ("callcatch@agentmail.to", FROM, "callcatch.notices@agentmail.to", "CallCatch-Test@AgentMail.to",
+               PINNED, "CallCatch@CallCatch.BrysonCarter.com"):
         assert notify_send.sender_allowed(ok), ok
     for bad in ("hub@agentmail.to", "owner@agentmail.to", "notices-callcatch@agentmail.to",
                 "x.callcatch@agentmail.to", "callcatch@agentmail.to.evil.com", "callcatch@gmail.com",
                 "callcatch@example.com", "callcatch%x@agentmail.to", "callcatch test@agentmail.to",
-                "callcatch@agentmail.to\nBcc: x@example.com", "callcatch" + "x" * 60 + "@agentmail.to", ""):
+                "callcatch@agentmail.to\nBcc: x@example.com", "callcatch" + "x" * 60 + "@agentmail.to", "",
+                "callcatch@brysoncarter.com", "callcatch-notices@callcatch.brysoncarter.com",
+                "anyone@callcatch.brysoncarter.com", "callcatch@foo.brysoncarter.com",
+                "callcatch@callcatch.brysoncarter.com.evil.com", "notcallcatch@callcatch.brysoncarter.com",
+                "callcatch@brysoncarter.com ",
+                "*@brysoncarter.com", "callcatch@agentmail.to@callcatch.brysoncarter.com"):
         assert not notify_send.sender_allowed(bad), bad
 
 
@@ -84,7 +93,11 @@ def test_sender_schema_matches_code():
     line = next(x for x in cfg.splitlines() if x.strip().startswith("agentmail_inbox: match("))
     pattern = re.search(r"match\((.*)\)\?\s*$", line).group(1)
     assert pattern == notify_send.SENDER_RE.pattern
-    assert re.fullmatch(pattern, FROM) and not re.fullmatch(pattern, "hub@agentmail.to")
+    assert re.fullmatch(pattern, FROM) and re.fullmatch(pattern, PINNED)
+    assert not re.fullmatch(pattern, "hub@agentmail.to")
+    assert not re.fullmatch(pattern, "callcatch@brysoncarter.com")
+    assert not re.fullmatch(pattern, "anyone@callcatch.brysoncarter.com")
+    assert not re.fullmatch(pattern, "callcatch@foo.brysoncarter.com")
 
 
 def test_shared_inbox_turns_email_off_without_echoing_it(monkeypatch, tmp_path, caplog):
@@ -98,6 +111,40 @@ def test_shared_inbox_turns_email_off_without_echoing_it(monkeypatch, tmp_path, 
     m = _load(monkeypatch, tmp_path, agent_token=AGENT, mail_backend="agentmail", mail_to=TO,
               agentmail_inbox=FROM, agentmail_api_key=KEY)
     assert m.mail_ready() is True and m.MAIL_FROM == FROM
+
+
+def test_proton_recipient_pin_unchanged():
+    assert notify_send.RECIPIENT_DOMAINS == ("proton.me", "protonmail.com")
+    assert notify_send.parse_recipient(TO) == TO
+    assert notify_send.parse_recipient(PINNED) == ""
+    assert notify_send.parse_recipient("callcatch-test@gmail.com") == ""
+
+
+def test_mail_ready_requires_the_sender_allowlist(monkeypatch, tmp_path):
+    """Fields being set is not enough: the From address has to pass the allowlist."""
+    m = _load(monkeypatch, tmp_path, agent_token=AGENT, mail_backend="agentmail", mail_to=TO,
+              agentmail_inbox=FROM, agentmail_api_key=KEY)
+    assert m.mail_ready() is True
+    m.AGENTMAIL_INBOX = "hub@agentmail.to"
+    assert m.mail_ready() is False
+    m.AGENTMAIL_INBOX = "callcatch@brysoncarter.com"
+    assert m.mail_ready() is False
+    m.AGENTMAIL_INBOX = PINNED
+    assert m.mail_ready() is True
+    m.AGENTMAIL_API_KEY = ""
+    assert m.mail_ready() is False
+    m.AGENTMAIL_API_KEY = KEY
+    m.MAIL_BACKEND = "off"
+    assert m.mail_ready() is False
+    m.MAIL_BACKEND = "agentmail"
+    saved = m.MAIL_TO
+    m.MAIL_TO = ""
+    assert m.mail_ready() is False
+    m.MAIL_TO = saved
+    assert m.mail_ready() is True
+    pinned = _load(monkeypatch, tmp_path, agent_token=AGENT, mail_backend="agentmail", mail_to=TO,
+                   agentmail_inbox=PINNED, agentmail_api_key=KEY)
+    assert pinned.mail_ready() is True and pinned.MAIL_FROM == PINNED and pinned.AGENTMAIL_INBOX == PINNED
 
 
 @pytest.mark.asyncio

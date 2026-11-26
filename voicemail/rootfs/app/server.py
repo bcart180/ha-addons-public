@@ -38,13 +38,14 @@ import legacy_import
 import notify_outbox
 import notify_render
 import notify_send
+import sender_domain
 import share_import
 import telnyx_capture
 
 APP_DIR = pathlib.Path(__file__).resolve().parent
 STATIC = APP_DIR / "static"
 EXAMPLE = APP_DIR / "example_voicemails.json"
-VERSION = "0.8.8"
+VERSION = "0.8.9"
 AUDIO_LIMIT = 25 * 1024 * 1024
 SENSOR_RE = re.compile(r"sensor\.[a-z0-9_]+")
 RT = web.AppKey("rt", dict)
@@ -123,10 +124,12 @@ MAIL_TO = notify_send.parse_recipient(OPTS.get("mail_to", ""))  # one Proton add
 _inbox = str(OPTS.get("agentmail_inbox") or "").strip().lower()
 AGENTMAIL_INBOX = _inbox if notify_send.sender_allowed(_inbox) else ""
 if _inbox and not AGENTMAIL_INBOX:
-    # Value not echoed.  Only a dedicated callcatch…@agentmail.to inbox may send.
-    logging.getLogger("voicemail").warning("agentmail_inbox refused: must be a dedicated callcatch…@agentmail.to inbox; email off")
+    # Value not echoed.  Only the CallCatch sender allowlist may send.
+    logging.getLogger("voicemail").warning("agentmail_inbox refused: not on the CallCatch sender allowlist; email off")
 MAIL_FROM = AGENTMAIL_INBOX
 AGENTMAIL_API_KEY = str(OPTS.get("agentmail_api_key") or "")
+# Off: do not register a domain or create an inbox.  The key stays in this process.
+SENDER_DOMAIN_SETUP = bool(OPTS.get("agentmail_domain_setup", False))
 PANEL_BASE_URL = str(OPTS.get("panel_base_url") or "").strip()  # blank: email names the sidebar, no link
 EMAIL_FULL_NUMBER = bool(OPTS.get("email_full_number", False))  # off: last 4 only (opt-in at install)
 GDIT_WORK_COPY = bool(OPTS.get("gdit_work_copy", False))  # off: no work-hours copy (opt-in later)
@@ -978,6 +981,7 @@ async def api_diag(request: web.Request) -> web.Response:
             "import_marker": (data_dir() / share_import.MARKER_NAME).exists(),
             "dry_run": await dry_run_status(request.app),
             "agent": agent_diag(request.app),
+            "sender_domain": sender_domain_view(request.app),
         }
     )
 
@@ -1776,7 +1780,70 @@ def agent_diag(app: web.Application) -> dict:
 
 
 def mail_ready() -> bool:
-    return MAIL_BACKEND == "agentmail" and bool(MAIL_TO and AGENTMAIL_INBOX and AGENTMAIL_API_KEY)
+    """AgentMail route with a Proton recipient and an allowlisted sender.
+
+    A filled-in inbox that is not on the sender allowlist is not ready.
+    """
+    return (
+        MAIL_BACKEND == "agentmail"
+        and bool(MAIL_TO and AGENTMAIL_INBOX and AGENTMAIL_API_KEY)
+        and notify_send.sender_allowed(AGENTMAIL_INBOX)
+    )
+
+
+def sender_domain_view(app: web.Application) -> dict:
+    """Public domain-setup status for /api/diag. Never includes the API key."""
+    snap = _box(app).get("sender_domain_status")
+    if isinstance(snap, dict):
+        return sender_domain.sanitize(snap, AGENTMAIL_API_KEY)
+    if not SENDER_DOMAIN_SETUP:
+        return sender_domain.sanitize(sender_domain.status_off(), AGENTMAIL_API_KEY)
+    if not AGENTMAIL_API_KEY:
+        return sender_domain.sanitize(sender_domain.status_no_key(), "")
+    return sender_domain.sanitize(sender_domain.status_pending(), AGENTMAIL_API_KEY)
+
+
+def _log_sender_domain(snap: dict) -> None:
+    log.info(
+        "sender-domain state=%s domain_status=%s inbox=%s code=%s records=%s",
+        snap.get("state"), snap.get("domain_status"), snap.get("inbox"), snap.get("code"),
+        len(snap.get("records") or []),
+    )
+    for rec in snap.get("records") or []:
+        log.info(
+            "sender-domain record type=%s name=%s priority=%s status=%s",
+            rec.get("type"), rec.get("name"), rec.get("priority"), rec.get("status"),
+        )
+
+
+async def sender_domain_loop(app: web.Application) -> None:
+    """Retry until the pinned inbox exists. Each pass is safe to run again."""
+    delay = 30
+    try:
+        while True:
+            if not AGENTMAIL_API_KEY:
+                snap = sender_domain.sanitize(sender_domain.status_no_key(), "")
+                _box(app)["sender_domain_status"] = snap
+                log.warning("sender-domain setup skipped: agentmail_api_key is blank")
+                return
+            session = _box(app).get("session")
+            if session is None:
+                log.warning("sender-domain setup skipped: no-session")
+                return
+            try:
+                raw = await sender_domain.ensure_sender_domain(session, AGENTMAIL_API_KEY)
+            except Exception as exc:  # noqa: BLE001 - type name only; the message can echo the key
+                log.warning("sender-domain %s", type(exc).__name__)
+                raw = sender_domain.status_error(type(exc).__name__.lower())
+            snap = sender_domain.sanitize(raw, AGENTMAIL_API_KEY)
+            _box(app)["sender_domain_status"] = snap
+            _log_sender_domain(snap)
+            if snap.get("state") == "ready":
+                return
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 900)
+    except asyncio.CancelledError:
+        return
 
 
 def build_senders(app: web.Application) -> dict:
@@ -2435,6 +2502,8 @@ async def on_startup(app: web.Application) -> None:
     IN_HA = _in_ha()
     ensure_runtime(app)
     clear_pending_gdit_if_disabled(app)
+    if SENDER_DOMAIN_SETUP:
+        box["sender_domain_task"] = asyncio.create_task(sender_domain_loop(app))
     box["bg"] = asyncio.create_task(background(app))
     box["contacts_task"] = asyncio.create_task(ensure_contacts(app).run_forever())
     if IN_HA:
@@ -2459,6 +2528,9 @@ async def on_cleanup(app: web.Application) -> None:
     commands = box.get("commands")
     if commands is not None:
         commands.cancel()
+    domain_task = box.get("sender_domain_task")
+    if domain_task is not None:
+        domain_task.cancel()
     contacts_task = box.get("contacts_task")
     if contacts_task is not None:
         contacts_task.cancel()
