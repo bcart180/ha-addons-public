@@ -1,7 +1,7 @@
-# Generated from shared/design/tokens.json v4.1.0 by build.py. Do not edit by hand.
-# Charcoal pages, lighter cards, bright text, accent #3E6AE1. No pure black, no orange/amber.
+# Generated from shared/design/tokens.json v4.2.0 by build.py. Do not edit by hand.
+# Charcoal pages, lighter cards, bright text. Fills #3E6AE1; text/links/tabs (primary-color) #6D8EE8. No pure black, no orange/amber.
 BRYSON-UI-4 Charcoal:
-  primary-color: "#3E6AE1"
+  primary-color: "#6D8EE8"
   accent-color: "#3E6AE1"
   dark-primary-color: "#2A4CB8"
   light-primary-color: "#5B84F0"
@@ -88,7 +88,7 @@ BRYSON-UI-4 Charcoal:
   rgb-amber-color: "255, 93, 115"
   rgb-yellow-color: "255, 93, 115"
   rgb-deep-orange-color: "255, 93, 115"
-  rgb-primary-color: "62, 106, 225"
+  rgb-primary-color: "109, 142, 232"
   rgb-accent-color: "62, 106, 225"
   input-fill-color: "#333333"
   input-disabled-fill-color: "#242424"
@@ -120,7 +120,7 @@ BRYSON-UI-4 Charcoal:
   ha-color-primary-95: "#edf1fc"
   modes:
     dark:
-      primary-color: "#3E6AE1"
+      primary-color: "#6D8EE8"
       accent-color: "#3E6AE1"
       dark-primary-color: "#2A4CB8"
       light-primary-color: "#5B84F0"
@@ -207,7 +207,7 @@ BRYSON-UI-4 Charcoal:
       rgb-amber-color: "255, 93, 115"
       rgb-yellow-color: "255, 93, 115"
       rgb-deep-orange-color: "255, 93, 115"
-      rgb-primary-color: "62, 106, 225"
+      rgb-primary-color: "109, 142, 232"
       rgb-accent-color: "62, 106, 225"
       input-fill-color: "#333333"
       input-disabled-fill-color: "#242424"

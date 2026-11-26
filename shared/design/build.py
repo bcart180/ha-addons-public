@@ -66,7 +66,7 @@ h2 {{ font-size: var(--bui-h2-size); line-height: var(--bui-h2-line); font-weigh
 h3 {{ font-size: var(--bui-h3-size); line-height: var(--bui-h3-line); font-weight: var(--bui-weight-medium); }}
 h4 {{ font-size: var(--bui-h4-size); line-height: var(--bui-h4-line); font-weight: var(--bui-weight-bold); }}
 small, .bui-small {{ font-size: var(--bui-small-size); line-height: var(--bui-small-line); color: var(--bui-text-secondary); }}
-a {{ color: var(--bui-accent-text); }}
+a {{ color: var(--bui-link); }}
 .bui-card {{ background: var(--bui-surface); border: 1px solid var(--bui-border); border-radius: var(--bui-radius-card);
   box-shadow: var(--bui-shadow-card); padding: var(--bui-space-4); }}
 .bui-muted {{ color: var(--bui-text-secondary); }}
@@ -89,7 +89,7 @@ input, select, textarea {{ background: var(--bui-input); color: var(--bui-text);
 def ha_theme():
     a, at = C["accent"], C["accent-text"]
     m = {
-        "primary-color": a, "accent-color": a, "dark-primary-color": C["accent-pressed"], "light-primary-color": C["accent-hover"],
+        "primary-color": at, "accent-color": a, "dark-primary-color": C["accent-pressed"], "light-primary-color": C["accent-hover"],
         "text-primary-color": C["text-on-accent"],
         "primary-background-color": C["page"], "lovelace-background": C["page"],
         "secondary-background-color": C["surface"], "card-background-color": C["surface"],
@@ -129,7 +129,7 @@ def ha_theme():
         "orange-color": C["danger"], "amber-color": C["danger"], "yellow-color": C["danger"], "deep-orange-color": C["danger"],
         "rgb-orange-color": "255, 93, 115", "rgb-amber-color": "255, 93, 115",
         "rgb-yellow-color": "255, 93, 115", "rgb-deep-orange-color": "255, 93, 115",
-        "rgb-primary-color": "62, 106, 225", "rgb-accent-color": "62, 106, 225",
+        "rgb-primary-color": "109, 142, 232", "rgb-accent-color": "62, 106, 225",
         "input-fill-color": C["input"], "input-disabled-fill-color": C["input-disabled"],
         "input-ink-color": C["text"], "input-label-ink-color": C["text-secondary"],
         "input-disabled-ink-color": C["text-disabled"], "input-dropdown-icon-color": C["text-secondary"],
@@ -143,7 +143,7 @@ def ha_theme():
     # HA 2025+ design-system palette (ha-button, toggle groups, calendar controls) defaults to cyan; pin to our blue.
     for k2, v2 in C["primary-scale"].items():
         m[f"ha-color-primary-{k2}"] = v2
-    lines = [f"# {HDR}", "# Charcoal pages, lighter cards, bright text, accent #3E6AE1. No pure black, no orange/amber.",
+    lines = [f"# {HDR}", "# Charcoal pages, lighter cards, bright text. Fills #3E6AE1; text/links/tabs (primary-color) #6D8EE8. No pure black, no orange/amber.",
              f"{T['name']}:"]
     lines += [f"  {k}: {json.dumps(v)}" for k, v in m.items()]
     # Same tokens under modes.dark so HA knows this is a dark theme (dark fills for
