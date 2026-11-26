@@ -155,6 +155,18 @@ configuration:
   agentmail_api_key:
     name: AgentMail API key
     description: Password field.  Never logged.
+  agentmail_domain_setup:
+    name: Set up the CallCatch sending domain
+    description: >-
+      Off by default. When on, CallCatch uses the AgentMail API key already
+      set here (it is never logged or shown) to register the send-only domain
+      callcatch.brysoncarter.com, with inbound mail and extra subdomains left
+      off. The DNS records AgentMail returns (type, name, value, priority,
+      and status) are shown on the diagnostics page. CallCatch then asks
+      AgentMail to verify the domain and creates the inbox
+      callcatch@callcatch.brysoncarter.com once it is verified. CallCatch
+      does not change DNS. Running this again does not create a second
+      domain or inbox. The Proton recipient is unchanged.
   email_full_number:
     name: Full callback number in email
     description: >-

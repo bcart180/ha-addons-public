@@ -549,7 +549,7 @@ Local audio is removed 30 days after the job closes, or sooner when the inbox ro
 
 CallCatch Line (separate add-on) is the internet-facing MCP server for a hosted phone agent.  It talks to CallCatch over the Supervisor network with `agent_token`.  CallCatch keeps one row per call in `/data/callcatch/agent_calls.json` and finalizes it once (agent message, call-ended webhook, closed session, or `agent_inactivity_s` of quiet).  The first finalization stores an inbox row (`source: phone_agent`), queues a callback if asked (no dialing), and enqueues one email and one masked push in `/data/callcatch/notify_outbox.json`.  Failed sends retry with backoff for about four hours, then park as `dead` (counts in `/api/diag`).
 
-- Email: `mail_backend` `agentmail` (or `off`, the default).  CallCatch POSTs directly to `https://api.agentmail.to/v0/inboxes/<agentmail_inbox>/messages/send` with the `agentmail_api_key` bearer.  No agent, routine, or LLM sits in the path.  The rendered subject, text, and HTML go out verbatim, labels `callcatch` and `callcatch_phone_message`.  `mail_to` is one address on `proton.me` or `protonmail.com` (pinned in code); a list, another domain, or Gmail turns email off.  `agentmail_inbox` must be a dedicated CallCatch-only AgentMail inbox whose name starts with `callcatch` (`callcatch…@agentmail.to`); any other value, including a shared bot inbox, turns email off and logs one warning (the value is not logged).  See "Dedicated sender inbox" below.  A 4xx answer (for example a recipient suppression) parks the job as `dead`, shown in `/api/diag`.
+- Email: `mail_backend` `agentmail` (or `off`, the default).  CallCatch POSTs directly to `https://api.agentmail.to/v0/inboxes/<agentmail_inbox>/messages/send` with the `agentmail_api_key` bearer.  No agent, routine, or LLM sits in the path.  The rendered subject, text, and HTML go out verbatim, labels `callcatch` and `callcatch_phone_message`.  `mail_to` is one address on `proton.me` or `protonmail.com` (pinned in code); a list, another domain, or Gmail turns email off.  `agentmail_inbox` must be on the CallCatch sender allowlist: a dedicated inbox whose name starts with `callcatch` at `agentmail.to` (`callcatch…@agentmail.to`), or the single address `callcatch@callcatch.brysoncarter.com`.  Any other value, including another address at brysoncarter.com or a shared bot inbox, turns email off and logs one warning (the value is not logged).  `mail_ready` requires that allowlist, not merely that the fields are filled in.  The Proton recipient pin is unchanged.  See "Dedicated sender inbox" below.  A 4xx answer (for example a recipient suppression) parks the job as `dead`, shown in `/api/diag`.
 - Push: `push_service` (a `mobile_app_...` notify service).  Caller name and reference only.  Blank by default.
 - Busy times: `freebusy_calendars` (default `calendar.home,calendar.shared`), `freebusy_window` (default 08:00-18:00, weekdays).  Start/end only, up to 14 days ahead.
 - Late details (a late webhook or late agent message) update the stored row and send at most one masked "details added" push.  The email is never sent twice.
@@ -565,8 +565,21 @@ CallCatch Line (separate add-on) is the internet-facing MCP server for a hosted 
 
 CallCatch emails come from their own AgentMail inbox.  Its scope is CallCatch only: no other add-on, routine or agent sends from it or reads it.  Every send leaves a copy in that inbox's Sent, holding the caller's words, and any reply to the notice lands there too.  Set it up so nothing else can read it:
 
-- Create the inbox at go-live, named `callcatch…` (for example `callcatch-notices@agentmail.to`).  CallCatch refuses any other From address.
+- Create the inbox at go-live, named `callcatch…` (for example `callcatch-notices@agentmail.to`), or use the single address `callcatch@callcatch.brysoncarter.com`.  CallCatch refuses any other From address.  There is no wildcard for brysoncarter.com.
 - Give CallCatch an **inbox-scoped** API key for that inbox only, with permissions `message_send` and nothing else (no `message_read`, `message_update` or `message_delete`, and no organization or pod scope).
 - Make sure no other agent's AgentMail connector can see the inbox.  An organization-scoped key sees every inbox in its organization, so either put the inbox in a separate AgentMail organization, or move it into its own pod and narrow the connectors' keys to the pod or inbox they need.  After setup, listing inboxes through each connector must not show the CallCatch inbox.
 - Register no webhook or WebSocket subscription for the CallCatch inbox, so a reply or bounce never reaches HA's mail router or an agent.
 - CallCatch sets no `Reply-To`, CC or BCC.  A reply goes to the CallCatch inbox, which nothing reads.
+
+### Sending domain setup (0.8.9)
+
+`agentmail_domain_setup` is off by default.  When it is on, CallCatch uses the `agentmail_api_key` already configured for this add-on.  The key is not logged, not written to `/api/diag` or `/api/health`, and not returned by any route.
+
+The step is safe to run again:
+
+1. Register `callcatch.brysoncarter.com` if it is not already registered, with `inbound_enabled` false and `subdomains_enabled` false (send-only: no inbound mail, no extra subdomains).
+2. Show the DNS records AgentMail returns on `/api/diag` under `sender_domain.records`.  Each record has only `type`, `name`, `value`, `priority`, and `status`.  The log names the record type, name, priority, and status.  The value itself stays on the diagnostics page.
+3. Ask AgentMail to verify the domain.
+4. Once the domain is `VERIFIED`, create the inbox `callcatch@callcatch.brysoncarter.com` if it does not already exist.
+
+A domain that is already registered with inbound mail or extra subdomains turned on is left as it is: CallCatch does not update it, does not verify it, and does not create the inbox.  A second run does not create a second domain or a second inbox.  CallCatch does not change DNS and does not call Cloudflare.  Publish the records yourself at the DNS host.  Until the domain is verified, email can still be sent from an allowlisted `callcatch…@agentmail.to` inbox.  The Proton recipient pin is unchanged.

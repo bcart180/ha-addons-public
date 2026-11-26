@@ -1,5 +1,5 @@
 name: CallCatch
-version: "0.8.8"
+version: "0.8.9"
 slug: voicemail
 description: Your Personalized Voicemail. iPhone-style house inbox (list + detail) via Supervisor ingress
 url: https://github.com/bcart180/ha-addons-public/tree/main/voicemail
@@ -55,6 +55,7 @@ options:
   mail_to: ""
   agentmail_inbox: ""
   agentmail_api_key: ""
+  agentmail_domain_setup: false
   email_full_number: false
   gdit_work_copy: false
   panel_base_url: ""
@@ -98,8 +99,9 @@ schema:
   freebusy_window: match(^\d{1,2}:\d{2}-\d{1,2}:\d{2}$)
   mail_backend: list(off|agentmail)
   mail_to: match(^[A-Za-z0-9._+\-]{1,64}@(proton\.me|protonmail\.com)$)?
-  agentmail_inbox: match(^callcatch[a-z0-9._\-]{0,55}@agentmail\.to$)?
+  agentmail_inbox: match(^(?:callcatch[a-z0-9._\-]{0,55}@agentmail\.to|callcatch@callcatch\.brysoncarter\.com)$)?
   agentmail_api_key: password?
+  agentmail_domain_setup: bool
   email_full_number: bool
   gdit_work_copy: bool
   panel_base_url: match(^https?://[A-Za-z0-9.\-]{1,253}(:\d{1,5})?/?$)?

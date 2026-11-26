@@ -274,7 +274,7 @@ async def test_option_default_off_is_quiet_disabled(monkeypatch, tmp_path, caplo
         agentmail_inbox="callcatch-test@agentmail.to",
     )
     assert mod.GDIT_WORK_COPY is False
-    assert mod.VERSION == "0.8.8"
+    assert mod.VERSION == "0.8.9"
     async with TestClient(TestServer(mod.make_app())) as client:
         app = client.server.app
         sent = []

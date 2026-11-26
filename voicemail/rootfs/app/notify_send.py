@@ -25,11 +25,15 @@ RECIPIENT_DOMAINS = ("proton.me", "protonmail.com")
 GDIT_RECIPIENT = gdit_copy.GDIT_RECIPIENT
 CATEGORY_GDIT = "callcatch_gdit_notice"
 LABELS_GDIT = ("callcatch", CATEGORY_GDIT)
-# Sender must be a DEDICATED CallCatch-only AgentMail inbox:
-# an AgentMail-hosted inbox whose local part starts with "callcatch", so a shared bot
-# inbox can never be configured as the From address.  Keeping it out of reach of other
-# agents' AgentMail connectors is a go-live step (DOCS "Dedicated sender inbox").
-SENDER_RE = re.compile(r"^callcatch[a-z0-9._\-]{0,55}@agentmail\.to$")
+# Sender allowlist, exact:
+# a dedicated AgentMail-hosted inbox whose local part starts with "callcatch",
+# or the single address callcatch@callcatch.brysoncarter.com.
+# No other domain, and no wildcard at brysoncarter.com.  A shared bot inbox
+# cannot be the From address.  Keeping the inbox away from other agents'
+# AgentMail connectors is a go-live step (DOCS "Dedicated sender inbox").
+SENDER_RE = re.compile(
+    r"^(?:callcatch[a-z0-9._\-]{0,55}@agentmail\.to|callcatch@callcatch\.brysoncarter\.com)$"
+)
 AGENTMAIL_API = "https://api.agentmail.to/v0/inboxes/{inbox}/messages/send"
 CATEGORY = "callcatch_phone_message"
 LABELS = ("callcatch", CATEGORY)
