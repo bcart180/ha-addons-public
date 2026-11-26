@@ -1,4 +1,4 @@
-/* Generated from shared/design/tokens.json v4.1.0 by build.py. Do not edit by hand. Optional base layer; link after bryson-ui-4.css. */
+/* Generated from shared/design/tokens.json v4.2.0 by build.py. Do not edit by hand. Optional base layer; link after bryson-ui-4.css. */
 html, body { background: var(--bui-page); color: var(--bui-text); font-family: var(--bui-font);
   font-size: var(--bui-body-size); line-height: var(--bui-body-line); margin: 0; }
 h1 { font-size: var(--bui-h1-size); line-height: var(--bui-h1-line); letter-spacing: var(--bui-h1-tracking); font-weight: var(--bui-weight-medium); }
@@ -6,7 +6,7 @@ h2 { font-size: var(--bui-h2-size); line-height: var(--bui-h2-line); font-weight
 h3 { font-size: var(--bui-h3-size); line-height: var(--bui-h3-line); font-weight: var(--bui-weight-medium); }
 h4 { font-size: var(--bui-h4-size); line-height: var(--bui-h4-line); font-weight: var(--bui-weight-bold); }
 small, .bui-small { font-size: var(--bui-small-size); line-height: var(--bui-small-line); color: var(--bui-text-secondary); }
-a { color: var(--bui-accent-text); }
+a { color: var(--bui-link); }
 .bui-card { background: var(--bui-surface); border: 1px solid var(--bui-border); border-radius: var(--bui-radius-card);
   box-shadow: var(--bui-shadow-card); padding: var(--bui-space-4); }
 .bui-muted { color: var(--bui-text-secondary); }

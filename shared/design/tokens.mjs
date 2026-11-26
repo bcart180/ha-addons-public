@@ -1,4 +1,4 @@
-// Generated from shared/design/tokens.json v4.1.0 by build.py. Do not edit by hand.
+// Generated from shared/design/tokens.json v4.2.0 by build.py. Do not edit by hand.
 export const BUI = {
   "--bui-page": "#1a1a1a",
   "--bui-surface": "#2a2a2a",
@@ -15,6 +15,7 @@ export const BUI = {
   "--bui-accent-hover": "#5B84F0",
   "--bui-accent-pressed": "#2A4CB8",
   "--bui-accent-text": "#6D8EE8",
+  "--bui-link": "#6D8EE8",
   "--bui-accent-soft": "rgba(62, 106, 225, 0.16)",
   "--bui-focus-ring": "#6D8EE8",
   "--bui-success": "#3ddc84",
@@ -90,10 +91,10 @@ export const BUI = {
   "--bui-button-secondary-fg": "#f5f5f5",
   "--bui-button-tertiary-bg": "transparent",
   "--bui-button-tertiary-fg": "#6D8EE8",
-  "--bui-tab-bg": "#2a2a2a",
+  "--bui-tab-bg": "#1a1a1a",
   "--bui-tab-fg": "#c8c8c8",
-  "--bui-tab-selected-bg": "#393939",
-  "--bui-tab-selected-fg": "#f5f5f5",
+  "--bui-tab-selected-bg": "#2a2a2a",
+  "--bui-tab-selected-fg": "#6D8EE8",
   "--bui-tab-indicator": "#3E6AE1",
   "--bui-segment-border": "#3a3a3a",
   "--bui-shadow-card": "none",
