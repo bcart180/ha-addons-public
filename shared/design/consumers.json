@@ -1,0 +1,11 @@
+{
+  "_note": "Where sync.py vendors the generated CSS. HA add-on build contexts are per-add-on folders, so each add-on gets a checked-in copy; CI fails if any copy drifts from shared/design.",
+  "vendored": [
+    {"page": "Trading Desk", "dest": "trading_desk/rootfs/app/static/bui/bryson-ui-4.css", "status": "migrated on this branch (reference)"},
+    {"page": "Social Pulse", "dest": "social_pulse/rootfs/app/static/bui/bryson-ui-4.css", "status": "todo"},
+    {"page": "Usage", "dest": "usage_dashboard/rootfs/app/static/bui/bryson-ui-4.css", "status": "todo"},
+    {"page": "Tesla Smart Charge", "dest": "tesla_smart_charge/rootfs/app/static/bui/bryson-ui-4.css", "status": "todo"},
+    {"page": "Smart HVAC ingress", "dest": "smart_hvac/rootfs/app/static/bui/bryson-ui-4.css", "status": "todo (Security Audit PASS + CoS GO rule applies)"},
+    {"page": "Sports News", "dest": "sports_news/rootfs/app/static/bui/bryson-ui-4.css", "status": "held (not installed)"}
+  ]
+}

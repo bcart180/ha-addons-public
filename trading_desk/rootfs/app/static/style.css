@@ -1,26 +1,28 @@
 /* Trading Desk — 2022 Model S Plaid cabin surfaces (0.3.2).
-   Black page and cards, hairline borders, light-weight figures. Green/red are P&L and status only.
+   Charcoal page (BRYSON-UI-4 Charcoal), lighter cards, hairline borders, light-weight figures. Green/red are P&L and status only.
    Main-tab chart axis and grid colors live next to drawChart() in main.js. */
 :root{
-  --bg:#000000;
-  --elev:#000000;
-  --card:#000000;
-  --line:#262b31;
-  --fg:#e8eef4;
-  --mut:#9aa6b4;
-  --up:#3ecf8e;
+  /* Tokens come from static/bui/bryson-ui-4.css (generated from shared/design/tokens.json).
+     Local names are aliases so the rest of this file stays page-specific layout. */
+  --bg:var(--bui-page);
+  --elev:var(--bui-surface-raised);
+  --card:var(--bui-surface);
+  --line:var(--bui-border);
+  --fg:var(--bui-text);
+  --mut:var(--bui-text-secondary);
+  --up:var(--bui-success);
   --dn:#ff8f8f;
-  --warn:#ff5d73;
-  --acc:#3e6ae1;
-  --acc-soft:rgba(62,106,225,.16);
+  --warn:var(--bui-danger);
+  --acc:var(--bui-accent);
+  --acc-soft:var(--bui-accent-soft);
   --pl-pos:#4ade80;
   --pl-neg:#ff9b9b;
   --pl-zero:var(--fg);
-  --r:16px;
+  --r:var(--bui-radius-card);
   color-scheme:dark;
 }
 *{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 var(--bui-font);-webkit-font-smoothing:antialiased}
 button,input,select{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 ::selection{background:var(--acc-soft)}
