@@ -1,0 +1,25 @@
+/* Generated from shared/design/tokens.json v4.1.0 by build.py. Do not edit by hand. Optional base layer; link after bryson-ui-4.css. */
+html, body { background: var(--bui-page); color: var(--bui-text); font-family: var(--bui-font);
+  font-size: var(--bui-body-size); line-height: var(--bui-body-line); margin: 0; }
+h1 { font-size: var(--bui-h1-size); line-height: var(--bui-h1-line); letter-spacing: var(--bui-h1-tracking); font-weight: var(--bui-weight-medium); }
+h2 { font-size: var(--bui-h2-size); line-height: var(--bui-h2-line); font-weight: var(--bui-weight-medium); }
+h3 { font-size: var(--bui-h3-size); line-height: var(--bui-h3-line); font-weight: var(--bui-weight-medium); }
+h4 { font-size: var(--bui-h4-size); line-height: var(--bui-h4-line); font-weight: var(--bui-weight-bold); }
+small, .bui-small { font-size: var(--bui-small-size); line-height: var(--bui-small-line); color: var(--bui-text-secondary); }
+a { color: var(--bui-accent-text); }
+.bui-card { background: var(--bui-surface); border: 1px solid var(--bui-border); border-radius: var(--bui-radius-card);
+  box-shadow: var(--bui-shadow-card); padding: var(--bui-space-4); }
+.bui-muted { color: var(--bui-text-secondary); }
+.bui-btn { min-height: var(--bui-height); min-width: var(--bui-touch-min); padding: 0 var(--bui-space-4); border: 0;
+  border-radius: var(--bui-radius-sm); font: var(--bui-weight-medium) var(--bui-body-size)/1 var(--bui-font);
+  background: var(--bui-button-secondary-bg); color: var(--bui-button-secondary-fg); cursor: pointer; }
+.bui-btn--primary { background: var(--bui-button-primary-bg); color: var(--bui-button-primary-fg); }
+.bui-btn--primary:hover { background: var(--bui-accent-hover); }
+.bui-btn--tertiary { background: var(--bui-button-tertiary-bg); color: var(--bui-button-tertiary-fg); }
+.bui-btn:disabled { color: var(--bui-text-disabled); background: var(--bui-input-disabled); cursor: default; }
+.bui-tabs { display: flex; background: var(--bui-tab-bg); border: 1px solid var(--bui-segment-border); border-radius: var(--bui-radius-md); overflow: hidden; }
+.bui-tab { flex: 1; min-height: var(--bui-height-sm); color: var(--bui-tab-fg); background: transparent; border: 0; font: inherit; }
+.bui-tab[aria-selected="true"] { background: var(--bui-tab-selected-bg); color: var(--bui-tab-selected-fg); box-shadow: inset 0 -2px 0 var(--bui-tab-indicator); }
+input, select, textarea { background: var(--bui-input); color: var(--bui-text); border: 1px solid var(--bui-border-strong); border-radius: var(--bui-radius-sm); }
+:focus-visible { outline: 2px solid var(--bui-focus-ring); outline-offset: 2px; }
+.bui-danger { color: var(--bui-danger); } .bui-success { color: var(--bui-success); }
