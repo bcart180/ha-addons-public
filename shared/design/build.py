@@ -143,7 +143,7 @@ def ha_theme():
     # HA 2025+ design-system palette (ha-button, toggle groups, calendar controls) defaults to cyan; pin to our blue.
     for k2, v2 in C["primary-scale"].items():
         m[f"ha-color-primary-{k2}"] = v2
-    lines = [f"# {HDR}", "# Charcoal pages, lighter cards, bright text. Fills #3E6AE1; text/links/tabs (primary-color) #6D8EE8. No pure black, no orange/amber.",
+    lines = [f"# {HDR}", "# Black page, charcoal cards, bright text. Fills #3E6AE1; text/links/tabs (primary-color) #6D8EE8. No orange/amber.",
              f"{T['name']}:"]
     lines += [f"  {k}: {json.dumps(v)}" for k, v in m.items()]
     # Same tokens under modes.dark so HA knows this is a dark theme (dark fills for
