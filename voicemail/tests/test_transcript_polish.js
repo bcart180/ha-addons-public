@@ -152,8 +152,9 @@ if (
   failures.push("share sheet should keep the stored transcript");
 }
 if (!/^slug:\s*voicemail\s*$/m.test(config)) failures.push("slug must stay voicemail");
-if (!/^version:\s*"0\.8\.9"\s*$/m.test(config)) failures.push("config version must be 0.8.9");
-if (!changelog.startsWith("# Changelog\n\n## 0.8.9 — 2026-11-26\n")) failures.push("changelog missing 0.8.9 entry");
+if (!/^version:\s*"0\.8\.10"\s*$/m.test(config)) failures.push("config version must be 0.8.10");
+if (!changelog.startsWith("# Changelog\n\n## 0.8.10 — 2026-11-26\n")) failures.push("changelog missing 0.8.10 entry");
+if (!/## 0\.8\.9 — 2026-11-26\n/.test(changelog)) failures.push("changelog must keep the 0.8.9 entry");
 if (!/## 0\.8\.8 — 2026-11-25\n/.test(changelog)) failures.push("changelog must keep the 0.8.8 entry");
 if (!/## 0\.8\.7 — 2026-11-24\n/.test(changelog)) failures.push("changelog must keep the 0.8.7 entry");
 if (!/## 0\.8\.6 — 2026-11-24\n/.test(changelog)) failures.push("changelog must keep the 0.8.6 entry");
@@ -164,7 +165,7 @@ if (!/## 0\.5\.7 — 2026-11-05\n/.test(changelog)) failures.push("changelog mus
 if (!/## 0\.1\.9 — 2026-10-29\n/.test(changelog)) failures.push("changelog must keep the 0.1.9 entry");
 if (!/## 0\.1\.8 — 2026-10-29\n/.test(changelog)) failures.push("changelog must keep the 0.1.8 packaging entry");
 if (!/## 0\.1\.7 — 2026-10-28\n/.test(changelog)) failures.push("changelog must keep the 0.1.7 entry");
-if (!/VERSION = "0\.8\.9"/.test(server)) failures.push("server.py VERSION must match 0.8.9");
+if (!/VERSION = "0\.8\.10"/.test(server)) failures.push("server.py VERSION must match 0.8.10");
 if (/^image:/m.test(config)) failures.push("config must not set an image field");
 if (!/^ingress_panel:\s*true\s*$/m.test(config)) failures.push("ingress_panel must stay true");
 if (/bedroom_homepod|HomePod/.test([server, config, appJs, indexHtml].join("\n"))) {

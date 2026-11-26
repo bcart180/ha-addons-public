@@ -68,7 +68,7 @@ test("0.3.0 alerts: fault, hot handle, derate, deadline passed (no behind nag)",
 });
 
 test("Plaid style: dark panel, no device-specific sizing", () => {
-  assert.match(SRC, /--panel:#16181b/);
+  assert.match(SRC, /--panel:#2a2a2a/);
   assert.doesNotMatch(SRC, /echo|show 8|1280|800px/i);
 });
 

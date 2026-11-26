@@ -205,7 +205,7 @@ class SnapshotTests(unittest.TestCase):
 
     def test_version_matches_config(self):
         config = (ROOT / "config.yaml").read_text(encoding="utf-8")
-        self.assertEqual(snapshot.ADDON_VERSION, "0.1.2")
+        self.assertEqual(snapshot.ADDON_VERSION, "0.1.3")
         self.assertIn(f'version: "{snapshot.ADDON_VERSION}"', config)
         self.assertIn("slug: usage_dashboard", config)
         self.assertIn("ingress: true", config)
@@ -219,7 +219,7 @@ class SnapshotTests(unittest.TestCase):
         self.assertIn("/ui-trial", (ROOT / "README.md").read_text(encoding="utf-8"))
         data = snapshot.validate(snapshot.load_json(str(BUNDLED)))
         view = snapshot.build_view(data, "bundled")
-        self.assertIn("Add-on 0.1.2 · schema version 1.", view["context"])
+        self.assertIn("Add-on 0.1.3 · schema version 1.", view["context"])
 
 
 def trial_ingress_root(pathname: str) -> str:
@@ -369,8 +369,8 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(root_body, index_body)
         self.assertEqual(len(root_body), 2192)
         self.assertEqual(hashlib.sha256(root_body).hexdigest(), "f8d722cbae21d846db493138e95b71dad1c84de5c98bdf3c5dc99727830ff38a")
-        self.assertEqual(len(css_body), 6286)
-        self.assertEqual(hashlib.sha256(css_body).hexdigest(), "fe4fe7d6d573d1136cf685a37b0d21563c6b4f956fff17d7901df3891ddb99cd")
+        self.assertEqual(len(css_body), 6386)
+        self.assertEqual(hashlib.sha256(css_body).hexdigest(), "e21567349b034e99c16078b5ca85f7f59be20d7ebced0b75b936ccaff9206d31")
         self.assertEqual(len(js_body), 16672)
         self.assertEqual(hashlib.sha256(js_body).hexdigest(), "bef447f8c4872abd83994804b98a1178c74b7bcdde00e9b9348de51e52aab0f5")
         self.assertIn(b'href="app.css"', root_body)

@@ -380,7 +380,7 @@ class SiteDashboardTests(unittest.TestCase):
         self.assertIn("Nothing here is estimated", js)
         self.assertIn("soft-slate.css", html)
         self.assertIn("#000000", css)
-        self.assertIn("#e8eef4", css)
+        self.assertIn("#f5f5f5", css)
         self.assertIn("#d7b4ff", css)
         self.assertIn("#3e6ae1", css)
         self.assertIn("#9aa6ff", css)
@@ -406,7 +406,7 @@ class SiteDashboardTests(unittest.TestCase):
         self.assertNotIn("disabled", docs.lower())
         self.assertNotIn("rotat", docs.lower())
         cfg = open(os.path.join(ADDON, "config.yaml"), encoding="utf-8").read()
-        self.assertIn('version: "0.3.3"', cfg)
+        self.assertIn('version: "0.3.4"', cfg)
         self.assertNotIn('version: "0.3.1"', cfg)
         self.assertNotIn("Soft Slate", docs)
         readme = open(os.path.join(ADDON, "README.md"), encoding="utf-8").read()
@@ -417,9 +417,9 @@ class SiteDashboardTests(unittest.TestCase):
 
 PROD_SHA = {
     "index.html": (1513, "6995d19f7be1185c9aef4c8db109ea631523eff331419d3ef346520e77b670ae"),
-    "app.css": (6942, "297ac2846f398c21068d6859c1d96a99ce3a16c67f950c976cb336640450bba4"),
+    "app.css": (6959, "e6bd62e1fab049ee6a9d88a9398d3872c50865db99a5dd4bcd852aa99a7b8a39"),
     "app.js": (13653, "99f2be71a69e273db0138cff943a16ccd3846aef7396f623ff2aa08a89f7a528"),
-    "soft-slate.css": (3660, "4dc809b4b8fdf9268c003a50e9c81178fd76e640ae2a5626df80cc08b1e0bc7f"),
+    "soft-slate.css": (3674, "2968bc68a1cd4a60988e739bce24a6c7aa70c1552bc502505cdbffe04fd9ecad"),
 }
 COLLECTOR_SHA = (22865, "9e8d4b211abc66ac6fea788bad2e9900f02ea2500a7e11712cafc4541c98b0b8")
 PROD_CSP = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'self'"
@@ -479,7 +479,7 @@ def _hue_sat(hex_color):
 class TrialTests(unittest.TestCase):
     def test_version_schema_and_docs(self):
         cfg = open(os.path.join(ADDON, "config.yaml"), encoding="utf-8").read()
-        self.assertIn('version: "0.3.3"', cfg)
+        self.assertIn('version: "0.3.4"', cfg)
         self.assertIn(SCHEMA, cfg)
         self.assertIn("ingress_port: 8099", cfg)
         self.assertIn("panel_admin: true", cfg)

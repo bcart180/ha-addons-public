@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.3 — 2026-11-26
+
+- Style only. Lovelace card page stays `#000000` and the panel is `#2a2a2a`. There is no amber. Warning stays `#ff5d73` and the accent stays `#3e6ae1`. A selected chip is raised `#393939` with `#6d8ee8` text and a `#3e6ae1` indicator.
+- Charging logic, options, safety stops, and schema are unchanged.
+
 ## 0.3.2 — 2026-11-20
 
 - Style only. Lovelace card page and panel are `#000000`. The amber warning token is now `#ff5d73`. Accent stays `#3e6ae1`.
